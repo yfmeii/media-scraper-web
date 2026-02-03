@@ -175,11 +175,17 @@ export async function supplementShow(showPath: string, language = 'zh-CN'): Prom
   return { success: data.success, message: data.error || data.data?.message, taskId: data.taskId };
 }
 
-export async function refreshMetadata(kind: 'tv' | 'movie', path: string, tmdbId: number, language = 'zh-CN'): Promise<ScrapeResult> {
+export async function refreshMetadata(
+  kind: 'tv' | 'movie', 
+  path: string, 
+  tmdbId: number, 
+  options?: { season?: number; episode?: number; language?: string }
+): Promise<ScrapeResult> {
+  const { season, episode, language = 'zh-CN' } = options || {};
   const res = await fetch(`${API_BASE}/scrape/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ kind, path, tmdbId, language }),
+    body: JSON.stringify({ kind, path, tmdbId, season, episode, language }),
   });
   const data = await res.json();
   return { success: data.success, message: data.error || data.data?.message, taskId: data.taskId };

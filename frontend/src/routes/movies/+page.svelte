@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { fade, fly, scale } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
-  import { fetchMovies, searchTMDB, refreshMetadata, fixAssets, autoMatch, batchScrapeWithDisambiguation, subscribeToProgress, type MovieInfo, type SearchResult, type BatchScrapeItem, type ProgressEvent } from '$lib/api';
+  import { fetchMovies, searchTMDB, refreshMetadata, autoMatch, batchScrapeWithDisambiguation, subscribeToProgress, type MovieInfo, type SearchResult, type BatchScrapeItem, type ProgressEvent } from '$lib/api';
   
   let movies: MovieInfo[] = [];
   let loading = true;
@@ -412,20 +412,6 @@
     setTimeout(() => { operationMessage = ''; }, 3000);
   }
   
-  async function handleFixAssets(movie: MovieInfo) {
-    if (isOperating || !movie.tmdbId) return;
-    isOperating = true;
-    operationMessage = '正在修复资产...';
-    
-    const result = await fixAssets('movie', movie.path, movie.tmdbId);
-    operationMessage = result.success ? '修复成功' : `失败: ${result.message}`;
-    isOperating = false;
-    
-    const newMovies = await fetchMovies();
-    movies = [...newMovies];
-    
-    setTimeout(() => { operationMessage = ''; }, 3000);
-  }
   
   // Filtered movies
   $: filteredMovies = movies.filter(movie => {
@@ -697,13 +683,6 @@
               on:click={() => { if (selectedMovieForDetail) handleScrapeMovie(selectedMovieForDetail); }}
             >
               {isOperating ? '处理中...' : '刷新元数据'}
-            </button>
-            <button 
-              class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-secondary text-secondary-foreground hover:opacity-90 disabled:opacity-50"
-              disabled={isOperating || !selectedMovieForDetail?.tmdbId}
-              on:click={() => { if (selectedMovieForDetail) handleFixAssets(selectedMovieForDetail); }}
-            >
-              修复资产
             </button>
             <button class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-secondary text-secondary-foreground hover:opacity-90" on:click={() => { 
               const movie = selectedMovieForDetail;

@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { fade, fly, scale } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
-  import { fetchTVShows, searchTMDB, supplementShow, refreshMetadata, fixAssets, autoMatch, batchScrapeWithDisambiguation, subscribeToProgress, type ShowInfo, type SearchResult, type BatchScrapeItem, type ProgressEvent } from '$lib/api';
+  import { fetchTVShows, searchTMDB, supplementShow, refreshMetadata, autoMatch, batchScrapeWithDisambiguation, subscribeToProgress, type ShowInfo, type SearchResult, type BatchScrapeItem, type ProgressEvent } from '$lib/api';
   
   let shows: ShowInfo[] = [];
   let loading = true;
@@ -463,23 +463,58 @@
     }
   }
   
-  // Single show operations
+  // Single show operations - 智能刮削（自动判断刮削或补刮）
   async function handleScrapeShow(show: ShowInfo) {
     if (isOperating) return;
     
-    // If show is not scraped yet, need to match TMDB first
+    // 如果未刮削/无 TMDB ID → 自动匹配
     if (show.groupStatus === 'unscraped' || !show.tmdbId) {
-      operationMessage = '未刮削剧集需要先匹配 TMDB，请点击"重新匹配"';
-      setTimeout(() => { operationMessage = ''; }, 5000);
+      // 尝试自动匹配
+      isOperating = true;
+      operationMessage = '正在自动匹配...';
+      
+      try {
+        const matchResult = await autoMatch(show.path, 'tv', show.name);
+        
+        if (matchResult.success && matchResult.bestMatch) {
+          // 自动匹配成功，执行刮削
+          operationMessage = `匹配成功: ${matchResult.bestMatch.name}，正在刮削...`;
+          const result = await refreshMetadata('tv', show.path, matchResult.bestMatch.id);
+          operationMessage = result.success ? '刮削成功' : `失败: ${result.message}`;
+        } else if (matchResult.candidates && matchResult.candidates.length > 0) {
+          // 有多个候选，打开搜索模态框
+          isOperating = false;
+          operationMessage = '';
+          openSearchModal(show);
+          return;
+        } else {
+          // 无匹配结果
+          isOperating = false;
+          operationMessage = '未找到匹配结果，请手动搜索';
+          setTimeout(() => { operationMessage = ''; }, 3000);
+          openSearchModal(show);
+          return;
+        }
+      } catch (err) {
+        operationMessage = `匹配失败: ${err}`;
+      }
+      
+      isOperating = false;
+      shows = await fetchTVShows();
+      if (selectedShowForDetail) {
+        selectedShowForDetail = shows.find(s => s.path === selectedShowForDetail!.path) || null;
+      }
+      setTimeout(() => { operationMessage = ''; }, 3000);
       return;
     }
     
+    // 已有 TMDB ID，执行补刮
     isOperating = true;
-    operationMessage = '正在刮削...';
+    operationMessage = '正在补刮...';
     
     try {
       const result = await supplementShow(show.path);
-      operationMessage = result.success ? `刮削成功` : `失败: ${result.message}`;
+      operationMessage = result.success ? `补刮成功` : `失败: ${result.message}`;
       
       // Refresh shows
       const newShows = await fetchTVShows();
@@ -507,20 +542,58 @@
     setTimeout(() => { operationMessage = ''; }, 3000);
   }
   
-  async function handleFixAssets(show: ShowInfo) {
-    if (isOperating || !show.tmdbId) return;
+  // 刷新指定季的元数据
+  async function handleRefreshSeason(season: number) {
+    if (isOperating || !selectedShowForDetail?.tmdbId) return;
     isOperating = true;
-    operationMessage = '正在修复资产...';
+    operationMessage = `正在刷新第 ${season} 季元数据...`;
     
-    const result = await fixAssets('tv', show.path, show.tmdbId);
-    operationMessage = result.success ? '修复成功' : `失败: ${result.message}`;
+    const result = await refreshMetadata('tv', selectedShowForDetail.path, selectedShowForDetail.tmdbId, { season });
+    operationMessage = result.success ? `第 ${season} 季刷新成功` : `失败: ${result.message}`;
     isOperating = false;
     
     // Refresh shows
     shows = await fetchTVShows();
+    if (selectedShowForDetail) {
+      selectedShowForDetail = shows.find(s => s.path === selectedShowForDetail!.path) || null;
+    }
     
     setTimeout(() => { operationMessage = ''; }, 3000);
   }
+  
+  // 刷新指定集的元数据
+  async function handleRefreshEpisode(season: number, episode: number) {
+    if (isOperating || !selectedShowForDetail?.tmdbId) return;
+    isOperating = true;
+    operationMessage = `正在刷新 S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')} 元数据...`;
+    
+    const result = await refreshMetadata('tv', selectedShowForDetail.path, selectedShowForDetail.tmdbId, { season, episode });
+    operationMessage = result.success ? `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')} 刷新成功` : `失败: ${result.message}`;
+    isOperating = false;
+    
+    setTimeout(() => { operationMessage = ''; }, 3000);
+  }
+  
+  // 补刮指定季的新增集
+  async function handleSupplementSeason(season: number) {
+    if (isOperating || !selectedShowForDetail?.tmdbId) return;
+    isOperating = true;
+    operationMessage = `正在补刮第 ${season} 季...`;
+    
+    // 使用 supplementShow API，它会自动检测新增文件
+    const result = await supplementShow(selectedShowForDetail.path);
+    operationMessage = result.success ? `第 ${season} 季补刮完成` : `失败: ${result.message}`;
+    isOperating = false;
+    
+    // Refresh shows
+    shows = await fetchTVShows();
+    if (selectedShowForDetail) {
+      selectedShowForDetail = shows.find(s => s.path === selectedShowForDetail!.path) || null;
+    }
+    
+    setTimeout(() => { operationMessage = ''; }, 3000);
+  }
+  
   
   // Filtered shows based on current filters
   $: filteredShows = shows.filter(show => {
@@ -812,6 +885,62 @@
           </div>
         </div>
         
+        <!-- 季/集分组展示 -->
+        <div>
+          <p class="text-sm text-muted-foreground mb-2">季/集文件</p>
+          <div class="space-y-2 max-h-80 overflow-y-auto">
+            {#each selectedShowForDetail.seasons.sort((a, b) => a.season - b.season) as seasonItem}
+              <details class="group">
+                <summary class="flex items-center justify-between cursor-pointer p-2 rounded-md bg-muted/50 hover:bg-muted">
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-medium">第 {seasonItem.season} 季</span>
+                    <span class="text-xs text-muted-foreground">{seasonItem.episodes.length} 集</span>
+                  </div>
+                  <div class="flex items-center gap-1" on:click|stopPropagation>
+                    <button 
+                      class="inline-flex items-center justify-center rounded h-6 w-6 hover:bg-accent text-muted-foreground hover:text-foreground"
+                      title="刷新该季元数据"
+                      disabled={isOperating || !selectedShowForDetail?.tmdbId}
+                      on:click={() => handleRefreshSeason(seasonItem.season)}
+                    >
+                      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+                    </button>
+                    <button 
+                      class="inline-flex items-center justify-center rounded h-6 w-6 hover:bg-accent text-muted-foreground hover:text-foreground"
+                      title="补刮该季新增"
+                      disabled={isOperating || !selectedShowForDetail?.tmdbId}
+                      on:click={() => handleSupplementSeason(seasonItem.season)}
+                    >
+                      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                    </button>
+                  </div>
+                </summary>
+                <div class="mt-1 ml-4 space-y-1">
+                  {#each seasonItem.episodes.sort((a, b) => (a.parsed.episode || 0) - (b.parsed.episode || 0)) as ep}
+                    <div class="flex items-center justify-between p-2 rounded-md hover:bg-muted/30 text-xs group/ep">
+                      <div class="flex items-center gap-2 flex-1 min-w-0">
+                        <span class="text-muted-foreground shrink-0">E{String(ep.parsed.episode || 0).padStart(2, '0')}</span>
+                        <span class="truncate" title={ep.name}>{ep.name}</span>
+                      </div>
+                      <div class="flex items-center gap-1 shrink-0 ml-2">
+                        <span class="text-muted-foreground mr-2">{(ep.size / 1024 / 1024 / 1024).toFixed(2)} GB</span>
+                        <button 
+                          class="inline-flex items-center justify-center rounded h-5 w-5 opacity-0 group-hover/ep:opacity-100 hover:bg-accent text-muted-foreground hover:text-foreground transition-opacity"
+                          title="刷新该集元数据"
+                          disabled={isOperating || !selectedShowForDetail?.tmdbId}
+                          on:click={() => handleRefreshEpisode(seasonItem.season, ep.parsed.episode || 0)}
+                        >
+                          <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+                        </button>
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              </details>
+            {/each}
+          </div>
+        </div>
+        
         <div class="space-y-2">
           <p class="text-sm text-muted-foreground">操作</p>
           <div class="flex flex-wrap gap-2">
@@ -820,7 +949,7 @@
               disabled={isOperating}
               on:click={() => { if (selectedShowForDetail) handleScrapeShow(selectedShowForDetail); }}
             >
-              {isOperating ? '处理中...' : '立即刮削'}
+              {isOperating ? '处理中...' : (selectedShowForDetail?.groupStatus === 'unscraped' || !selectedShowForDetail?.tmdbId) ? '刮削' : '补刮'}
             </button>
             <button 
               class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-secondary text-secondary-foreground hover:opacity-90 disabled:opacity-50"
@@ -828,13 +957,6 @@
               on:click={() => { if (selectedShowForDetail) handleRefreshShow(selectedShowForDetail); }}
             >
               刷新元数据
-            </button>
-            <button 
-              class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-secondary text-secondary-foreground hover:opacity-90 disabled:opacity-50"
-              disabled={isOperating || !selectedShowForDetail?.tmdbId}
-              on:click={() => { if (selectedShowForDetail) handleFixAssets(selectedShowForDetail); }}
-            >
-              修复资产
             </button>
             <button class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-secondary text-secondary-foreground hover:opacity-90" on:click={() => { 
               const show = selectedShowForDetail;
