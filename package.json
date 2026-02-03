@@ -1,0 +1,21 @@
+{
+  "name": "media-scraper-web",
+  "version": "1.0.0",
+  "description": "🎬 媒体刮削管理工具 - 可视化管理媒体文件",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --hot src/server.ts",
+    "build": "bun build src/server.ts --outdir=dist --target=bun",
+    "start": "bun run dist/server.js",
+    "dev:frontend": "cd frontend && bun run dev",
+    "build:frontend": "cd frontend && bun run build",
+    "test": "bun test",
+    "test:watch": "bun test --watch"
+  },
+  "dependencies": {
+    "hono": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

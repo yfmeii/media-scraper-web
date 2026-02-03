@@ -1,0 +1,166 @@
+app:
+  description: '使用 AI 对 TMDB 搜索结果进行排序和消歧'
+  icon: 🎬
+  icon_background: '#FFEAD5'
+  mode: advanced-chat
+  name: 影视识别消歧
+  use_icon_as_answer_icon: false
+kind: app
+version: 0.5.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      enabled: false
+    opening_statement: ''
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+  graph:
+    edges:
+    - data:
+        sourceType: start
+        targetType: llm
+      id: start-llm
+      source: start
+      sourceHandle: source
+      target: llm
+      targetHandle: target
+      type: custom
+    - data:
+        sourceType: llm
+        targetType: answer
+      id: llm-answer
+      source: llm
+      sourceHandle: source
+      target: answer
+      targetHandle: target
+      type: custom
+    nodes:
+    - data:
+        desc: '接收包含 TMDB 候选的媒体文件信息'
+        title: 开始
+        type: start
+        variables: []
+      id: start
+      position:
+        x: 0
+        y: 0
+      type: custom
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: '对 TMDB 候选进行排序并选择最佳匹配'
+        model:
+          completion_params:
+            frequency_penalty: 0.5
+            json_schema: |
+              {
+                "name": "MediaMatchRankResponse",
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "path": {"type": "string"},
+                          "chosen_id": {"type": ["integer", "null"]},
+                          "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                          "reason": {"type": "string"}
+                        },
+                        "required": ["path", "chosen_id", "confidence", "reason"]
+                      }
+                    }
+                  },
+                  "required": ["results"]
+                },
+                "strict": true
+              }
+            presence_penalty: 0.5
+            response_format: json_schema
+            temperature: 0.2
+            top_p: 0.75
+          mode: chat
+          name: gpt-5-nano
+          provider: langgenius/openai/openai
+        prompt_template:
+        - id: system-prompt
+          role: system
+          text: |
+            You are a media match ranker.
+
+            Goal:
+            Given ambiguous media items and TMDB candidate lists, choose the best candidate ID or reject all.
+
+            Input format:
+            The input will be a JSON object containing an "items" array. Each item has:
+            - path: The actual file path (COPY THIS EXACTLY in your response)
+            - evidence: Parsed metadata from the filename
+            - candidates: TMDB search results to choose from
+
+            Rules:
+            1) CRITICAL: In your response, the "path" field MUST be copied EXACTLY from the input - do not use placeholder values.
+            2) Choose ONLY from the provided candidates list. The "chosen_id" MUST be an actual "id" value from the candidates array.
+            3) If no candidate matches, set chosen_id = null.
+            4) Use evidence fields (title_candidate/year/season/episodes/tags) to rank candidates.
+            5) Prefer candidates whose year matches; allow translated titles (English vs Chinese) when year matches.
+            6) If there is only ONE candidate and the year matches (or evidence has no year), you MUST choose it, even if the title is translated. Use confidence 0.6-0.8.
+            7) Confidence scale: 0.9+ strong evidence, 0.6-0.8 reasonable, 0.3-0.5 weak, <0.3 guessy.
+            8) Keep the response JSON valid and minimal.
+
+            Example:
+            Input:
+            {"items":[{"path":"/media/TV/House of Cards/S01E01.mkv","evidence":{"title_candidate":"House of Cards","year":null,"season":1,"episodes":[1]},"candidates":[{"id":1425,"name":"House of Cards","first_air_date":"2013-02-01"}]}]}
+
+            Output:
+            {"results":[{"path":"/media/TV/House of Cards/S01E01.mkv","chosen_id":1425,"confidence":0.7,"reason":"Single candidate, title matches exactly."}]}
+
+            Notice: The path in the output is EXACTLY the same as the path in the input.
+        - id: user-input
+          role: user
+          text: '{{#sys.query#}}'
+        retry_config:
+          max_retries: 3
+          retry_enabled: true
+          retry_interval: 1000
+        title: AI 消歧
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      id: llm
+      position:
+        x: 300
+        y: 0
+      type: custom
+    - data:
+        answer: '{{#llm.text#}}'
+        desc: '返回 JSON 格式的匹配结果'
+        title: 直接回复
+        type: answer
+        variables: []
+      id: answer
+      position:
+        x: 600
+        y: 0
+      type: custom
+    viewport:
+      x: 0
+      y: 0
+      zoom: 1
+  rag_pipeline_variables: []

@@ -1,0 +1,14 @@
+services:
+  media-scraper:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - ${INBOX_PATH:-./inbox}:/media/inbox
+      - ${TV_PATH:-./tv}:/media/tv
+      - ${MOVIES_PATH:-./movies}:/media/movies
+    environment:
+      - TMDB_API_KEY=
+      - DIFY_API_KEY=
+      - DIFY_URL=
+    restart: unless-stopped
