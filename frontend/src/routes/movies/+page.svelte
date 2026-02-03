@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { fade, fly, scale } from 'svelte/transition';
+  import { quintOut } from 'svelte/easing';
   import { fetchMovies, searchTMDB, refreshMetadata, fixAssets, autoMatch, batchScrapeWithDisambiguation, subscribeToProgress, type MovieInfo, type SearchResult, type BatchScrapeItem, type ProgressEvent } from '$lib/api';
   
   let movies: MovieInfo[] = [];
@@ -7,7 +9,6 @@
   let selectedMovies = new Set<string>();
   
   // Filters
-  let statusFilter = 'all';
   let searchQuery = '';
   let activeTab = 'all';
   
@@ -430,8 +431,6 @@
   $: filteredMovies = movies.filter(movie => {
     if (activeTab === 'scraped' && !movie.isProcessed) return false;
     if (activeTab === 'unscraped' && movie.isProcessed) return false;
-    if (statusFilter === 'scraped' && !movie.isProcessed) return false;
-    if (statusFilter === 'unscraped' && movie.isProcessed) return false;
     if (searchQuery && !movie.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
     return true;
   });
@@ -440,19 +439,14 @@
   $: unscrapedCount = movies.filter(m => !m.isProcessed).length;
 </script>
 
-<main class="container mx-auto px-4 py-8">
+<main class="container mx-auto px-4 py-8" class:pb-24={selectedMovies.size > 0 || isOperating}>
   <!-- Toolbar -->
   <div class="mb-6 space-y-4">
     <div class="flex items-center justify-between flex-wrap gap-4">
       <div class="flex items-center gap-4 flex-wrap">
-        <select class="h-9 w-32 rounded-md border border-input bg-background px-3 text-sm" bind:value={statusFilter}>
-          <option value="all">全部状态</option>
-          <option value="scraped">已刮削</option>
-          <option value="unscraped">未刮削</option>
-        </select>
         <div class="relative">
           <svg class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-          <input type="text" placeholder="搜索电影..." class="h-9 w-48 rounded-md border border-input bg-background pl-9 pr-3 text-sm" bind:value={searchQuery} />
+          <input type="text" placeholder="搜索电影..." class="h-9 w-64 rounded-md border border-input bg-background pl-9 pr-3 text-sm" bind:value={searchQuery} />
         </div>
       </div>
       <div class="flex gap-2 items-center">
@@ -583,7 +577,10 @@
   
   <!-- Bottom Bar -->
   {#if selectedMovies.size > 0 || isOperating}
-    <div class="fixed bottom-0 left-0 right-0 border-t border-border bg-card shadow-lg z-40">
+    <div 
+      class="fixed bottom-0 left-0 right-0 border-t border-border bg-card shadow-lg z-40"
+      transition:fly={{ y: 100, duration: 250, easing: quintOut }}
+    >
       <!-- Progress bar at top of bottom bar -->
       {#if batchProgress.total > 0}
         <div class="h-1 bg-muted">
@@ -632,8 +629,15 @@
 <!-- Detail Drawer -->
 {#if showDetailDrawer && selectedMovieForDetail}
   <div class="fixed inset-0 z-50">
-    <button class="absolute inset-0 bg-black/50" on:click={closeDetailDrawer}></button>
-    <div class="absolute right-0 top-0 bottom-0 w-full max-w-lg bg-card border-l border-border overflow-y-auto">
+    <button 
+      class="absolute inset-0 bg-black/50" 
+      on:click={closeDetailDrawer}
+      transition:fade={{ duration: 200 }}
+    ></button>
+    <div 
+      class="absolute right-0 top-0 bottom-0 w-full max-w-lg bg-card border-l border-border overflow-y-auto"
+      transition:fly={{ x: 400, duration: 300, easing: quintOut }}
+    >
       <div class="sticky top-0 flex items-center justify-between border-b border-border bg-card p-4">
         <h2 class="text-lg font-semibold">电影详情</h2>
         <button class="inline-flex items-center justify-center rounded-md h-8 w-8 hover:bg-accent" on:click={closeDetailDrawer}>
@@ -719,8 +723,15 @@
 <!-- TMDB Search Modal -->
 {#if showSearchModal}
   <div class="fixed inset-0 z-50 flex items-center justify-center">
-    <button class="absolute inset-0 bg-black/50" on:click={closeSearchModal}></button>
-    <div class="relative w-full max-w-xl bg-card border border-border rounded-lg shadow-lg overflow-hidden">
+    <button 
+      class="absolute inset-0 bg-black/50" 
+      on:click={closeSearchModal}
+      transition:fade={{ duration: 200 }}
+    ></button>
+    <div 
+      class="relative w-full max-w-xl bg-card border border-border rounded-lg shadow-lg overflow-hidden"
+      transition:scale={{ duration: 200, start: 0.95, easing: quintOut }}
+    >
       <div class="flex items-center justify-between border-b border-border p-4">
         <h2 class="text-lg font-semibold">TMDB 搜索</h2>
         <button class="inline-flex items-center justify-center rounded-md h-8 w-8 hover:bg-accent" on:click={closeSearchModal}>
@@ -781,8 +792,15 @@
 <!-- Disambiguation Mode Selection Modal -->
 {#if showDisambiguationModal}
   <div class="fixed inset-0 z-50 flex items-center justify-center">
-    <button class="absolute inset-0 bg-black/50" on:click={() => showDisambiguationModal = false}></button>
-    <div class="relative w-full max-w-md bg-card border border-border rounded-lg shadow-lg overflow-hidden">
+    <button 
+      class="absolute inset-0 bg-black/50" 
+      on:click={() => showDisambiguationModal = false}
+      transition:fade={{ duration: 200 }}
+    ></button>
+    <div 
+      class="relative w-full max-w-md bg-card border border-border rounded-lg shadow-lg overflow-hidden"
+      transition:scale={{ duration: 200, start: 0.95, easing: quintOut }}
+    >
       <div class="flex items-center justify-between border-b border-border p-4">
         <h2 class="text-lg font-semibold">一键刮削</h2>
         <button class="inline-flex items-center justify-center rounded-md h-8 w-8 hover:bg-accent" on:click={() => showDisambiguationModal = false}>

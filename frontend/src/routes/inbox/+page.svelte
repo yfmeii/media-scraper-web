@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { fade, fly, scale } from 'svelte/transition';
+  import { quintOut } from 'svelte/easing';
   import { 
     fetchInboxByDirectory, 
     searchTMDB, 
@@ -762,8 +764,14 @@
 
 <!-- Disambiguation Mode Modal -->
 {#if showDisambiguationModal}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-    <div class="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-lg">
+  <div 
+    class="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm"
+    transition:fade={{ duration: 200 }}
+  >
+    <div 
+      class="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-lg"
+      transition:scale={{ duration: 200, start: 0.95, easing: quintOut }}
+    >
       <h3 class="text-lg font-semibold mb-4">选择消歧方式</h3>
       <p class="text-sm text-muted-foreground mb-4">
         已选择 {selectedFiles.size} 个文件，请选择如何处理多个匹配结果的情况：
@@ -804,8 +812,14 @@
 
 <!-- Preview Modal -->
 {#if showPreviewModal}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-    <div class="w-full max-w-2xl rounded-lg border border-border bg-card p-6 shadow-lg max-h-[80vh] flex flex-col">
+  <div 
+    class="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm"
+    transition:fade={{ duration: 200 }}
+  >
+    <div 
+      class="w-full max-w-2xl rounded-lg border border-border bg-card p-6 shadow-lg max-h-[80vh] flex flex-col"
+      transition:scale={{ duration: 200, start: 0.95, easing: quintOut }}
+    >
       <h3 class="text-lg font-semibold mb-4">移动预览</h3>
       {#if isLoadingPreview}
         <div class="flex-1 flex items-center justify-center py-8">
