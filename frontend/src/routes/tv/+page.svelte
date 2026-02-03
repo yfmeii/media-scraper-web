@@ -5,10 +5,8 @@
   let shows: ShowInfo[] = [];
   let loading = true;
   let selectedShows = new Set<string>();
-  let expandedShow: string | null = null;
   
   // Filters
-  let langFilter = 'all';
   let statusFilter = 'all';
   let completenessFilter = 'all';
   let searchQuery = '';
@@ -558,12 +556,6 @@
           <span class="mr-2 text-sm text-muted-foreground">视图:</span>
           <span class="text-sm font-medium">表格</span>
         </div>
-        <select class="h-9 w-32 rounded-md border border-input bg-background px-3 text-sm" bind:value={langFilter}>
-          <option value="all">全部语言</option>
-          <option value="zh-CN">简体中文</option>
-          <option value="en-US">英语</option>
-          <option value="ja-JP">日语</option>
-        </select>
         <select class="h-9 w-32 rounded-md border border-input bg-background px-3 text-sm" bind:value={statusFilter}>
           <option value="all">全部状态</option>
           <option value="scraped">已刮削</option>

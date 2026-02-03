@@ -33,12 +33,6 @@
   let isSearchingTMDB = false;
   let manualSearchQuery = '';
   
-  // Assets checkboxes
-  let generatePoster = true;
-  let generateNfo = true;
-  let generateBackdrop = false;
-  let generateSubtitle = false;
-  
   // Target library path
   let targetPath = '';
   

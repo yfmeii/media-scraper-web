@@ -13,7 +13,7 @@ import {
   type DirectoryGroup 
 } from '../lib/scanner';
 import { MEDIA_PATHS } from '../lib/config';
-import { stat, readFile } from 'fs/promises';
+import { stat } from 'fs/promises';
 import { join } from 'path';
 
 export const mediaRoutes = new Hono();

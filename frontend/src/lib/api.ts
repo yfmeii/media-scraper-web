@@ -165,16 +165,6 @@ export interface ScrapeResult {
   taskId?: string;
 }
 
-export async function scrapeShow(showPath: string, tmdbId: number, language = 'zh-CN'): Promise<ScrapeResult> {
-  const res = await fetch(`${API_BASE}/scrape/refresh`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ kind: 'tv', path: showPath, tmdbId, language }),
-  });
-  const data = await res.json();
-  return { success: data.success, message: data.error || data.data?.message, taskId: data.taskId };
-}
-
 export async function supplementShow(showPath: string, language = 'zh-CN'): Promise<ScrapeResult> {
   const res = await fetch(`${API_BASE}/scrape/supplement`, {
     method: 'POST',

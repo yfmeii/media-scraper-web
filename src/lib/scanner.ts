@@ -1,5 +1,5 @@
-import { readdir, stat, readFile } from 'fs/promises';
-import { join, extname, basename, dirname } from 'path';
+import { readdir, stat } from 'fs/promises';
+import { join, extname, dirname } from 'path';
 import { VIDEO_EXTS, NFO_GENERATOR, EP_PATTERNS, RESOLUTION_TAGS, SOURCE_TAGS, CODEC_TAGS, AUDIO_TAGS } from './config';
 
 export interface MediaFile {

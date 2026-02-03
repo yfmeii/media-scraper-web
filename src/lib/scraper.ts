@@ -2,6 +2,7 @@ import { mkdir, rename, writeFile, rm, stat, readdir } from 'fs/promises';
 import { join, dirname, extname, basename } from 'path';
 import { NFO_GENERATOR, MEDIA_PATHS } from './config';
 import { getTVDetails, getMovieDetails, getSeasonDetails, getPosterUrl, getBackdropUrl, type TMDBShowDetails, type TMDBMovieDetails } from './tmdb';
+import { extractTmdbIdFromNfo } from './scanner';
 
 // Generate tvshow.nfo
 export function generateTVShowNFO(show: TMDBShowDetails): string {
@@ -382,17 +383,6 @@ export async function refreshMetadata(
   } catch (error) {
     console.error('Refresh metadata error:', error);
     return { success: false, message: String(error) };
-  }
-}
-
-// 从 NFO 文件中提取 TMDB ID
-async function extractTmdbIdFromNfo(nfoPath: string): Promise<number | undefined> {
-  try {
-    const content = await Bun.file(nfoPath).text();
-    const match = content.match(/<tmdbid>(\d+)<\/tmdbid>/);
-    return match ? parseInt(match[1]) : undefined;
-  } catch {
-    return undefined;
   }
 }
 
