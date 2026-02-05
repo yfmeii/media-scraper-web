@@ -20,20 +20,26 @@
 </script>
 
 {#if show}
-  <div 
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-    onclick={(e) => {
-      if (e.target === e.currentTarget) handleClose();
-    }}
-    role="dialog"
-    aria-modal="true"
-  >
-    <div class="bg-card rounded-lg shadow-lg w-full max-w-md mx-4">
+  <div class="fixed inset-0 z-50 flex items-center justify-center relative">
+    <button
+      type="button"
+      class="absolute inset-0 bg-black/50"
+      aria-label="关闭对话框"
+      onclick={handleClose}
+    ></button>
+    <div 
+      class="relative z-10 bg-card rounded-lg shadow-lg w-full max-w-md mx-4"
+      role="dialog"
+      aria-modal="true"
+      tabindex="-1"
+    >
       <!-- Header -->
       <div class="p-4 border-b border-border flex items-center justify-between">
         <h3 class="font-semibold">选择处理模式</h3>
         <button 
           class="h-8 w-8 rounded-md hover:bg-accent flex items-center justify-center"
+          type="button"
+          aria-label="关闭对话框"
           onclick={handleClose}
         >
           ✕
@@ -77,6 +83,7 @@
       <div class="p-4 border-t border-border">
         <button 
           class="w-full h-9 rounded-md border border-input bg-background hover:bg-accent text-sm font-medium"
+          type="button"
           onclick={handleClose}
         >
           取消

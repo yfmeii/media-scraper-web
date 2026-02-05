@@ -35,6 +35,8 @@
   <div class="fixed inset-0 z-50 flex items-center justify-center">
     <button 
       class="absolute inset-0 bg-black/50 backdrop-blur-sm" 
+      type="button"
+      aria-label="关闭确认对话框"
       onclick={handleCancel}
       transition:fade={{ duration: 200 }}
     ></button>
