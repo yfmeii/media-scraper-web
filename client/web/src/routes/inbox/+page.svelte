@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { fade, fly, scale, slide } from 'svelte/transition';
-  import { quintOut } from 'svelte/easing';
+  import { fade, scale, slide, fly } from 'svelte/transition';
+  import { quintOut, cubicOut } from 'svelte/easing';
+  import { flip } from 'svelte/animate';
   import { 
     fetchInboxByDirectory, 
     searchTMDB, 
@@ -14,51 +15,55 @@
     type SearchResult, 
     type DirectoryGroup,
     type PathRecognizeResult,
-    type PreviewItem
+    type PreviewItem,
+    type PreviewAction,
+    type PreviewPlan
   } from '$lib/api';
   import { confirmDialog } from '$lib/stores';
+  import { handleItemClick, toggleAllSelection } from '$lib/selection';
   
-  let directories: DirectoryGroup[] = [];
-  let files: MediaFile[] = [];
-  let allFiles: MediaFile[] = [];
-  let selectedFiles = new Set<string>();
-  let selectedFile: MediaFile | null = null;
-  let loading = true;
-  let filterStatus = 'all';
-  let searchQuery = '';
+  let directories = $state<DirectoryGroup[]>([]);
+  let files = $state<MediaFile[]>([]);
+  let allFiles = $state<MediaFile[]>([]);
+  let selectedFiles = $state(new Set<string>());
+  let selectedFile = $state<MediaFile | null>(null);
+  let loading = $state(true);
+  let filterStatus = $state('all');
+  let searchQuery = $state('');
   
-  let currentDir = '';
+  let currentDir = $state('');
   
   // Match candidates for selected file
-  let matchCandidates: SearchResult[] = [];
-  let selectedCandidate: SearchResult | null = null;
-  let isAutoMatched = false;  // Whether current selection is from auto-match
-  let matchScore = 0;  // Match confidence score
-  let isSearchingTMDB = false;
-  let manualSearchQuery = '';
+  let matchCandidates = $state<SearchResult[]>([]);
+  let selectedCandidate = $state<SearchResult | null>(null);
+  let isAutoMatched = $state(false);  // Whether current selection is from auto-match
+  let matchScore = $state(0);  // Match confidence score
+  let isSearchingTMDB = $state(false);
+  let manualSearchQuery = $state('');
+  let showDetailModal = $state(false);
   
   // Target library path
-  let targetPath = '';
+  let targetPath = $state('');
   
   // 用户可编辑的季数和集数
-  let editSeason = 1;
-  let editEpisode = 1;
+  let editSeason = $state(1);
+  let editEpisode = $state(1);
   
   // Batch operation state
-  let isOperating = false;
-  let operationMessage = '';
-  let batchProgress = { current: 0, total: 0 };
+  let isOperating = $state(false);
+  let operationMessage = $state('');
+  let batchProgress = $state({ current: 0, total: 0 });
   
   // Preview modal
-  let showPreviewModal = false;
-  let previewActions: Array<{ type: string; source?: string; destination: string; willOverwrite: boolean }> = [];
-  let previewSummary: { filesMoving: number; nfoCreating: number; nfoOverwriting: number } | null = null;
-  let isLoadingPreview = false;
+  let showPreviewModal = $state(false);
+  let previewActions = $state<PreviewAction[]>([]);
+  let previewSummary = $state<PreviewPlan['impactSummary'] | null>(null);
+  let isLoadingPreview = $state(false);
   
   // AI 识别状态
-  let isAIRecognizing = false;
-  let aiRecognizeResult: PathRecognizeResult | null = null;
-  let fileStatus = new Map<string, 'processing' | 'success' | 'failed'>();
+  let isAIRecognizing = $state(false);
+  let aiRecognizeResult = $state<PathRecognizeResult | null>(null);
+  let fileStatus = $state(new Map<string, 'processing' | 'success' | 'failed'>());
 
   function setFileStatus(path: string, status: 'processing' | 'success' | 'failed') {
     fileStatus = new Map(fileStatus).set(path, status);
@@ -75,13 +80,13 @@
     }
 
     if (selectedFile?.path === path && selectedFile && !selectedFile.isProcessed) {
-      selectedFile.isProcessed = true;
+      selectedFile = { ...selectedFile, isProcessed: true };
       updated = true;
     }
 
     if (updated) {
-      files = files;
-      allFiles = allFiles;
+      files = [...files];
+      allFiles = [...allFiles];
     }
   }
   
@@ -112,8 +117,7 @@
       }
       
       // Clear selection
-      selectedFiles.clear();
-      selectedFiles = selectedFiles;
+      selectedFiles = new Set();
       selectedFile = null;
       matchCandidates = [];
       selectedCandidate = null;
@@ -134,37 +138,16 @@
       currentDir = dir.path;
       files = dir.files;
     }
-    selectedFiles.clear();
-    selectedFiles = selectedFiles;
+    selectedFiles = new Set();
     selectedFile = null;
+    showDetailModal = false;
   }
   
   function toggleFile(path: string, event: MouseEvent) {
     const isRangeSelect = event.shiftKey && selectedFiles.size > 0;
     const isToggleSelect = event.ctrlKey || event.metaKey;
-    const nextSelected = new Set(selectedFiles);
-
-    if (isRangeSelect) {
-      // Shift-click: select range
-      const paths = files.map(f => f.path);
-      const lastSelected = Array.from(nextSelected).pop()!;
-      const lastIdx = paths.indexOf(lastSelected);
-      const currentIdx = paths.indexOf(path);
-      const [start, end] = lastIdx < currentIdx ? [lastIdx, currentIdx] : [currentIdx, lastIdx];
-      for (let i = start; i <= end; i++) {
-        nextSelected.add(paths[i]);
-      }
-    } else if (isToggleSelect) {
-      // Ctrl-click: toggle single
-      if (nextSelected.has(path)) nextSelected.delete(path);
-      else nextSelected.add(path);
-    } else {
-      // Normal click: select single
-      nextSelected.clear();
-      nextSelected.add(path);
-    }
-
-    selectedFiles = nextSelected;
+    
+    selectedFiles = handleItemClick(path, event, selectedFiles, files, f => f.path);
 
     if (isRangeSelect || isToggleSelect) return;
 
@@ -182,6 +165,7 @@
     isAutoMatched = false;
     matchScore = 0;
     fileStatus = new Map();
+    showDetailModal = true;
 
     if (file.kind !== 'unknown') {
       manualSearchType = file.kind;
@@ -250,13 +234,11 @@
   }
   
   function toggleAll() {
-    if (selectedFiles.size === files.length) selectedFiles.clear();
-    else files.forEach(f => selectedFiles.add(f.path));
-    selectedFiles = selectedFiles;
+    selectedFiles = toggleAllSelection(selectedFiles, filteredFiles, f => f.path);
   }
   
   // 手动选择的搜索类型（tv 或 movie）
-  let manualSearchType: 'tv' | 'movie' = 'tv';
+  let manualSearchType = $state<'tv' | 'movie'>('tv');
   
   async function handleManualSearch() {
     if (!manualSearchQuery.trim() || !selectedFile) return;
@@ -390,7 +372,7 @@
           failCount++;
           setFileStatus(file.path, 'failed');
           batchProgress.current++;
-          batchProgress = batchProgress;
+          batchProgress = { ...batchProgress };
           continue;
         }
         
@@ -426,7 +408,7 @@
       }
       
       batchProgress.current++;
-      batchProgress = batchProgress;
+      batchProgress = { ...batchProgress };
     }
     
     operationMessage = `完成: ${successCount} 成功 (${tvCount} 剧集, ${movieCount} 电影), ${failCount} 失败`;
@@ -435,8 +417,7 @@
     setTimeout(() => {
       isOperating = false;
       operationMessage = '';
-      selectedFiles.clear();
-      selectedFiles = selectedFiles;
+      selectedFiles = new Set();
     }, 3000);
   }
   
@@ -444,11 +425,12 @@
   async function batchAIRecognizeAndProcess() {
     if (selectedFiles.size === 0) return;
     
-    showConfirm(
-      '一键 AI 识别入库',
-      `确定对 ${selectedFiles.size} 个文件进行 AI 识别入库？\n\n🤖 AI 将自动判断每个文件是电影还是剧集\n\n⚠️ 此操作将移动文件到媒体库`,
-      executeBatchAIRecognize
-    );
+    confirmDialog.show({
+      title: '一键 AI 识别入库',
+      message: `确定对 ${selectedFiles.size} 个文件进行 AI 识别入库？\n\n🤖 AI 将自动判断每个文件是电影还是剧集\n\n⚠️ 此操作将移动文件到媒体库`,
+      onConfirm: executeBatchAIRecognize,
+      confirmVariant: 'destructive',
+    });
   }
   
   async function executeBatchAIRecognize() {
@@ -473,7 +455,7 @@
           failCount++;
           setFileStatus(file.path, 'failed');
           batchProgress.current++;
-          batchProgress = batchProgress;
+          batchProgress = { ...batchProgress };
           continue;
         }
         
@@ -511,7 +493,7 @@
       }
       
       batchProgress.current++;
-      batchProgress = batchProgress;
+      batchProgress = { ...batchProgress };
     }
     
     operationMessage = `完成: ${successCount} 成功 (${tvCount} 剧集, ${movieCount} 电影), ${failCount} 失败`;
@@ -520,8 +502,7 @@
     setTimeout(() => {
       isOperating = false;
       operationMessage = '';
-      selectedFiles.clear();
-      selectedFiles = selectedFiles;
+      selectedFiles = new Set();
     }, 3000);  // 延长显示时间以便用户看到统计
   }
   
@@ -618,17 +599,21 @@
   }
   
   // 当类型选择器改变时，更新预计路径
-  $: if (manualSearchType && selectedCandidate) {
-    updateTargetPath();
-  }
-  
-  $: filteredFiles = files.filter(f => {
-    if (filterStatus === 'processed' && !f.isProcessed) return false;
-    if (filterStatus === 'unprocessed' && f.isProcessed) return false;
-    // 搜索时使用相对路径
-    if (searchQuery && !f.relativePath.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-    return true;
+  $effect(() => {
+    if (manualSearchType && selectedCandidate) {
+      updateTargetPath();
+    }
   });
+  
+  const filteredFiles = $derived.by(() => (
+    files.filter(f => {
+      if (filterStatus === 'processed' && !f.isProcessed) return false;
+      if (filterStatus === 'unprocessed' && f.isProcessed) return false;
+      // 搜索时使用相对路径
+      if (searchQuery && !f.relativePath.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+      return true;
+    })
+  ));
 </script>
 
 <div class="container mx-auto px-4 py-4">
@@ -640,14 +625,18 @@
     </div>
     <div class="flex-1 overflow-y-auto">
       {#if loading}
-        <div class="p-4 text-center text-muted-foreground text-sm">加载中...</div>
+        <div class="p-2 space-y-2">
+          {#each Array(8) as _}
+            <div class="h-8 rounded-md bg-muted/40 animate-pulse"></div>
+          {/each}
+        </div>
       {:else if directories.length === 0}
         <div class="p-4 text-center text-muted-foreground text-sm">暂无文件</div>
       {:else}
         <!-- All files option -->
         <button 
           class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-accent/50 {currentDir === '' ? 'bg-accent/30 border-l-2 border-l-primary' : ''}"
-          on:click={() => selectDirectory(null)}
+          onclick={() => selectDirectory(null)}
         >
           <svg class="h-4 w-4 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M3 12h18"/><path d="M3 18h18"/></svg>
           <span class="flex-1">全部</span>
@@ -657,7 +646,7 @@
         {#each directories as dir}
           <button 
             class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-accent/50 {currentDir === dir.path ? 'bg-accent/30 border-l-2 border-l-primary' : ''}"
-            on:click={() => selectDirectory(dir)}
+            onclick={() => selectDirectory(dir)}
           >
             <svg class="h-4 w-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
             <span class="flex-1 truncate">{dir.name}</span>
@@ -685,19 +674,27 @@
           <input type="text" class="h-8 w-32 rounded-md border border-input bg-background px-2 text-xs" bind:value={searchQuery} />
           <button 
             class="inline-flex items-center justify-center rounded-md text-xs font-medium h-8 px-3 border border-input bg-background hover:bg-accent"
-            on:click={loadData}
+            onclick={loadData}
           >
             刷新
           </button>
         </div>
       </div>
       
-      <div class="flex-1 overflow-y-auto">
-        <table class="w-full text-sm">
+      <div class="flex-1 overflow-y-auto custom-scrollbar">
+        {#if loading}
+          <div class="p-4 space-y-3">
+             <div class="h-8 bg-muted/40 rounded animate-pulse w-full"></div>
+             {#each Array(10) as _}
+               <div class="h-12 bg-muted/30 rounded animate-pulse w-full border-b border-border/50"></div>
+             {/each}
+          </div>
+        {:else}
+          <table class="w-full text-sm">
           <thead class="sticky top-0 bg-card border-b border-border">
             <tr>
               <th class="w-10 p-2 text-left">
-                <input type="checkbox" class="h-4 w-4 rounded border-input accent-primary" checked={selectedFiles.size === filteredFiles.length && filteredFiles.length > 0} on:change={toggleAll} />
+                <input type="checkbox" class="h-4 w-4 rounded border-input accent-primary" checked={selectedFiles.size === filteredFiles.length && filteredFiles.length > 0} onchange={toggleAll} />
               </th>
               <th class="p-2 text-left font-medium text-muted-foreground text-xs">文件名</th>
               <th class="p-2 text-left font-medium text-muted-foreground text-xs">解析结果</th>
@@ -705,26 +702,26 @@
             </tr>
           </thead>
           <tbody>
-            {#each filteredFiles as file}
+            {#each filteredFiles as file (file.path)}
               <tr 
-                class="border-b border-border hover:bg-accent/50 cursor-pointer {selectedFiles.has(file.path) ? 'bg-accent/30 border-l-2 border-l-primary' : ''}"
-                on:click={(e) => toggleFile(file.path, e)}
-                on:dblclick={() => handleDoubleClick(file)}
+                class="border-b border-border hover:bg-accent/50 cursor-pointer {selectedFiles.has(file.path) ? 'bg-accent/30 border-l-2 border-l-primary' : 'border-l-2 border-l-transparent'} transition-all duration-200 active:scale-[0.995]"
+                onclick={(e) => toggleFile(file.path, e)}
+                ondblclick={() => handleDoubleClick(file)}
+                animate:flip={{ duration: 300, easing: quintOut }}
+                in:fly={{ y: 20, duration: 300, easing: cubicOut }}
               >
-                <td class="p-2">
-                  <input 
-                    type="checkbox" 
-                    class="h-4 w-4 rounded border-input accent-primary" 
-                    checked={selectedFiles.has(file.path)} 
-                    on:click|stopPropagation={() => {
-                      if (selectedFiles.has(file.path)) {
-                        selectedFiles.delete(file.path);
-                      } else {
-                        selectedFiles.add(file.path);
-                      }
-                      selectedFiles = selectedFiles;
-                    }}
-                  />
+                <td class="p-2 w-10 text-center" onclick={(e) => e.stopPropagation()}>
+                  <label class="flex items-center justify-center w-full h-full p-1 -m-1 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      class="h-4 w-4 rounded border-input accent-primary transition-all duration-200 cursor-pointer" 
+                      checked={selectedFiles.has(file.path)}
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        toggleFile(file.path, e);
+                      }}
+                    />
+                  </label>
                 </td>
                 <td class="p-2">
                   <div class="flex items-center gap-2">
@@ -759,16 +756,16 @@
                 </td>
                 <td class="p-2">
                   {#if fileStatus.get(file.path) === 'processing'}
-                    <span class="inline-flex items-center gap-1 rounded border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] text-primary">
+                    <span class="inline-flex items-center gap-1 rounded border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] text-primary" in:scale>
                       <svg class="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
                       处理中
                     </span>
                   {:else if fileStatus.get(file.path) === 'failed'}
-                    <span class="inline-flex items-center gap-1 rounded border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] text-red-500">
+                    <span class="inline-flex items-center gap-1 rounded border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] text-red-500" in:scale>
                       失败
                     </span>
                   {:else if fileStatus.get(file.path) === 'success' || file.isProcessed}
-                    <span class="inline-flex items-center gap-1 rounded border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-[10px] text-green-500">
+                    <span class="inline-flex items-center gap-1 rounded border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-[10px] text-green-500" in:scale>
                       已处理
                     </span>
                   {:else}
@@ -781,6 +778,7 @@
             {/each}
           </tbody>
         </table>
+      {/if}
       </div>
       
     </div>
@@ -804,7 +802,7 @@
           <button 
             class="inline-flex items-center justify-center rounded-md text-xs font-medium h-8 px-3 border border-border bg-background hover:bg-muted disabled:opacity-50" 
             disabled={selectedFiles.size === 0 || isOperating} 
-            on:click={batchAutoMatchAndProcess}
+            onclick={batchAutoMatchAndProcess}
           >
             📂 一键匹配入库
           </button>
@@ -813,233 +811,320 @@
           <button 
             class="inline-flex items-center justify-center rounded-md text-xs font-medium h-8 px-3 bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50" 
             disabled={selectedFiles.size === 0 || isOperating} 
-            on:click={batchAIRecognizeAndProcess}
+            onclick={batchAIRecognizeAndProcess}
           >
             🤖 一键 AI 识别入库
           </button>
         {/if}
       </div>
       
-      <!-- Details Panel (slides in/out for single selection only) -->
-      {#if selectedFiles.size === 1}
-        <div 
-          class="border-t border-border/50 h-64 p-4 overflow-y-auto"
-          transition:slide={{ duration: 200 }}
-        >
-          <h3 class="mb-3 text-sm font-medium">选中文件详情 / 匹配结果</h3>
-      {#if selectedFile}
-        <div class="space-y-4 text-xs">
-          <!-- Parsed Info -->
-          <div>
-            <div class="text-muted-foreground mb-1">解析:</div>
-            <div class="flex flex-wrap gap-x-4 gap-y-1 font-mono">
-              <span>标题=<span class="text-foreground">{selectedFile.parsed.title || '?'}</span></span>
-              <span>年份=<span class="text-foreground">{selectedFile.parsed.year || '?'}</span></span>
-              <span>季=<span class="text-foreground">{selectedFile.parsed.season ?? '?'}</span></span>
-              <span>集=<span class="text-foreground">{selectedFile.parsed.episode ?? '?'}</span></span>
-              <span>分辨率=<span class="text-foreground">{selectedFile.parsed.resolution || '?'}</span></span>
-              <span>编码=<span class="text-foreground">{selectedFile.parsed.codec || '?'}</span></span>
-            </div>
-          </div>
-          
-          <!-- Auto Match -->
-          <div>
-            <div class="flex items-center gap-2 mb-2">
-              <span class="text-muted-foreground">自动匹配:</span>
-              {#if isSearchingTMDB}
-                <svg class="h-4 w-4 animate-spin text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-                <span class="text-muted-foreground">搜索中...</span>
-              {:else if selectedCandidate}
-                <span class="font-medium">{selectedCandidate.name || selectedCandidate.title}</span>
-                {#if isAutoMatched}
-                  <span class="text-muted-foreground">置信度: {(matchScore * 100).toFixed(0)}%</span>
-                  <span class="inline-flex items-center gap-1 text-[10px] border border-green-500/50 text-green-500 rounded px-1">
-                    <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>
-                    自动匹配
-                  </span>
-                {/if}
-              {:else}
-                <span class="text-muted-foreground">未找到匹配</span>
-              {/if}
-              <button 
-                class="ml-auto inline-flex items-center justify-center rounded-md text-[10px] font-medium h-6 px-2 border border-input bg-background hover:bg-accent disabled:opacity-50"
-                disabled={isAIRecognizing}
-                on:click={handleAIRecognize}
-              >
-                {#if isAIRecognizing}
-                  <svg class="h-3 w-3 animate-spin mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-                  AI识别中...
-                {:else}
-                  🤖 AI识别
-                {/if}
-              </button>
-              <button 
-                class="inline-flex items-center justify-center rounded-md text-[10px] font-medium h-6 px-2 border border-input bg-background hover:bg-accent"
-                on:click={() => manualSearchQuery = selectedFile?.parsed.title || ''}
-              >
-                手动搜索
-              </button>
-            </div>
-            
-            <!-- AI 识别结果 -->
-            {#if aiRecognizeResult}
-              <div class="rounded-md bg-green-500/10 border border-green-500/20 p-2 text-xs">
-                <div class="flex items-center gap-2 mb-1">
-                  <span class="font-medium text-green-600">AI 识别结果</span>
-                  <span class="px-1.5 py-0.5 rounded text-[10px] {aiRecognizeResult.media_type === 'movie' ? 'bg-purple-500/20 text-purple-600' : 'bg-blue-500/20 text-blue-600'}">
-                    {aiRecognizeResult.media_type === 'movie' ? '电影' : '剧集'}
-                  </span>
-                  <span class="text-muted-foreground">(置信度: {(aiRecognizeResult.confidence * 100).toFixed(0)}%)</span>
-                </div>
-                <div class="space-y-0.5 text-muted-foreground">
-                  <div>标题: <span class="text-foreground">{aiRecognizeResult.title}</span></div>
-                  {#if aiRecognizeResult.media_type === 'tv'}
-                    {#if aiRecognizeResult.season !== null}
-                      <div>季: <span class="text-foreground">{aiRecognizeResult.season}</span></div>
-                    {/if}
-                    {#if aiRecognizeResult.episode !== null}
-                      <div>集: <span class="text-foreground">{aiRecognizeResult.episode}</span></div>
-                    {/if}
-                  {:else}
-                    {#if aiRecognizeResult.year !== null}
-                      <div>年份: <span class="text-foreground">{aiRecognizeResult.year}</span></div>
-                    {/if}
-                  {/if}
-                  {#if aiRecognizeResult.tmdb_name}
-                    <div>TMDB: <span class="text-foreground">{aiRecognizeResult.tmdb_name}</span> (#{aiRecognizeResult.tmdb_id})</div>
-                  {/if}
-                  <div class="text-[10px] opacity-70">{aiRecognizeResult.reason}</div>
-                </div>
-              </div>
-            {/if}
-            
-            <!-- Manual Search -->
-            {#if manualSearchQuery !== ''}
-              <div class="flex gap-2 mb-2">
-                <select 
-                  class="h-7 rounded-md border border-input bg-background px-2 text-xs"
-                  bind:value={manualSearchType}
-                >
-                  <option value="tv">剧集</option>
-                  <option value="movie">电影</option>
-                </select>
-                <input 
-                  type="text" 
-                  class="flex-1 h-7 rounded-md border border-input bg-background px-2 text-xs" 
-                  bind:value={manualSearchQuery}
-                  placeholder="输入搜索关键词"
-                />
-                <button 
-                  class="inline-flex items-center justify-center rounded-md text-[10px] font-medium h-7 px-3 bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
-                  on:click={handleManualSearch}
-                  disabled={isSearchingTMDB}
-                >
-                  {isSearchingTMDB ? '搜索中...' : '搜索'}
-                </button>
-              </div>
-            {/if}
-            
-            <!-- Candidate List -->
-            <div class="text-muted-foreground mb-1">候选列表:</div>
-            <div class="space-y-1">
-              {#each matchCandidates as candidate}
-                <button 
-                  class="w-full flex items-center gap-3 p-2 rounded border border-border hover:bg-accent/50 text-left {selectedCandidate?.id === candidate.id ? 'border-primary bg-accent/30' : ''}"
-                  on:click={() => selectCandidate(candidate)}
-                >
-                  {#if candidate.posterPath}
-                    <img src={candidate.posterPath} alt="{candidate.name || candidate.title}" class="w-8 h-12 object-cover rounded shrink-0" />
-                  {:else}
-                    <div class="w-8 h-12 bg-muted rounded flex items-center justify-center shrink-0">
-                      <svg class="h-4 w-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>
-                    </div>
-                  {/if}
-                  <span class="px-1.5 py-0.5 rounded text-[10px] shrink-0 {manualSearchType === 'movie' ? 'bg-purple-500/20 text-purple-600' : 'bg-blue-500/20 text-blue-600'}">
-                    {manualSearchType === 'movie' ? '电影' : '剧集'}
-                  </span>
-                  <span class="flex-1 truncate">{candidate.name || candidate.title}{#if manualSearchType === 'movie' && (candidate.releaseDate || candidate.firstAirDate)} ({candidate.releaseDate?.slice(0, 4) || candidate.firstAirDate?.slice(0, 4)}){/if}</span>
-                  <span class="text-muted-foreground shrink-0">#{candidate.id}</span>
-                </button>
-              {/each}
-            </div>
-          </div>
-          
-          <!-- Season/Episode Edit (only for TV) -->
-          {#if manualSearchType === 'tv'}
-          <div>
-            <div class="text-muted-foreground mb-1">季/集设置:</div>
-            <div class="flex gap-4 items-center">
-              <label class="flex items-center gap-2">
-                <span>季</span>
-                <input 
-                  type="number" 
-                  min="1"
-                  class="w-16 h-7 rounded-md border border-input bg-background px-2 text-xs text-center"
-                  bind:value={editSeason}
-                  on:change={updateTargetPath}
-                />
-              </label>
-              <label class="flex items-center gap-2">
-                <span>集</span>
-                <input 
-                  type="number" 
-                  min="1"
-                  class="w-20 h-7 rounded-md border border-input bg-background px-2 text-xs text-center"
-                  bind:value={editEpisode}
-                />
-              </label>
-            </div>
-          </div>
-          {/if}
-          
-          <!-- Target Path -->
-          <div>
-            <div class="text-muted-foreground mb-1">入库目标:</div>
-            <div class="flex gap-2">
-              <input 
-                type="text" 
-                class="flex-1 h-7 rounded-md border border-input bg-background px-2 text-xs"
-                bind:value={targetPath}
-                readonly
-              />
-              <button 
-                class="inline-flex items-center justify-center rounded-md text-[10px] font-medium h-7 px-2 border border-input bg-background hover:bg-accent disabled:opacity-50"
-                disabled={!selectedCandidate}
-                on:click={showPreview}
-              >
-                预览移动计划
-              </button>
-            </div>
-          </div>
-          
-          <!-- Action Button -->
-          <div class="pt-2">
-            <button 
-              class="w-full inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
-              disabled={!selectedCandidate || isOperating}
-              on:click={processSingleFile}
-            >
-              {#if isOperating}
-                <svg class="h-4 w-4 animate-spin mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-                处理中...
-              {:else}
-                立即入库
-              {/if}
-            </button>
-          </div>
-        </div>
-        {:else}
-          <div class="text-center py-8 text-muted-foreground text-sm">
-            <p>选择一个文件查看详情</p>
-            <p class="text-xs mt-1">单击选择，双击打开详情，Shift/Ctrl 多选</p>
-          </div>
-        {/if}
-        </div>
-      {/if}
     </div>
   </div>
   </div>
 </div>
+
+<!-- Details Modal -->
+{#if showDetailModal && selectedFile}
+  <div 
+    class="fixed inset-0 z-50 flex items-center justify-center"
+    transition:fade={{ duration: 200 }}
+  >
+    <button
+      type="button"
+      class="absolute inset-0 bg-black/50 backdrop-blur-sm"
+      aria-label="关闭详情"
+      onclick={() => { showDetailModal = false; }}
+    ></button>
+    <div 
+      class="relative bg-card w-full max-w-4xl max-h-[85vh] rounded-xl shadow-2xl overflow-hidden flex flex-col border border-border ring-1 ring-white/10"
+      transition:scale={{ duration: 250, start: 0.96, easing: quintOut }}
+    >
+       <!-- Header -->
+       <div class="flex items-center justify-between px-5 py-3 border-b border-border bg-muted/30">
+          <h3 class="text-base font-semibold flex items-center gap-2">
+            <div class="p-1.5 rounded-md bg-primary/10 text-primary">
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+            </div>
+            <span>文件入库详情</span>
+          </h3>
+          <button 
+            type="button"
+            class="h-8 w-8 rounded-full hover:bg-accent flex items-center justify-center transition-colors text-muted-foreground hover:text-foreground"
+            aria-label="关闭详情"
+            onclick={() => showDetailModal = false}
+          >
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 15-6-6-6 6"/></svg>
+          </button>
+       </div>
+
+       <!-- Content (Two Columns) -->
+       <div class="flex-1 overflow-hidden flex">
+          {#if selectedFile}
+            <!-- Left Panel: File Info & Actions -->
+            <div class="w-[320px] flex flex-col border-r border-border bg-muted/10 p-5 gap-6 overflow-y-auto custom-scrollbar">
+              
+              <!-- File Info -->
+              <div class="space-y-3">
+                <div class="text-xs font-medium text-muted-foreground uppercase tracking-wider">原始文件</div>
+                <div class="p-3 rounded-lg bg-card border border-border shadow-sm space-y-2">
+                  <div class="font-medium text-sm break-all leading-snug" title={selectedFile.name}>
+                    {selectedFile.name}
+                  </div>
+                  <div class="flex flex-wrap gap-1.5">
+                    {#if selectedFile.kind !== 'unknown'}
+                      <span class="px-1.5 py-0.5 rounded-md bg-primary/10 text-[10px] text-primary font-medium border border-primary/20 uppercase">{selectedFile.kind}</span>
+                    {/if}
+                    {#if selectedFile.parsed.resolution}
+                      <span class="px-1.5 py-0.5 rounded-md bg-muted text-[10px] text-muted-foreground border border-border">{selectedFile.parsed.resolution}</span>
+                    {/if}
+                    {#if selectedFile.parsed.codec}
+                      <span class="px-1.5 py-0.5 rounded-md bg-muted text-[10px] text-muted-foreground border border-border">{selectedFile.parsed.codec}</span>
+                    {/if}
+                    {#if selectedFile.parsed.year}
+                      <span class="px-1.5 py-0.5 rounded-md bg-muted text-[10px] text-muted-foreground border border-border">{selectedFile.parsed.year}</span>
+                    {/if}
+                    {#if selectedFile.parsed.season !== undefined}
+                      <span class="px-1.5 py-0.5 rounded-md bg-blue-500/10 text-blue-500 text-[10px] border border-blue-500/20 font-medium">S{String(selectedFile.parsed.season).padStart(2, '0')}</span>
+                    {/if}
+                    {#if selectedFile.parsed.episode !== undefined}
+                      <span class="px-1.5 py-0.5 rounded-md bg-blue-500/10 text-blue-500 text-[10px] border border-blue-500/20 font-medium">E{String(selectedFile.parsed.episode).padStart(2, '0')}</span>
+                    {/if}
+                  </div>
+                </div>
+              </div>
+
+              <!-- Target Preview -->
+              <div class="flex-1 flex flex-col min-h-0 space-y-2">
+                 <div class="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center justify-between">
+                    <span>入库预览</span>
+                    {#if selectedCandidate}
+                      <span class="text-[10px] text-green-500 flex items-center gap-1">
+                        <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                        已匹配
+                      </span>
+                    {/if}
+                 </div>
+                 <div class="p-3 rounded-lg bg-muted/30 border border-border text-xs font-mono break-all flex-1 relative group">
+                    {#if targetPath}
+                      <div class="text-foreground leading-relaxed">{targetPath}</div>
+                    {:else}
+                      <div class="absolute inset-0 flex items-center justify-center text-muted-foreground/50 italic text-center px-4">
+                        请在右侧选择匹配结果
+                      </div>
+                    {/if}
+                 </div>
+              </div>
+
+              <!-- Primary Actions -->
+              <div class="grid grid-cols-2 gap-3 mt-auto pt-2">
+                 <button 
+                  class="inline-flex items-center justify-center rounded-lg text-xs font-medium h-10 px-3 border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-all active:scale-[0.98]"
+                  disabled={!selectedCandidate}
+                  onclick={showPreview}
+                >
+                  预览计划
+                </button>
+                <button 
+                  class="inline-flex items-center justify-center rounded-lg text-xs font-medium h-10 px-3 bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98] shadow-sm"
+                  disabled={!selectedCandidate || isOperating}
+                  onclick={processSingleFile}
+                >
+                  {#if isOperating}
+                    <svg class="h-3.5 w-3.5 animate-spin mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                    处理中...
+                  {:else}
+                    立即入库
+                  {/if}
+                </button>
+              </div>
+            </div>
+
+            <!-- Right Panel: Search & Candidates -->
+            <div class="flex-1 flex flex-col min-w-0 bg-background">
+              
+              <!-- Search Toolbar -->
+              <div class="p-4 border-b border-border space-y-3 bg-card/50">
+                 <!-- Search Input Group -->
+                 <div class="flex gap-2">
+                    <div class="relative flex-1 group">
+                       <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                         <svg class="h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                       </div>
+                       <input 
+                         type="text" 
+                         class="w-full h-10 rounded-lg border border-input bg-background pl-9 pr-24 text-sm focus:ring-2 focus:ring-primary/20 transition-all" 
+                         bind:value={manualSearchQuery}
+                         placeholder="搜索电影或剧集..."
+                         onkeydown={(e) => e.key === 'Enter' && handleManualSearch()}
+                       />
+                       <div class="absolute inset-y-0 right-0 flex items-center pr-1">
+                          <select 
+                           class="h-8 bg-muted/50 border-none rounded text-xs text-muted-foreground focus:ring-0 cursor-pointer px-2 hover:bg-muted hover:text-foreground transition-colors outline-none"
+                           bind:value={manualSearchType}
+                         >
+                           <option value="tv">剧集</option>
+                           <option value="movie">电影</option>
+                         </select>
+                       </div>
+                    </div>
+                    
+                    <button 
+                       class="h-10 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-all active:scale-[0.98] shadow-sm"
+                       onclick={handleManualSearch}
+                       disabled={isSearchingTMDB}
+                     >
+                       {isSearchingTMDB ? '...' : '搜索'}
+                    </button>
+                 </div>
+
+                 <!-- AI Button & Season Editor Row -->
+                 <div class="flex items-center justify-between gap-4">
+                    <button 
+                      class="h-8 px-3 rounded-md bg-purple-500/10 text-purple-600 border border-purple-500/20 text-xs font-medium hover:bg-purple-500/20 transition-all active:scale-[0.98] flex items-center gap-1.5"
+                      disabled={isAIRecognizing}
+                      onclick={handleAIRecognize}
+                    >
+                      {#if isAIRecognizing}
+                        <svg class="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                      {:else}
+                        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"/></svg>
+                      {/if}
+                      AI 智能识别
+                    </button>
+
+                    {#if manualSearchType === 'tv'}
+                      <div class="flex items-center gap-3 text-xs bg-muted/30 px-3 py-1.5 rounded-md border border-border/50">
+                        <span class="text-muted-foreground font-medium">手动修正:</span>
+                        <div class="flex items-center gap-2">
+                          <label class="flex items-center gap-1.5 cursor-pointer hover:text-foreground transition-colors">
+                            <span>第</span>
+                            <input 
+                              type="number" min="1"
+                              class="w-10 h-6 rounded border border-input bg-background text-center focus:ring-1 focus:ring-primary text-xs"
+                              bind:value={editSeason}
+                              onchange={updateTargetPath}
+                            />
+                            <span>季</span>
+                          </label>
+                          <span class="text-border">|</span>
+                          <label class="flex items-center gap-1.5 cursor-pointer hover:text-foreground transition-colors">
+                            <span>第</span>
+                            <input 
+                              type="number" min="1"
+                              class="w-10 h-6 rounded border border-input bg-background text-center focus:ring-1 focus:ring-primary text-xs"
+                              bind:value={editEpisode}
+                            />
+                            <span>集</span>
+                          </label>
+                        </div>
+                      </div>
+                    {/if}
+                 </div>
+              </div>
+
+              <!-- AI Result Banner -->
+              {#if aiRecognizeResult}
+                <div class="px-4 pt-4">
+                  <div class="flex items-start gap-3 p-3 rounded-lg bg-green-500/5 border border-green-500/20 text-xs animate-in slide-in-from-top-2 duration-300">
+                    <div class="p-1 rounded-full bg-green-500/10 text-green-600 mt-0.5">
+                      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-center justify-between mb-1">
+                        <span class="font-medium text-foreground">AI 推荐结果</span>
+                        <span class="text-[10px] text-green-600/80 font-medium">{(aiRecognizeResult.confidence * 100).toFixed(0)}% 置信度</span>
+                      </div>
+                      <div class="text-muted-foreground truncate">
+                         {aiRecognizeResult.title} 
+                         {#if aiRecognizeResult.season}S{String(aiRecognizeResult.season).padStart(2, '0')}{/if}
+                         {#if aiRecognizeResult.episode}E{String(aiRecognizeResult.episode).padStart(2, '0')}{/if}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              {/if}
+
+              <!-- Candidates Grid -->
+              <div class="flex-1 overflow-y-auto custom-scrollbar p-4 min-h-0">
+                {#if matchCandidates.length > 0}
+                  <div class="grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-4 content-start">
+                    {#each matchCandidates as candidate}
+                      <button 
+                        class="group relative flex flex-col gap-2 p-2 rounded-xl border text-left transition-all hover:shadow-md active:scale-[0.98] {selectedCandidate?.id === candidate.id ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-border hover:border-primary/50 hover:bg-accent/30'}"
+                        onclick={() => selectCandidate(candidate)}
+                      >
+                         <!-- Selection Indicator -->
+                         {#if selectedCandidate?.id === candidate.id}
+                           <div class="absolute -top-1.5 -right-1.5 z-10 w-5 h-5 bg-primary text-primary-foreground rounded-full flex items-center justify-center shadow-sm">
+                             <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>
+                           </div>
+                         {/if}
+
+                         <div class="aspect-[2/3] w-full bg-muted rounded-lg overflow-hidden relative shadow-sm">
+                            {#if candidate.posterPath}
+                              <img src={candidate.posterPath} alt={candidate.name} class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                            {:else}
+                              <div class="w-full h-full flex flex-col items-center justify-center text-muted-foreground gap-2 p-2 text-center">
+                                <svg class="h-8 w-8 opacity-20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+                                <span class="text-[10px] opacity-50">无海报</span>
+                              </div>
+                            {/if}
+                            
+                            <!-- Type Badge -->
+                            <div class="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/60 text-[8px] text-white font-medium backdrop-blur-sm shadow-sm">
+                              {manualSearchType === 'movie' ? '电影' : '剧集'}
+                            </div>
+
+                            <!-- Year Badge -->
+                            {#if candidate.releaseDate || candidate.firstAirDate}
+                              <div class="absolute bottom-0 left-0 right-0 p-1.5 bg-gradient-to-t from-black/80 to-transparent">
+                                <div class="text-[10px] text-white font-medium text-center">
+                                  {candidate.releaseDate?.slice(0, 4) || candidate.firstAirDate?.slice(0, 4)}
+                                </div>
+                              </div>
+                            {/if}
+                         </div>
+                         <div class="space-y-1 px-1 pb-1">
+                            <div class="font-medium text-xs leading-tight line-clamp-2" title={candidate.name || candidate.title}>
+                              {candidate.name || candidate.title}
+                            </div>
+                            <div class="text-[10px] text-muted-foreground font-mono opacity-70">
+                              ID: {candidate.id}
+                            </div>
+                         </div>
+                      </button>
+                    {/each}
+                  </div>
+                {:else if manualSearchQuery}
+                  <div class="h-full flex flex-col items-center justify-center text-muted-foreground space-y-3 opacity-60">
+                     <div class="p-4 rounded-full bg-muted/50">
+                        <svg class="h-8 w-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M11 8v6M8 11h6"/></svg>
+                     </div>
+                     <span class="text-sm">未找到相关结果</span>
+                  </div>
+                {:else}
+                  <div class="h-full flex flex-col items-center justify-center text-muted-foreground space-y-3 opacity-40">
+                     <div class="p-4 rounded-full bg-muted/50">
+                       <svg class="h-10 w-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                     </div>
+                     <div class="text-center space-y-1">
+                       <span class="text-sm block">输入关键词开始搜索</span>
+                       <span class="text-xs block">或使用 AI 智能识别</span>
+                     </div>
+                  </div>
+                {/if}
+              </div>
+
+            </div>
+          {:else}
+             <div class="h-full flex items-center justify-center text-muted-foreground text-sm flex-col py-12">
+                <p>请选择一个文件</p>
+             </div>
+          {/if}
+       </div>
+    </div>
+  </div>
+{/if}
 
 <!-- Preview Modal -->
 {#if showPreviewModal}
@@ -1108,14 +1193,14 @@
       <div class="flex justify-end gap-2 pt-4 border-t border-border">
         <button 
           class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 border border-input bg-background hover:bg-accent"
-          on:click={() => showPreviewModal = false}
+          onclick={() => showPreviewModal = false}
         >
           关闭
         </button>
         <button 
           class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
           disabled={previewActions.length === 0 || isLoadingPreview}
-          on:click={() => { showPreviewModal = false; processSingleFile(); }}
+          onclick={() => { showPreviewModal = false; processSingleFile(); }}
         >
           确认执行
         </button>

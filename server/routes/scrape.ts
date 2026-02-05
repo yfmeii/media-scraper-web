@@ -1,12 +1,10 @@
 import { Hono } from 'hono';
-import { searchTV, searchMovie, findBestMatch, getTVDetails, getMovieDetails, getPosterUrl } from '../lib/tmdb';
+import { DEFAULT_LANGUAGE } from '@media-scraper/shared';
+import { searchTV, searchMovie, findBestMatch, getPosterUrl } from '../lib/tmdb';
 import { recognizePath } from '../lib/dify';
-import { processTVShow, processMovie, refreshMetadata, supplementTVShow, fixMissingAssets, generatePreviewPlan } from '../lib/scraper';
-import { parseFilename, detectSupplementFiles, extractTmdbIdFromNfo } from '../lib/scanner';
-import { createTask, updateTask, addTaskLog, startTask, completeTask, calculateBatchProgress, type ScrapePlan } from '../lib/tasks';
+import { processTVShow, processMovie, refreshMetadata, generatePreviewPlan } from '../lib/scraper';
+import { parseFilename } from '../lib/scanner';
 import { MEDIA_PATHS } from '../lib/config';
-import { join } from 'path';
-import { emitProgress } from '../lib/progress';
 
 export const scrapeRoutes = new Hono();
 
@@ -14,7 +12,7 @@ export const scrapeRoutes = new Hono();
 scrapeRoutes.get('/search/tv', async (c) => {
   const query = c.req.query('q');
   const year = c.req.query('year');
-  const language = c.req.query('language') || 'zh-CN';
+  const language = c.req.query('language') || DEFAULT_LANGUAGE;
   
   if (!query) {
     return c.json({ success: false, error: 'Missing query parameter' }, 400);
@@ -39,7 +37,7 @@ scrapeRoutes.get('/search/tv', async (c) => {
 scrapeRoutes.get('/search/movie', async (c) => {
   const query = c.req.query('q');
   const year = c.req.query('year');
-  const language = c.req.query('language') || 'zh-CN';
+  const language = c.req.query('language') || DEFAULT_LANGUAGE;
   
   if (!query) {
     return c.json({ success: false, error: 'Missing query parameter' }, 400);
@@ -92,7 +90,7 @@ scrapeRoutes.post('/recognize', async (c) => {
 // Auto-match a file
 scrapeRoutes.post('/match', async (c) => {
   const body = await c.req.json();
-  const { path, kind, title, year, language = 'zh-CN' } = body;
+  const { path, kind, title, year, language = DEFAULT_LANGUAGE } = body;
   
   if (!path || !kind) {
     return c.json({ success: false, error: 'Missing path or kind' }, 400);
@@ -152,7 +150,7 @@ scrapeRoutes.post('/match', async (c) => {
 // Process TV show (move and scrape)
 scrapeRoutes.post('/process/tv', async (c) => {
   const body = await c.req.json();
-  const { sourcePath, showName, tmdbId, season, episodes, language = 'zh-CN' } = body;
+  const { sourcePath, showName, tmdbId, season, episodes, language = DEFAULT_LANGUAGE } = body;
   
   if (!sourcePath || !showName || !tmdbId || !season || !episodes) {
     return c.json({ success: false, error: 'Missing required parameters' }, 400);
@@ -165,7 +163,7 @@ scrapeRoutes.post('/process/tv', async (c) => {
 // Process movie (move and scrape)
 scrapeRoutes.post('/process/movie', async (c) => {
   const body = await c.req.json();
-  const { sourcePath, tmdbId, language = 'zh-CN' } = body;
+  const { sourcePath, tmdbId, language = DEFAULT_LANGUAGE } = body;
   
   if (!sourcePath || !tmdbId) {
     return c.json({ success: false, error: 'Missing required parameters' }, 400);
@@ -231,7 +229,7 @@ scrapeRoutes.post('/move-to-inbox', async (c) => {
 // Refresh metadata only
 scrapeRoutes.post('/refresh', async (c) => {
   const body = await c.req.json();
-  const { kind, path, tmdbId, season, episode, language = 'zh-CN' } = body;
+  const { kind, path, tmdbId, season, episode, language = DEFAULT_LANGUAGE } = body;
   
   console.log('[refresh] Request:', { kind, path, tmdbId, season, episode, language });
   
@@ -248,7 +246,7 @@ scrapeRoutes.post('/refresh', async (c) => {
 // 预览清单 API - 返回移动/覆盖预览
 scrapeRoutes.post('/preview', async (c) => {
   const body = await c.req.json();
-  const { items, language = 'zh-CN' } = body;
+  const { items, language = DEFAULT_LANGUAGE } = body;
   
   if (!items || !Array.isArray(items)) {
     return c.json({ success: false, error: 'Missing items array' }, 400);
@@ -260,183 +258,4 @@ scrapeRoutes.post('/preview', async (c) => {
     success: true,
     data: plan,
   });
-});
-
-// Batch process multiple items
-scrapeRoutes.post('/batch', async (c) => {
-  const body = await c.req.json();
-  const { items, language = 'zh-CN' } = body;
-  
-  if (!items || !Array.isArray(items)) {
-    return c.json({ success: false, error: 'Missing items array' }, 400);
-  }
-  
-  // 创建批量任务
-  const batchTask = createTask('process', `Batch processing ${items.length} items`);
-  startTask(batchTask.id);
-  addTaskLog(batchTask.id, `Starting batch process with ${items.length} items`);
-  
-  // Emit SSE start event
-  emitProgress(batchTask.id, 'start', 0, items.length, undefined, `开始处理 ${items.length} 个项目`);
-  
-  const results: Array<Record<string, unknown>> = [];
-  let completed = 0;
-  let failed = 0;
-  let processedCount = 0;
-  
-  for (const item of items) {
-    try {
-      addTaskLog(batchTask.id, `Processing: ${item.sourcePath}`);
-      
-      // Emit SSE progress event
-      emitProgress(batchTask.id, 'progress', processedCount, items.length, item.sourcePath, `处理中: ${item.sourcePath}`);
-      
-      if (!item.tmdbId) {
-        addTaskLog(batchTask.id, `No TMDB ID for ${item.sourcePath}, skipping`);
-        failed++;
-        results.push({ ...item, success: false, message: 'No TMDB ID provided' });
-        continue;
-      }
-      
-      if (item.kind === 'tv') {
-        // Check if already in TV directory (refresh) or in Inbox (process)
-        if (item.sourcePath.startsWith(MEDIA_PATHS.tv)) {
-          // Already in TV directory, just refresh metadata
-          const result = await refreshMetadata('tv', item.sourcePath, item.tmdbId, undefined, undefined, language);
-          results.push({ ...item, ...result });
-          if (result.success) completed++;
-          else failed++;
-        } else {
-          // In Inbox, process (move + scrape)
-          const result = await processTVShow(
-            item.sourcePath,
-            item.showName,
-            item.tmdbId,
-            item.season,
-            item.episodes,
-            language
-          );
-          results.push({ ...item, ...result });
-          if (result.success) completed++;
-          else failed++;
-        }
-      } else if (item.kind === 'movie') {
-        // Check if already in Movies directory (refresh) or in Inbox (process)
-        if (item.sourcePath.startsWith(MEDIA_PATHS.movies)) {
-          // Already in Movies directory, just refresh metadata
-          const result = await refreshMetadata('movie', item.sourcePath, item.tmdbId, undefined, undefined, language);
-          results.push({ ...item, ...result });
-          if (result.success) completed++;
-          else failed++;
-        } else {
-          // In Inbox, process (move + scrape)
-          const result = await processMovie(item.sourcePath, item.tmdbId, language);
-          results.push({ ...item, ...result });
-          if (result.success) completed++;
-          else failed++;
-        }
-      }
-      
-      // 更新进度
-      processedCount++;
-      const progress = calculateBatchProgress(completed, failed, items.length);
-      updateTask(batchTask.id, { progress: progress.percent });
-      
-      // Emit SSE progress event
-      emitProgress(batchTask.id, 'progress', processedCount, items.length, item.sourcePath, `完成: ${item.sourcePath}`);
-      
-      // Small delay between items
-      await new Promise(resolve => setTimeout(resolve, 300));
-    } catch (error) {
-      addTaskLog(batchTask.id, `Error processing ${item.sourcePath}: ${error}`);
-      failed++;
-      processedCount++;
-      results.push({ ...item, success: false, message: String(error) });
-      
-      // Emit SSE error event
-      emitProgress(batchTask.id, 'error', processedCount, items.length, item.sourcePath, `错误: ${error}`);
-    }
-  }
-  
-  completeTask(batchTask.id, failed < items.length, `Completed: ${completed}, Failed: ${failed}`);
-  
-  // Emit SSE complete event
-  emitProgress(batchTask.id, 'complete', items.length, items.length, undefined, `完成: ${completed} 成功, ${failed} 失败`);
-  
-  return c.json({
-    success: true,
-    data: results,
-    processed: completed,
-    failed: failed,
-    taskId: batchTask.id,
-  });
-});
-
-// 补刮 API - 处理已刮削目录中的新文件
-scrapeRoutes.post('/supplement', async (c) => {
-  const body = await c.req.json();
-  const { showPath, language = 'zh-CN' } = body;
-  
-  if (!showPath) {
-    return c.json({ success: false, error: 'Missing showPath' }, 400);
-  }
-  
-  // 安全检查
-  const fullPath = showPath.startsWith(MEDIA_PATHS.tv) ? showPath : join(MEDIA_PATHS.tv, showPath);
-  if (!fullPath.startsWith(MEDIA_PATHS.tv)) {
-    return c.json({ success: false, error: 'Invalid path' }, 403);
-  }
-  
-  // 创建任务
-  const task = createTask('supplement', showPath);
-  startTask(task.id);
-  
-  try {
-    const result = await supplementTVShow(fullPath, language);
-    completeTask(task.id, result.success, result.message);
-    
-    return c.json({
-      success: result.success,
-      data: result,
-      taskId: task.id,
-    });
-  } catch (error) {
-    completeTask(task.id, false, String(error));
-    return c.json({ success: false, error: String(error), taskId: task.id }, 500);
-  }
-});
-
-// 修复缺失资产 API
-scrapeRoutes.post('/fix-assets', async (c) => {
-  const body = await c.req.json();
-  const { kind, path, tmdbId, language = 'zh-CN' } = body;
-  
-  if (!kind || !path || !tmdbId) {
-    return c.json({ success: false, error: 'Missing required parameters' }, 400);
-  }
-  
-  // 安全检查
-  const allowedPaths = [MEDIA_PATHS.tv, MEDIA_PATHS.movies];
-  const isAllowed = allowedPaths.some(p => path.startsWith(p));
-  if (!isAllowed) {
-    return c.json({ success: false, error: 'Invalid path' }, 403);
-  }
-  
-  // 创建任务
-  const task = createTask('fix-assets', path);
-  startTask(task.id);
-  
-  try {
-    const result = await fixMissingAssets(kind, path, tmdbId, language);
-    completeTask(task.id, result.success, result.message);
-    
-    return c.json({
-      success: result.success,
-      data: result,
-      taskId: task.id,
-    });
-  } catch (error) {
-    completeTask(task.id, false, String(error));
-    return c.json({ success: false, error: String(error), taskId: task.id }, 500);
-  }
 });

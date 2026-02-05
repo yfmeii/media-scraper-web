@@ -5,13 +5,25 @@
    */
   import { fly } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
+  import type { Snippet } from 'svelte';
   
-  export let show = false;
-  export let selectedCount = 0;
-  export let isOperating = false;
-  export let operationMessage = '';
-  export let progress: { current: number; total: number } | null = null;
-  export let itemLabel = '项';
+  let {
+    show = false,
+    selectedCount = 0,
+    isOperating = false,
+    operationMessage = '',
+    progress = null,
+    itemLabel = '项',
+    actions
+  }: {
+    show?: boolean;
+    selectedCount?: number;
+    isOperating?: boolean;
+    operationMessage?: string;
+    progress?: { current: number; total: number } | null;
+    itemLabel?: string;
+    actions?: Snippet;
+  } = $props();
 </script>
 
 {#if show}
@@ -46,7 +58,7 @@
       </div>
       
       <div class="flex gap-2">
-        <slot name="actions" />
+        {@render actions?.()}
       </div>
     </div>
   </div>

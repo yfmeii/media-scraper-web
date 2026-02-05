@@ -1,6 +1,20 @@
 /**
  * 格式化工具函数
  */
+import { TASK_STATUS_LABELS, TASK_TYPE_LABELS } from '@media-scraper/shared';
+import type { TaskStatus, TaskType } from '@media-scraper/shared';
+
+const TASK_STATUS_STYLES: Record<TaskStatus, { icon: string; class: string }> = {
+  success: { icon: '✅', class: 'text-green-500' },
+  running: { icon: '⏳', class: 'text-yellow-500' },
+  failed: { icon: '❌', class: 'text-red-500' },
+  cancelled: { icon: '🚫', class: 'text-muted-foreground' },
+  pending: { icon: '⏸', class: 'text-muted-foreground' },
+};
+
+const TASK_STATUS_ALIASES: Record<string, TaskStatus> = {
+  completed: 'success',
+};
 
 /**
  * 格式化文件大小
@@ -60,33 +74,21 @@ export function formatSeasonEpisode(season: number, episode: number): string {
 /**
  * 任务状态显示
  */
-export function getStatusDisplay(status: string): { icon: string; text: string; class: string } {
-  switch (status) {
-    case 'success': return { icon: '✅', text: '完成', class: 'text-green-500' };
-    case 'completed': return { icon: '✅', text: '完成', class: 'text-green-500' };
-    case 'running': return { icon: '⏳', text: '进行中', class: 'text-yellow-500' };
-    case 'failed': return { icon: '❌', text: '失败', class: 'text-red-500' };
-    case 'cancelled': return { icon: '🚫', text: '已取消', class: 'text-muted-foreground' };
-    case 'pending': return { icon: '⏸', text: '等待', class: 'text-muted-foreground' };
-    default: return { icon: '❓', text: status, class: 'text-muted-foreground' };
+export function getStatusDisplay(status: TaskStatus | string): { icon: string; text: string; class: string } {
+  const normalized = TASK_STATUS_ALIASES[status] ?? status;
+  const text = (TASK_STATUS_LABELS as Record<string, string>)[normalized];
+  if (text) {
+    const style = TASK_STATUS_STYLES[normalized as TaskStatus];
+    return { icon: style.icon, text, class: style.class };
   }
+  return { icon: '❓', text: status, class: 'text-muted-foreground' };
 }
 
 /**
  * 任务类型显示
  */
-export function getTypeDisplay(type: string): string {
-  switch (type) {
-    case 'scrape': return '刮削';
-    case 'refresh': return '刷新';
-    case 'process': return '处理';
-    case 'supplement': return '补刮';
-    case 'fix-assets': return '修复资产';
-    case 'ingest': return '入库';
-    case 'scan': return '扫描';
-    case 'batch': return '批量';
-    default: return type;
-  }
+export function getTypeDisplay(type: TaskType | string): string {
+  return (TASK_TYPE_LABELS as Record<string, string>)[type] || type;
 }
 
 /**

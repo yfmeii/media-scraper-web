@@ -66,22 +66,3 @@ export function toggleAllSelection<T>(
     return newSelected;
   }
 }
-
-/**
- * 创建选择处理器（工厂函数）
- */
-export function createSelectionHandler<T>(getPath: (item: T) => string) {
-  return {
-    handleClick: (
-      path: string,
-      event: MouseEvent,
-      selected: Set<string>,
-      allItems: T[]
-    ) => handleItemClick(path, event, selected, allItems, getPath),
-    
-    toggleAll: (
-      selected: Set<string>,
-      allItems: T[]
-    ) => toggleAllSelection(selected, allItems, getPath),
-  };
-}

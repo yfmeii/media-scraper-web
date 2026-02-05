@@ -2,11 +2,16 @@
   import '../app.css';
   import { page } from '$app/stores';
   import { GlobalConfirmDialog } from '$lib/components';
+  import { fly } from 'svelte/transition';
+  import { cubicOut } from 'svelte/easing';
+  import type { Snippet } from 'svelte';
   
-  $: currentPath = $page.url.pathname;
+  let { children }: { children?: Snippet } = $props();
+  
+  const currentPath = $derived($page.url.pathname);
 </script>
 
-<div class="min-h-screen bg-background">
+<div class="min-h-screen bg-background flex flex-col">
   <header class="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
     <div class="container mx-auto px-4 h-16 flex items-center justify-between">
       <div class="flex items-center gap-3">
@@ -27,7 +32,17 @@
     </div>
   </header>
   
-  <slot />
+  <div class="flex-1 relative">
+    {#key currentPath}
+      <div
+        in:fly={{ x: 10, duration: 300, delay: 150, easing: cubicOut }}
+        out:fly={{ x: -10, duration: 150, easing: cubicOut }}
+        class="h-full"
+      >
+        {@render children?.()}
+      </div>
+    {/key}
+  </div>
 </div>
 
 <!-- 全局确认对话框 -->

@@ -1,3 +1,4 @@
+import { DEFAULT_LANGUAGE } from '@media-scraper/shared';
 import { TMDB_API_KEY } from './config';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
@@ -25,6 +26,7 @@ export interface TMDBShowDetails {
   backdrop_path?: string;
   first_air_date: string;
   vote_average: number;
+  status?: string;
   genres: { id: number; name: string }[];
   number_of_seasons: number;
 }
@@ -39,6 +41,7 @@ export interface TMDBMovieDetails {
   release_date: string;
   vote_average: number;
   runtime: number;
+  tagline?: string;
   genres: { id: number; name: string }[];
 }
 
@@ -53,8 +56,18 @@ export interface TMDBEpisodeDetails {
   still_path?: string;
 }
 
+export interface TMDBSeasonDetails {
+  id: number;
+  name: string;
+  season_number: number;
+  overview: string;
+  poster_path?: string;
+  air_date?: string;
+  episodes?: TMDBEpisodeDetails[];
+}
+
 // Search TV shows
-export async function searchTV(query: string, year?: number, language = 'zh-CN'): Promise<TMDBSearchResult[]> {
+export async function searchTV(query: string, year?: number, language: string = DEFAULT_LANGUAGE): Promise<TMDBSearchResult[]> {
   const params = new URLSearchParams({
     api_key: TMDB_API_KEY,
     query,
@@ -68,7 +81,7 @@ export async function searchTV(query: string, year?: number, language = 'zh-CN')
 }
 
 // Search movies
-export async function searchMovie(query: string, year?: number, language = 'zh-CN'): Promise<TMDBSearchResult[]> {
+export async function searchMovie(query: string, year?: number, language: string = DEFAULT_LANGUAGE): Promise<TMDBSearchResult[]> {
   const params = new URLSearchParams({
     api_key: TMDB_API_KEY,
     query,
@@ -82,7 +95,7 @@ export async function searchMovie(query: string, year?: number, language = 'zh-C
 }
 
 // Get TV show details
-export async function getTVDetails(id: number, language = 'zh-CN'): Promise<TMDBShowDetails | null> {
+export async function getTVDetails(id: number, language: string = DEFAULT_LANGUAGE): Promise<TMDBShowDetails | null> {
   const params = new URLSearchParams({
     api_key: TMDB_API_KEY,
     language,
@@ -94,7 +107,7 @@ export async function getTVDetails(id: number, language = 'zh-CN'): Promise<TMDB
 }
 
 // Get movie details
-export async function getMovieDetails(id: number, language = 'zh-CN'): Promise<TMDBMovieDetails | null> {
+export async function getMovieDetails(id: number, language: string = DEFAULT_LANGUAGE): Promise<TMDBMovieDetails | null> {
   const params = new URLSearchParams({
     api_key: TMDB_API_KEY,
     language,
@@ -106,7 +119,7 @@ export async function getMovieDetails(id: number, language = 'zh-CN'): Promise<T
 }
 
 // Get episode details
-export async function getEpisodeDetails(tvId: number, season: number, episode: number, language = 'zh-CN'): Promise<TMDBEpisodeDetails | null> {
+export async function getEpisodeDetails(tvId: number, season: number, episode: number, language: string = DEFAULT_LANGUAGE): Promise<TMDBEpisodeDetails | null> {
   const params = new URLSearchParams({
     api_key: TMDB_API_KEY,
     language,
@@ -117,17 +130,19 @@ export async function getEpisodeDetails(tvId: number, season: number, episode: n
   return res.json();
 }
 
-// Get season details (all episodes)
-export async function getSeasonDetails(tvId: number, season: number, language = 'zh-CN'): Promise<TMDBEpisodeDetails[]> {
+// Get season details (includes all episodes)
+export async function getSeasonDetails(tvId: number, season: number, language: string = DEFAULT_LANGUAGE): Promise<TMDBSeasonDetails | null> {
   const params = new URLSearchParams({
     api_key: TMDB_API_KEY,
     language,
   });
   
   const res = await fetch(`${TMDB_BASE}/tv/${tvId}/season/${season}?${params}`);
-  if (!res.ok) return [];
+  if (!res.ok) return null;
   const data = await res.json();
-  return data.episodes || [];
+  if (!data) return null;
+  data.episodes = data.episodes || [];
+  return data as TMDBSeasonDetails;
 }
 
 // Calculate match score
@@ -166,7 +181,7 @@ export async function findBestMatch(
   kind: 'tv' | 'movie',
   title: string,
   year?: number,
-  language = 'zh-CN'
+  language: string = DEFAULT_LANGUAGE
 ): Promise<{ result: TMDBSearchResult; score: number; candidates: TMDBSearchResult[] } | null> {
   const results = kind === 'tv'
     ? await searchTV(title, year, language)

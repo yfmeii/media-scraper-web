@@ -125,6 +125,64 @@ async function isProcessed(nfoPath: string): Promise<boolean> {
   }
 }
 
+interface NfoDetails {
+  overview?: string;
+  tagline?: string;
+  runtime?: number;
+  voteAverage?: number;
+  status?: string;
+  year?: number;
+}
+
+function decodeXml(text: string): string {
+  return text
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
+function extractNfoTag(content: string, tag: string): string | undefined {
+  const regex = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, 'i');
+  const match = content.match(regex);
+  if (!match) return undefined;
+  const value = decodeXml(match[1]).trim();
+  return value.length ? value : undefined;
+}
+
+async function extractNfoDetails(nfoPath: string): Promise<NfoDetails | null> {
+  try {
+    const content = await Bun.file(nfoPath).text();
+    const overview = extractNfoTag(content, 'plot');
+    const tagline = extractNfoTag(content, 'tagline');
+    const status = extractNfoTag(content, 'status');
+    const ratingValue = extractNfoTag(content, 'rating');
+    const runtimeValue = extractNfoTag(content, 'runtime');
+    const yearValue = extractNfoTag(content, 'year');
+    const premieredValue = extractNfoTag(content, 'premiered');
+
+    const runtime = runtimeValue ? parseInt(runtimeValue, 10) : undefined;
+    const voteAverage = ratingValue ? parseFloat(ratingValue) : undefined;
+    let year = yearValue ? parseInt(yearValue, 10) : undefined;
+    if (!year && premieredValue) {
+      const yearMatch = premieredValue.match(/^(\d{4})/);
+      if (yearMatch) year = parseInt(yearMatch[1], 10);
+    }
+
+    return {
+      overview,
+      tagline,
+      runtime: Number.isFinite(runtime) ? runtime : undefined,
+      voteAverage: Number.isFinite(voteAverage) ? voteAverage : undefined,
+      status,
+      year: Number.isFinite(year) ? year : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function getNfoStatus(nfoPath: string): Promise<{ hasNfo: boolean; processed: boolean; tmdbId?: number }> {
   try {
     await stat(nfoPath);
@@ -181,6 +239,7 @@ async function buildSeasonInfos(
       } catch {}
 
       seasonInfo.hasNfo = seasonHasNfo;
+      seasonAssets.hasNfo = seasonHasNfo;
       seasonInfo.assets = seasonAssets;
     }
 
@@ -204,6 +263,7 @@ async function buildShowInfo(
   const nfoStatus = includeAssets
     ? await getNfoStatusWithTmdb(nfoPath)
     : await getNfoStatus(nfoPath);
+  const nfoDetails = includeAssets ? await extractNfoDetails(nfoPath) : null;
 
   const posterPath = await findPosterPath(showPath);
   const seasonInfos = await buildSeasonInfos(showPath, seasons, includeAssets);
@@ -231,6 +291,13 @@ async function buildShowInfo(
     show.tmdbId = nfoStatus.tmdbId;
     show.groupStatus = groupStatus;
     show.supplementCount = supplementCount;
+
+    if (nfoDetails) {
+      if (nfoDetails.overview) show.overview = nfoDetails.overview;
+      if (nfoDetails.status) show.status = nfoDetails.status;
+      if (typeof nfoDetails.voteAverage === 'number') show.voteAverage = nfoDetails.voteAverage;
+      if (!show.year && typeof nfoDetails.year === 'number') show.year = nfoDetails.year;
+    }
   }
 
   return show;
@@ -249,6 +316,7 @@ async function buildMovieInfo(
   const nfoStatus = includeAssets
     ? await getNfoStatusWithTmdb(nfoPath)
     : await getNfoStatus(nfoPath);
+  const nfoDetails = includeAssets ? await extractNfoDetails(nfoPath) : null;
 
   const posterPath = await findPosterPath(moviePath);
 
@@ -273,6 +341,14 @@ async function buildMovieInfo(
     movie.year = year;
     movie.assets = assets;
     movie.tmdbId = nfoStatus.tmdbId;
+
+    if (nfoDetails) {
+      if (nfoDetails.overview) movie.overview = nfoDetails.overview;
+      if (nfoDetails.tagline) movie.tagline = nfoDetails.tagline;
+      if (typeof nfoDetails.runtime === 'number') movie.runtime = nfoDetails.runtime;
+      if (typeof nfoDetails.voteAverage === 'number') movie.voteAverage = nfoDetails.voteAverage;
+      if (!movie.year && typeof nfoDetails.year === 'number') movie.year = nfoDetails.year;
+    }
   }
 
   return movie;
@@ -499,6 +575,7 @@ export async function detectSupplementFiles(showPath: string): Promise<MediaFile
           supplementFiles.push({
             path: filePath,
             name: file.name,
+            relativePath: filePath.replace(showPath + '/', ''),
             size: fileStat.size,
             kind: 'tv',
             parsed,

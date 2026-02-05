@@ -1,13 +1,16 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
-  import { fade, fly, scale } from 'svelte/transition';
-  import { quintOut } from 'svelte/easing';
-  import { fetchTVShows, searchTMDB, refreshMetadata, autoMatch, subscribeToProgress, moveToInbox, type ShowInfo, type SearchResult, type ProgressEvent } from '$lib/api';
+  import { onMount } from 'svelte';
+  import { fly, slide } from 'svelte/transition';
+  import { flip } from 'svelte/animate';
+  import { quintOut, cubicOut } from 'svelte/easing';
+  import { fetchTVShows, refreshMetadata, autoMatch, moveToInbox, type ShowInfo, type SearchResult } from '$lib/api';
   import type { SeasonInfo, MediaFile } from '@media-scraper/shared';
   import { handleItemClick, toggleAllSelection } from '$lib/selection';
   import { formatFileSize, getGroupStatusBadge } from '$lib/format';
-  import { TMDBSearchModal, DetailDrawer, BatchActionBar } from '$lib/components';
+  import { TMDBSearchModal, BatchActionBar, TableSkeleton, PosterThumbnail, AssetIndicators, StatusBadge, SearchToolbar, MediaDetailHeader, MediaOverview, MediaDetailActions, DetailDrawer } from '$lib/components';
+  import type { ActionButton } from '$lib/components/mediaDetailActions';
   import { confirmDialog } from '$lib/stores';
+  import { copyPath, detailDelay, getFanartUrl } from '$lib/mediaDetail';
   
   // Helper functions for typed array operations
   function countTotalEpisodes(seasons: SeasonInfo[]): number {
@@ -22,48 +25,29 @@
     return [...episodes].sort((a, b) => (a.parsed.episode || 0) - (b.parsed.episode || 0));
   }
   
-  let shows: ShowInfo[] = [];
-  let loading = true;
-  let selectedShows = new Set<string>();
+  let shows = $state<ShowInfo[]>([]);
+  let loading = $state(true);
+  let selectedShows = $state(new Set<string>());
   
   // Filters
-  let searchQuery = '';
-  let activeTab = 'all';
+  let searchQuery = $state('');
+  let activeTab = $state('all');
   
   // Detail drawer state
-  let showDetailDrawer = false;
-  let selectedShowForDetail: ShowInfo | null = null;
+  let showDetailDrawer = $state(false);
+  let selectedShowForDetail = $state<ShowInfo | null>(null);
+  let overviewExpanded = $state(false);
+  let openSeasons = $state(new Set<number>());
   
   // TMDB search modal state
-  let showSearchModal = false;
+  let showSearchModal = $state(false);
   
   // Operation state
-  let isOperating = false;
-  let operationMessage = '';
+  let isOperating = $state(false);
+  let operationMessage = $state('');
   
   // Progress state
-  let progressMap = new Map<string, number>(); // path -> percent
-  let processingPaths = new Set<string>(); // Currently processing paths
-  let unsubscribeProgress: (() => void) | null = null;
-  let batchProgress: { current: number; total: number } | null = null;
-  
-  function handleProgress(event: ProgressEvent) {
-    // Check if the item is in our processing list
-    if (event.item && processingPaths.has(event.item)) {
-      progressMap.set(event.item, event.percent);
-      progressMap = progressMap; // Trigger reactivity
-      operationMessage = event.message || '';
-    }
-    
-    if (event.type === 'complete' && processingPaths.size > 0) {
-      // Clear progress after completion
-      setTimeout(() => {
-        progressMap.clear();
-        progressMap = progressMap;
-        processingPaths.clear();
-      }, 2000);
-    }
-  }
+  let batchProgress = $state<{ current: number; total: number } | null>(null);
   
   onMount(async () => {
     try {
@@ -74,12 +58,6 @@
       loading = false;
     }
     
-    // Subscribe to SSE progress
-    unsubscribeProgress = subscribeToProgress(handleProgress);
-  });
-  
-  onDestroy(() => {
-    if (unsubscribeProgress) unsubscribeProgress();
   });
   
   // 使用通用选择逻辑
@@ -92,6 +70,8 @@
   }
   
   function handleRowDoubleClick(show: ShowInfo) {
+    overviewExpanded = false;
+    openSeasons = new Set();
     selectedShowForDetail = show;
     showDetailDrawer = true;
   }
@@ -99,6 +79,8 @@
   function closeDetailDrawer() {
     showDetailDrawer = false;
     selectedShowForDetail = null;
+    overviewExpanded = false;
+    openSeasons = new Set();
   }
   
   function openSearchModal(show: ShowInfo) {
@@ -106,8 +88,7 @@
     showSearchModal = true;
   }
   
-  async function handleTMDBSelect(event: CustomEvent<SearchResult>) {
-    const result = event.detail;
+  async function handleTMDBSelect(result: SearchResult) {
     if (!selectedShowForDetail || isOperating) return;
     
     const showPath = selectedShowForDetail.path;
@@ -161,12 +142,7 @@
     let successCount = 0;
     let failCount = 0;
     
-    // Initialize progress
     batchProgress = { current: 0, total: paths.length };
-    for (const path of paths) {
-      progressMap.set(path, 0);
-    }
-    progressMap = progressMap;
     
     for (const show of selectedShowsList) {
       operationMessage = `正在刷新 (${batchProgress.current + 1}/${batchProgress.total}): ${show.name}`;
@@ -184,8 +160,7 @@
     
     operationMessage = `完成: ${successCount} 成功, ${failCount} 失败`;
     isOperating = false;
-    selectedShows.clear();
-    selectedShows = selectedShows;
+    selectedShows = new Set();
     
     setTimeout(() => { 
       operationMessage = '';
@@ -325,61 +300,108 @@
   }
   
   // Filtered shows based on current filters
-  $: filteredShows = shows.filter(show => {
-    // Tab filter
-    if (activeTab === 'scraped' && show.groupStatus !== 'scraped') return false;
-    if (activeTab === 'unscraped' && show.groupStatus !== 'unscraped') return false;
-    
-    // Search query
-    if (searchQuery && !show.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-    
-    return true;
-  });
+  const filteredShows = $derived.by(() => (
+    shows.filter(show => {
+      // Tab filter
+      if (activeTab === 'scraped' && show.groupStatus !== 'scraped') return false;
+      if (activeTab === 'unscraped' && show.groupStatus !== 'unscraped') return false;
+      
+      // Search query
+      if (searchQuery && !show.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+      
+      return true;
+    })
+  ));
   
-  $: scrapedCount = shows.filter(s => s.groupStatus === 'scraped').length;
-  $: unscrapedCount = shows.filter(s => s.groupStatus === 'unscraped').length;
+  const scrapedCount = $derived.by(() => shows.filter(s => s.groupStatus === 'scraped').length);
+  const unscrapedCount = $derived.by(() => shows.filter(s => s.groupStatus === 'unscraped').length);
+
+  function toggleSeason(season: number) {
+    if (openSeasons.has(season)) openSeasons.delete(season);
+    else openSeasons.add(season);
+    openSeasons = new Set(openSeasons);
+  }
+
+  const showStatusBadge = $derived.by(() => getGroupStatusBadge(selectedShowForDetail?.groupStatus));
+
+  const showFanartUrl = $derived.by(() => 
+    getFanartUrl(selectedShowForDetail?.path, selectedShowForDetail?.assets?.hasFanart)
+  );
+
+  const showMetaItems = $derived.by(() => {
+    if (!selectedShowForDetail) return [];
+    const items: string[] = [];
+    if (typeof selectedShowForDetail.voteAverage === 'number') {
+      items.push(`评分 ${selectedShowForDetail.voteAverage.toFixed(1)}`);
+    }
+    if (selectedShowForDetail.year) items.push(String(selectedShowForDetail.year));
+    if (selectedShowForDetail.status) items.push(selectedShowForDetail.status);
+    items.push(`${selectedShowForDetail.seasons.length} 季`);
+    const episodeCount = countTotalEpisodes(selectedShowForDetail.seasons);
+    if (episodeCount) items.push(`${episodeCount} 集`);
+    return items;
+  });
+
+  const showOverview = $derived.by(() => selectedShowForDetail?.overview?.trim() || '');
+  
+  const showDetailActions = $derived.by((): ActionButton[] => {
+    if (!selectedShowForDetail) return [];
+    const show = selectedShowForDetail;
+    const isMatched = !!show.tmdbId;
+    const label = isOperating ? '处理中...' : (isMatched ? '刷新元数据' : '自动匹配');
+    return [
+      {
+        label,
+        icon: isMatched ? 'refresh' : 'upload',
+        variant: 'primary',
+        disabled: isOperating,
+        onclick: () => {
+          if (isMatched) {
+            handleRefreshShow(show);
+          } else {
+            handleScrapeShow(show);
+          }
+        },
+      },
+      {
+        label: '重新匹配',
+        icon: 'search',
+        variant: 'secondary',
+        disabled: false,
+        onclick: () => {
+          const target = selectedShowForDetail;
+          closeDetailDrawer();
+          if (target) openSearchModal(target);
+        },
+      },
+    ];
+  });
 </script>
 
 <main class="container mx-auto px-4 py-8" class:pb-24={selectedShows.size > 0 || isOperating}>
   <!-- Toolbar -->
-  <div class="mb-6 space-y-4">
-    <div class="flex items-center justify-between flex-wrap gap-4">
-      <div class="flex items-center gap-4 flex-wrap">
-        <div class="relative">
-          <svg class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-          <input type="text" placeholder="搜索剧集..." class="h-9 w-64 rounded-md border border-input bg-background pl-9 pr-3 text-sm" bind:value={searchQuery} />
-        </div>
-      </div>
-    </div>
-    
-    <div class="flex items-center justify-between flex-wrap gap-4">
-      <!-- Tabs -->
-      <div class="inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground">
-        <button class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all {activeTab === 'all' ? 'bg-background text-foreground shadow-sm' : ''}" on:click={() => activeTab = 'all'}>全部 ({shows.length})</button>
-        <button class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all {activeTab === 'scraped' ? 'bg-background text-foreground shadow-sm' : ''}" on:click={() => activeTab = 'scraped'}>已刮削 ({scrapedCount})</button>
-        <button class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all {activeTab === 'unscraped' ? 'bg-background text-foreground shadow-sm' : ''}" on:click={() => activeTab = 'unscraped'}>未刮削 ({unscrapedCount})</button>
-      </div>
-      
-      <!-- Action Buttons -->
-      <div class="flex gap-2 items-center">
-        {#if operationMessage && selectedShows.size === 0}
-          <span class="text-sm text-muted-foreground">{operationMessage}</span>
-        {/if}
-      </div>
-    </div>
-  </div>
+  <SearchToolbar 
+    searchPlaceholder="搜索剧集..."
+    bind:searchQuery
+    tabs={[
+      { id: 'all', label: '全部', count: shows.length },
+      { id: 'scraped', label: '已刮削', count: scrapedCount },
+      { id: 'unscraped', label: '未刮削', count: unscrapedCount }
+    ]}
+    bind:activeTab
+  />
   
   <!-- Table -->
   <div class="rounded-lg border border-border bg-card overflow-hidden">
     {#if loading}
-      <div class="p-8 text-center text-muted-foreground">加载中...</div>
+      <TableSkeleton rows={8} columns={6} />
     {:else if filteredShows.length === 0}
       <div class="p-8 text-center text-muted-foreground">没有找到符合条件的剧集</div>
     {:else}
       <table class="w-full">
         <thead class="bg-card">
           <tr class="border-b border-border text-xs text-muted-foreground">
-            <th class="w-12 p-3 text-left"><input type="checkbox" class="h-4 w-4 rounded border-input accent-primary" checked={selectedShows.size === filteredShows.length && filteredShows.length > 0} on:change={toggleAll} /></th>
+            <th class="w-12 p-3 text-left"><input type="checkbox" class="h-4 w-4 rounded border-input accent-primary" checked={selectedShows.size === filteredShows.length && filteredShows.length > 0} onchange={toggleAll} /></th>
             <th class="w-16 p-3 text-left font-medium">海报</th>
             <th class="p-3 text-left font-medium">剧集名称</th>
             <th class="w-24 p-3 text-left font-medium">季数</th>
@@ -390,87 +412,59 @@
           </tr>
         </thead>
         <tbody>
-          {#each filteredShows as show}
-            {@const badge = getGroupStatusBadge(show.groupStatus)}
+          {#each filteredShows as show (show.path)}
             <tr 
-              class="border-b border-border hover:bg-accent/50 cursor-pointer {selectedShows.has(show.path) ? 'bg-accent/30 border-l-2 border-l-primary' : ''}"
-              on:click={(e) => toggleShow(show.path, e)}
-              on:dblclick={() => handleRowDoubleClick(show)}
+              class="border-b border-border hover:bg-accent/50 cursor-pointer {selectedShows.has(show.path) ? 'bg-accent/30 border-l-2 border-l-primary' : ''} transition-colors duration-150"
+              onclick={(e) => toggleShow(show.path, e)}
+              ondblclick={() => handleRowDoubleClick(show)}
+              animate:flip={{ duration: 300, easing: quintOut }}
+              in:fly={{ y: 20, duration: 300, easing: cubicOut }}
             >
               <td class="p-3">
                 <input 
                   type="checkbox" 
                   class="h-4 w-4 rounded border-input accent-primary" 
                   checked={selectedShows.has(show.path)} 
-                  on:click|stopPropagation={() => {
+                  onclick={(e) => {
+                    e.stopPropagation();
                     if (selectedShows.has(show.path)) {
                       selectedShows.delete(show.path);
                     } else {
                       selectedShows.add(show.path);
                     }
-                    selectedShows = selectedShows;
+                    selectedShows = new Set(selectedShows);
                   }}
                 />
               </td>
               <td class="p-3">
-                {#if show.posterPath}
-                  <img src={show.posterPath} alt="{show.name}" class="h-12 w-9 object-cover rounded" />
-                {:else if show.assets?.hasPoster}
-                  <div class="flex h-12 w-9 items-center justify-center rounded bg-primary/10">
-                    <svg class="h-5 w-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-                  </div>
-                {:else}
-                  <div class="flex h-12 w-9 items-center justify-center rounded bg-muted">
-                    <svg class="h-4 w-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-                  </div>
-                {/if}
+                <PosterThumbnail src={show.posterPath} alt={show.name} hasPoster={show.assets?.hasPoster} size="sm" />
               </td>
               <td class="p-3"><div class="font-medium">{show.name}</div></td>
               <td class="p-3 text-muted-foreground">{show.seasons.length}</td>
               <td class="p-3 text-muted-foreground">{countTotalEpisodes(show.seasons) || '24'}</td>
               <td class="p-3">
-                <span class="inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold {badge.color} {badge.border}">
-                  {#if show.groupStatus === 'scraped'}
-                    <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
-                  {:else if show.groupStatus === 'unscraped'}
-                    <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-                  {:else}
-                    <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
-                  {/if}
-                  {badge.label}
-                </span>
+                <StatusBadge status={show.groupStatus} />
               </td>
               <td class="p-3">
-                <div class="flex items-center gap-2">
-                  <span class="flex items-center gap-1 text-xs {show.assets?.hasPoster ? 'text-green-500' : 'text-red-500'}">
-                    {#if show.assets?.hasPoster}
-                      <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
-                    {:else}
-                      <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-                    {/if}
-                    海报
-                  </span>
-                  <span class="flex items-center gap-1 text-xs {show.assets?.hasNfo ? 'text-green-500' : 'text-red-500'}">
-                    {#if show.assets?.hasNfo}
-                      <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
-                    {:else}
-                      <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-                    {/if}
-                    NFO
-                  </span>
-                </div>
+                <AssetIndicators assets={{ hasPoster: show.assets?.hasPoster, hasNfo: show.assets?.hasNfo }} showFanart={false} />
               </td>
               <td class="p-3">
                 <div class="flex gap-1">
                   <button 
                     class="inline-flex items-center justify-center rounded-md text-xs font-medium h-7 px-2 border border-input bg-background hover:bg-accent"
-                    on:click|stopPropagation={() => handleRowDoubleClick(show)}
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      handleRowDoubleClick(show);
+                    }}
                   >
                     详情
                   </button>
                   <button 
                     class="inline-flex items-center justify-center rounded-md text-xs font-medium h-7 px-2 border border-input bg-background hover:bg-accent"
-                    on:click|stopPropagation={() => openSearchModal(show)}
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      openSearchModal(show);
+                    }}
                   >
                     匹配
                   </button>
@@ -492,126 +486,152 @@
     progress={batchProgress}
     itemLabel="部剧集"
   >
-    <svelte:fragment slot="actions">
+    {#snippet actions()}
       <button 
         class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50" 
         disabled={isOperating}
-        on:click={batchRefreshMetadata}
+        onclick={batchRefreshMetadata}
       >
         {isOperating ? '处理中...' : '刷新元数据'}
       </button>
       <button 
         class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-secondary text-secondary-foreground hover:opacity-90 disabled:opacity-50" 
         disabled={isOperating}
-        on:click={batchRematch}
+        onclick={batchRematch}
       >
         重新匹配
       </button>
-    </svelte:fragment>
+    {/snippet}
   </BatchActionBar>
 </main>
 
 <!-- Detail Drawer -->
 {#if showDetailDrawer && selectedShowForDetail}
-  <div class="fixed inset-0 z-50">
-    <button 
-      class="absolute inset-0 bg-black/50" 
-      on:click={closeDetailDrawer}
-      transition:fade={{ duration: 200 }}
-    ></button>
-    <div 
-      class="absolute right-0 top-0 bottom-0 w-full max-w-lg bg-card border-l border-border overflow-y-auto"
-      transition:fly={{ x: 400, duration: 300, easing: quintOut }}
-    >
-      <div class="sticky top-0 flex items-center justify-between border-b border-border bg-card p-4">
-        <h2 class="text-lg font-semibold">剧集详情</h2>
-        <button class="inline-flex items-center justify-center rounded-md h-8 w-8 hover:bg-accent" on:click={closeDetailDrawer}>
-          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-        </button>
-      </div>
-      <div class="p-4 space-y-6">
-        <div>
-          <h3 class="text-xl font-bold mb-2">{selectedShowForDetail.name}</h3>
-        </div>
-        
-        <div class="grid grid-cols-2 gap-4 text-sm">
-          <div>
-            <p class="text-muted-foreground">TMDB ID</p>
-            <p class="font-medium">{selectedShowForDetail.tmdbId ? `#${selectedShowForDetail.tmdbId}` : '未匹配'}</p>
+  <DetailDrawer show={showDetailDrawer} onClose={closeDetailDrawer}>
+    <MediaDetailHeader
+      fanartUrl={showFanartUrl}
+      posterPath={selectedShowForDetail.posterPath}
+      title={selectedShowForDetail.name}
+      metaItems={showMetaItems}
+      statusBadge={showStatusBadge}
+      onClose={closeDetailDrawer}
+      animationDelay={detailDelay(0)}
+    />
+
+    <div class="flex-1 overflow-y-auto px-4 pb-6 pt-2 space-y-6 scrollbar-thin scrollbar-thumb-muted scrollbar-track-transparent">
+      <MediaOverview
+        overview={showOverview}
+        maxLength={140}
+        bind:expanded={overviewExpanded}
+        animationDelay={detailDelay(1)}
+        lineClampClass="line-clamp-3"
+      />
+
+      <section class="space-y-3" in:fly={{ y: 18, duration: 300, delay: detailDelay(2), easing: quintOut }}>
+        <h3 class="text-sm font-semibold">元数据</h3>
+        <div class="grid grid-cols-2 gap-3 text-sm">
+          <div class="rounded-lg border border-border/60 bg-muted/30 p-3">
+            <p class="text-xs text-muted-foreground">TMDB</p>
+            {#if selectedShowForDetail.tmdbId}
+              <a 
+                class="mt-1 inline-flex items-center gap-1 text-sm font-medium text-primary hover:opacity-80"
+                href={`https://www.themoviedb.org/tv/${selectedShowForDetail.tmdbId}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                #{selectedShowForDetail.tmdbId}
+                <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg>
+              </a>
+            {:else}
+              <p class="mt-1 text-sm font-medium">未匹配</p>
+            {/if}
           </div>
-          <div>
-            <p class="text-muted-foreground">状态</p>
-            <p class="font-medium">{getGroupStatusBadge(selectedShowForDetail.groupStatus).label}</p>
-          </div>
-          <div>
-            <p class="text-muted-foreground">季数</p>
-            <p class="font-medium">{selectedShowForDetail.seasons.length}</p>
-          </div>
-          <div>
-            <p class="text-muted-foreground">集数</p>
-            <p class="font-medium">{countTotalEpisodes(selectedShowForDetail.seasons) || 24}</p>
-          </div>
-        </div>
-        
-        <div>
-          <p class="text-sm text-muted-foreground mb-2">路径</p>
-          <p class="font-mono text-xs bg-muted p-2 rounded">{selectedShowForDetail.path}</p>
-        </div>
-        
-        <div>
-          <p class="text-sm text-muted-foreground mb-2">完整性</p>
-          <div class="flex gap-4">
-            <span class="flex items-center gap-1 text-sm {selectedShowForDetail.assets?.hasPoster ? 'text-green-500' : 'text-red-500'}">
-              {#if selectedShowForDetail.assets?.hasPoster}
-                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
-              {:else}
-                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-              {/if}
-              海报
-            </span>
-            <span class="flex items-center gap-1 text-sm {selectedShowForDetail.assets?.hasNfo ? 'text-green-500' : 'text-red-500'}">
-              {#if selectedShowForDetail.assets?.hasNfo}
-                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
-              {:else}
-                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-              {/if}
-              NFO
-            </span>
-            <span class="flex items-center gap-1 text-sm {selectedShowForDetail.assets?.hasFanart ? 'text-green-500' : 'text-red-500'}">
-              {#if selectedShowForDetail.assets?.hasFanart}
-                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
-              {:else}
-                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-              {/if}
-              Fanart
+          <div class="rounded-lg border border-border/60 bg-muted/30 p-3">
+            <p class="text-xs text-muted-foreground">状态</p>
+            <span class="mt-1 inline-flex items-center rounded-full border px-2 py-0.5 text-xs {showStatusBadge.bgColor} {showStatusBadge.border} {showStatusBadge.color}">
+              {showStatusBadge.label}
             </span>
           </div>
+          <button 
+            class="col-span-2 rounded-lg border border-border/60 bg-muted/30 p-3 text-left hover:bg-muted/50"
+            title="点击复制路径"
+            onclick={() => copyPath(selectedShowForDetail?.path)}
+          >
+            <p class="text-xs text-muted-foreground">路径</p>
+            <p class="mt-1 font-mono text-xs break-all">{selectedShowForDetail.path}</p>
+            <p class="mt-1 text-[11px] text-muted-foreground">点击复制</p>
+          </button>
+          <div class="col-span-2 rounded-lg border border-border/60 bg-muted/30 p-3">
+            <p class="text-xs text-muted-foreground">资源完整性</p>
+            <div class="mt-2 flex flex-wrap gap-3">
+              <span class="flex items-center gap-1 text-xs {selectedShowForDetail.assets?.hasPoster ? 'text-green-500' : 'text-red-500'}">
+                {#if selectedShowForDetail.assets?.hasPoster}
+                  <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+                {:else}
+                  <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                {/if}
+                海报
+              </span>
+              <span class="flex items-center gap-1 text-xs {selectedShowForDetail.assets?.hasNfo ? 'text-green-500' : 'text-red-500'}">
+                {#if selectedShowForDetail.assets?.hasNfo}
+                  <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+                {:else}
+                  <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                {/if}
+                NFO
+              </span>
+              <span class="flex items-center gap-1 text-xs {selectedShowForDetail.assets?.hasFanart ? 'text-green-500' : 'text-red-500'}">
+                {#if selectedShowForDetail.assets?.hasFanart}
+                  <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+                {:else}
+                  <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                {/if}
+                Fanart
+              </span>
+            </div>
+          </div>
         </div>
-        
-        <!-- 季/集分组展示 -->
-        <div>
-          <p class="text-sm text-muted-foreground mb-2">季/集文件</p>
-          <div class="space-y-2 max-h-80 overflow-y-auto">
-            {#each sortSeasons(selectedShowForDetail.seasons) as seasonItem}
-              <details class="group">
-                <summary class="flex items-center justify-between cursor-pointer p-2 rounded-md bg-muted/50 hover:bg-muted">
-                  <div class="flex items-center gap-2">
-                    <span class="text-sm font-medium">第 {seasonItem.season} 季</span>
-                    <span class="text-xs text-muted-foreground">{seasonItem.episodes.length} 集</span>
-                  </div>
-                  <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-                  <div class="flex items-center gap-1" on:click|stopPropagation>
-                    <button 
-                      class="inline-flex items-center justify-center rounded h-6 w-6 hover:bg-accent text-muted-foreground hover:text-foreground"
-                      title="刷新该季元数据"
-                      disabled={isOperating || !selectedShowForDetail?.tmdbId}
-                      on:click={() => handleRefreshSeason(seasonItem.season)}
-                    >
-                      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
-                    </button>
-                  </div>
-                </summary>
-                <div class="mt-1 ml-4 space-y-1">
+      </section>
+
+      <section class="space-y-3" in:fly={{ y: 18, duration: 300, delay: detailDelay(3), easing: quintOut }}>
+        <h3 class="text-sm font-semibold">季/集文件</h3>
+        <div class="space-y-3">
+          {#each sortSeasons(selectedShowForDetail.seasons) as seasonItem (seasonItem.season)}
+            <div class="rounded-lg border border-border/60 bg-muted/30">
+              <div 
+                class="flex items-center justify-between gap-3 p-3 cursor-pointer hover:bg-muted/50"
+                role="button"
+                tabindex="0"
+                aria-expanded={openSeasons.has(seasonItem.season)}
+                onclick={() => toggleSeason(seasonItem.season)}
+                onkeydown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    toggleSeason(seasonItem.season);
+                  }
+                }}
+              >
+                <div class="flex items-center gap-2">
+                  <span class="text-sm font-medium">第 {seasonItem.season} 季</span>
+                  <span class="text-xs text-muted-foreground">{seasonItem.episodes.length} 集</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button 
+                    class="inline-flex items-center justify-center rounded h-6 w-6 hover:bg-accent text-muted-foreground hover:text-foreground"
+                    title="刷新该季元数据"
+                    disabled={isOperating || !selectedShowForDetail?.tmdbId}
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      handleRefreshSeason(seasonItem.season);
+                    }}
+                  >
+                    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+                  </button>
+                  <svg class="h-4 w-4 text-muted-foreground transition-transform {openSeasons.has(seasonItem.season) ? 'rotate-180' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+                </div>
+              </div>
+              {#if openSeasons.has(seasonItem.season)}
+                <div class="px-3 pb-3 space-y-1" transition:slide={{ duration: 200 }}>
                   {#each sortEpisodes(seasonItem.episodes) as ep}
                     <div class="flex items-center justify-between p-2 rounded-md hover:bg-muted/30 text-xs group/ep">
                       <div class="flex items-center gap-2 flex-1 min-w-0">
@@ -619,12 +639,12 @@
                         <span class="truncate" title={ep.name}>{ep.name}</span>
                       </div>
                       <div class="flex items-center gap-1 shrink-0 ml-2">
-                        <span class="text-muted-foreground mr-2">{(ep.size / 1024 / 1024 / 1024).toFixed(2)} GB</span>
+                        <span class="text-muted-foreground mr-2">{formatFileSize(ep.size)}</span>
                         <button 
                           class="inline-flex items-center justify-center rounded h-5 w-5 opacity-0 group-hover/ep:opacity-100 hover:bg-accent text-muted-foreground hover:text-foreground transition-opacity"
                           title="刷新该集元数据"
                           disabled={isOperating || !selectedShowForDetail?.tmdbId}
-                          on:click={() => handleRefreshEpisode(seasonItem.season, ep.parsed.episode || 0)}
+                          onclick={() => handleRefreshEpisode(seasonItem.season, ep.parsed.episode || 0)}
                         >
                           <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
                         </button>
@@ -632,7 +652,7 @@
                           class="inline-flex items-center justify-center rounded h-5 w-5 opacity-0 group-hover/ep:opacity-100 hover:bg-accent text-orange-500 hover:text-orange-600 transition-opacity"
                           title="移回收件箱"
                           disabled={isOperating}
-                          on:click={() => handleMoveToInbox(ep.path, ep.name)}
+                          onclick={() => handleMoveToInbox(ep.path, ep.name)}
                         >
                           <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
                         </button>
@@ -640,55 +660,33 @@
                     </div>
                   {/each}
                 </div>
-              </details>
-            {/each}
-          </div>
+              {/if}
+            </div>
+          {/each}
         </div>
-        
-        <div class="space-y-2">
-          <p class="text-sm text-muted-foreground">操作</p>
-          <div class="flex flex-wrap gap-2">
-            {#if !selectedShowForDetail?.tmdbId}
-              <button 
-                class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
-                disabled={isOperating}
-                on:click={() => { if (selectedShowForDetail) handleScrapeShow(selectedShowForDetail); }}
-              >
-                {isOperating ? '处理中...' : '自动匹配'}
-              </button>
-            {:else}
-              <button 
-                class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
-                disabled={isOperating}
-                on:click={() => { if (selectedShowForDetail) handleRefreshShow(selectedShowForDetail); }}
-              >
-                {isOperating ? '处理中...' : '刷新元数据'}
-              </button>
-            {/if}
-            <button class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-secondary text-secondary-foreground hover:opacity-90" on:click={() => { 
-              const show = selectedShowForDetail;
-              closeDetailDrawer();
-              if (show) openSearchModal(show);
-            }}>重新匹配</button>
-          </div>
-          {#if operationMessage}
-            <p class="text-sm text-muted-foreground">{operationMessage}</p>
-          {/if}
-        </div>
-      </div>
+      </section>
     </div>
-  </div>
+
+    <MediaDetailActions actions={showDetailActions} operationMessage={operationMessage} />
+  </DetailDrawer>
 {/if}
 
 <!-- TMDB Search Modal -->
 <TMDBSearchModal
-  bind:show={showSearchModal}
+  show={showSearchModal}
   type="tv"
   initialQuery={selectedShowForDetail?.name || ''}
-  on:select={handleTMDBSelect}
-  on:close={() => showSearchModal = false}
+  onSelect={handleTMDBSelect}
+  onClose={() => { showSearchModal = false; }}
 />
 
 <style lang="postcss">
   @reference "tailwindcss";
+
+  .line-clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
 </style>

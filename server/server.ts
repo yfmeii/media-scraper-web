@@ -1,11 +1,9 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { serveStatic } from 'hono/bun';
-import { streamSSE } from 'hono/streaming';
 import { mediaRoutes } from './routes/media';
 import { scrapeRoutes } from './routes/scrape';
 import { taskRoutes } from './routes/tasks';
-import { progressEmitter, type ProgressEvent } from './lib/progress';
 
 const app = new Hono();
 
@@ -17,31 +15,6 @@ app.route('/api/media', mediaRoutes);
 app.route('/api/scrape', scrapeRoutes);
 app.route('/api/tasks', taskRoutes);
 
-// SSE endpoint for progress updates
-app.get('/api/progress', async (c) => {
-  return streamSSE(c, async (stream) => {
-    const unsubscribe = progressEmitter.subscribe((event: ProgressEvent) => {
-      stream.writeSSE({
-        data: JSON.stringify(event),
-        event: 'progress',
-      });
-    });
-    
-    // Keep connection alive
-    const keepAlive = setInterval(() => {
-      stream.writeSSE({ data: 'ping', event: 'ping' });
-    }, 30000);
-    
-    // Handle disconnection
-    stream.onAbort(() => {
-      unsubscribe();
-      clearInterval(keepAlive);
-    });
-    
-    // Wait for client disconnect
-    await new Promise(() => {});
-  });
-});
 
 // Serve frontend static files
 app.use('/*', serveStatic({ root: './public' }));
