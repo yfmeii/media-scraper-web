@@ -38,10 +38,10 @@ app.get('/api/progress', async (c) => {
       writeSafe(event);
     });
     
-    // Keep connection alive
+    // Keep connection alive (must be < Bun idleTimeout or proxy timeout)
     const keepAlive = setInterval(() => {
       writeSafe('ping');
-    }, 30000);
+    }, 5000);
     
     const cleanup = () => {
       unsubscribe();
