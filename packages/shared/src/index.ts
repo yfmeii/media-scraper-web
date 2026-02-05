@@ -43,6 +43,10 @@ export interface ShowInfo {
   hasNfo: boolean;
   isProcessed: boolean;
   posterPath?: string;
+  overview?: string;
+  status?: string;
+  backdropPath?: string;
+  voteAverage?: number;
   assets?: AssetFlags;
   tmdbId?: number;
   groupStatus?: 'scraped' | 'unscraped' | 'supplement';
@@ -57,6 +61,11 @@ export interface MovieInfo {
   hasNfo: boolean;
   isProcessed: boolean;
   posterPath?: string;
+  overview?: string;
+  tagline?: string;
+  runtime?: number;
+  backdropPath?: string;
+  voteAverage?: number;
   assets?: AssetFlags;
   tmdbId?: number;
 }
