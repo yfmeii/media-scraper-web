@@ -11,3 +11,4 @@ export { default as ConfirmDialog } from './ConfirmDialog.svelte';
 export { default as GlobalConfirmDialog } from './GlobalConfirmDialog.svelte';
 export { default as DetailDrawer } from './DetailDrawer.svelte';
 export { default as BatchActionBar } from './BatchActionBar.svelte';
+export { default as TableSkeleton } from './TableSkeleton.svelte';

@@ -8,7 +8,7 @@
   import { handleItemClick, toggleAllSelection } from '$lib/selection';
   import { createProgressHandler } from '$lib/progress';
   import { formatFileSize, getGroupStatusBadge } from '$lib/format';
-  import { TMDBSearchModal, BatchActionBar } from '$lib/components';
+  import { TMDBSearchModal, BatchActionBar, TableSkeleton } from '$lib/components';
   import { confirmDialog } from '$lib/stores';
   
   // Helper functions for typed array operations
@@ -414,7 +414,7 @@
   <!-- Table -->
   <div class="rounded-lg border border-border bg-card overflow-hidden">
     {#if loading}
-      <div class="p-8 text-center text-muted-foreground">加载中...</div>
+      <TableSkeleton rows={8} columns={6} />
     {:else if filteredShows.length === 0}
       <div class="p-8 text-center text-muted-foreground">没有找到符合条件的剧集</div>
     {:else}
