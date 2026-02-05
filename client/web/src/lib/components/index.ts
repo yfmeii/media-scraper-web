@@ -8,3 +8,6 @@ export { default as PreviewModal } from './PreviewModal.svelte';
 export { default as OperationBar } from './OperationBar.svelte';
 export { default as MediaCard } from './MediaCard.svelte';
 export { default as ConfirmDialog } from './ConfirmDialog.svelte';
+export { default as GlobalConfirmDialog } from './GlobalConfirmDialog.svelte';
+export { default as DetailDrawer } from './DetailDrawer.svelte';
+export { default as BatchActionBar } from './BatchActionBar.svelte';

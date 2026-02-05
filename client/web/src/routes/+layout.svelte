@@ -1,6 +1,7 @@
 <script lang="ts">
   import '../app.css';
   import { page } from '$app/stores';
+  import { GlobalConfirmDialog } from '$lib/components';
   
   $: currentPath = $page.url.pathname;
 </script>
@@ -28,3 +29,6 @@
   
   <slot />
 </div>
+
+<!-- 全局确认对话框 -->
+<GlobalConfirmDialog />

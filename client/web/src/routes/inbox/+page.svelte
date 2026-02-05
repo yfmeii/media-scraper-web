@@ -16,7 +16,7 @@
     type PathRecognizeResult,
     type PreviewItem
   } from '$lib/api';
-  import { ConfirmDialog } from '$lib/components';
+  import { confirmDialog } from '$lib/stores';
   
   let directories: DirectoryGroup[] = [];
   let files: MediaFile[] = [];
@@ -48,30 +48,6 @@
   let isOperating = false;
   let operationMessage = '';
   let batchProgress = { current: 0, total: 0 };
-  
-  // Confirm dialog state
-  let showConfirmDialog = false;
-  let confirmTitle = '';
-  let confirmMessage = '';
-  let confirmCallback: (() => void) | null = null;
-  
-  function showConfirm(title: string, message: string, onConfirm: () => void) {
-    confirmTitle = title;
-    confirmMessage = message;
-    confirmCallback = onConfirm;
-    showConfirmDialog = true;
-  }
-  
-  function handleConfirm() {
-    showConfirmDialog = false;
-    if (confirmCallback) confirmCallback();
-    confirmCallback = null;
-  }
-  
-  function handleCancelConfirm() {
-    showConfirmDialog = false;
-    confirmCallback = null;
-  }
   
   // Preview modal
   let showPreviewModal = false;
@@ -379,11 +355,11 @@
   async function batchAutoMatchAndProcess() {
     if (selectedFiles.size === 0) return;
     
-    showConfirm(
-      '一键匹配入库', 
-      `确定对 ${selectedFiles.size} 个文件进行自动匹配入库？\n\n根据文件解析结果自动判断类型：\n• 有季/集信息 → 剧集\n• 无季/集信息 → 电影\n\n⚠️ 此操作将移动文件到媒体库`,
-      executeBatchAutoMatch
-    );
+    confirmDialog.show({
+      title: '一键匹配入库',
+      message: `确定对 ${selectedFiles.size} 个文件进行自动匹配入库？\n\n根据文件解析结果自动判断类型：\n• 有季/集信息 → 剧集\n• 无季/集信息 → 电影\n\n⚠️ 此操作将移动文件到媒体库`,
+      onConfirm: executeBatchAutoMatch
+    });
   }
   
   async function executeBatchAutoMatch() {
@@ -1148,14 +1124,7 @@
   </div>
 {/if}
 
-<!-- Confirm Dialog -->
-<ConfirmDialog 
-  show={showConfirmDialog}
-  title={confirmTitle}
-  message={confirmMessage}
-  on:confirm={handleConfirm}
-  on:cancel={handleCancelConfirm}
-/>
+<!-- Confirm Dialog is now handled globally in +layout.svelte -->
 
 <style lang="postcss">
   @reference "tailwindcss";

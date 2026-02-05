@@ -5,8 +5,9 @@
   import { fetchTVShows, searchTMDB, refreshMetadata, autoMatch, subscribeToProgress, moveToInbox, type ShowInfo, type SearchResult, type ProgressEvent } from '$lib/api';
   import type { SeasonInfo, MediaFile } from '@media-scraper/shared';
   import { handleItemClick, toggleAllSelection } from '$lib/selection';
-  import { formatFileSize, getScrapedStatus } from '$lib/format';
-  import { TMDBSearchModal, OperationBar, ConfirmDialog } from '$lib/components';
+  import { formatFileSize, getGroupStatusBadge } from '$lib/format';
+  import { TMDBSearchModal, DetailDrawer, BatchActionBar } from '$lib/components';
+  import { confirmDialog } from '$lib/stores';
   
   // Helper functions for typed array operations
   function countTotalEpisodes(seasons: SeasonInfo[]): number {
@@ -35,34 +36,6 @@
   
   // TMDB search modal state
   let showSearchModal = false;
-  let tmdbSearchQuery = '';
-  let tmdbSearchResults: SearchResult[] = [];
-  let isSearchingTMDB = false;
-  
-  
-  // Confirm dialog state
-  let showConfirmDialog = false;
-  let confirmTitle = '';
-  let confirmMessage = '';
-  let confirmCallback: (() => void) | null = null;
-  
-  function showConfirm(title: string, message: string, onConfirm: () => void) {
-    confirmTitle = title;
-    confirmMessage = message;
-    confirmCallback = onConfirm;
-    showConfirmDialog = true;
-  }
-  
-  function handleConfirm() {
-    showConfirmDialog = false;
-    if (confirmCallback) confirmCallback();
-    confirmCallback = null;
-  }
-  
-  function handleCancelConfirm() {
-    showConfirmDialog = false;
-    confirmCallback = null;
-  }
   
   // Operation state
   let isOperating = false;
@@ -72,7 +45,7 @@
   let progressMap = new Map<string, number>(); // path -> percent
   let processingPaths = new Set<string>(); // Currently processing paths
   let unsubscribeProgress: (() => void) | null = null;
-  let batchProgress = { current: 0, total: 0 }; // Overall batch progress
+  let batchProgress: { current: number; total: number } | null = null;
   
   function handleProgress(event: ProgressEvent) {
     // Check if the item is in our processing list
@@ -128,34 +101,17 @@
     selectedShowForDetail = null;
   }
   
-  async function handleTMDBSearch() {
-    if (!tmdbSearchQuery.trim()) return;
-    isSearchingTMDB = true;
-    try {
-      tmdbSearchResults = await searchTMDB('tv', tmdbSearchQuery);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      isSearchingTMDB = false;
-    }
-  }
-  
   function openSearchModal(show: ShowInfo) {
     selectedShowForDetail = show;
-    tmdbSearchQuery = show.name;
     showSearchModal = true;
-    handleTMDBSearch();
   }
   
-  function closeSearchModal() {
-    showSearchModal = false;
-    tmdbSearchResults = [];
-  }
-  
-  async function selectTMDBResult(result: SearchResult) {
+  async function handleTMDBSelect(event: CustomEvent<SearchResult>) {
+    const result = event.detail;
     if (!selectedShowForDetail || isOperating) return;
     
     const showPath = selectedShowForDetail.path;
+    showSearchModal = false;
     isOperating = true;
     operationMessage = `正在匹配 ${result.name || result.title}...`;
     
@@ -180,18 +136,8 @@
     }
     
     isOperating = false;
-    closeSearchModal();
     
     setTimeout(() => { operationMessage = ''; }, 3000);
-  }
-  
-  function getStatusBadge(status: string | undefined) {
-    switch (status) {
-      case 'scraped': return { label: '已刮削', color: 'text-green-500', border: 'border-green-500/50' };
-      case 'unscraped': return { label: '未刮削', color: 'text-red-500', border: 'border-red-500/50' };
-      case 'supplement': return { label: '待处理', color: 'text-yellow-500', border: 'border-yellow-500/50' };
-      default: return { label: '未知', color: 'text-muted-foreground', border: 'border-border' };
-    }
   }
   
   // Batch operations - 批量刷新元数据
@@ -229,7 +175,7 @@
       else failCount++;
       
       batchProgress.current++;
-      batchProgress = batchProgress;
+      batchProgress = { ...batchProgress };
     }
     
     // Refresh data
@@ -243,7 +189,7 @@
     
     setTimeout(() => { 
       operationMessage = '';
-      batchProgress = { current: 0, total: 0 };
+      batchProgress = null;
     }, 2000);
   }
   
@@ -356,21 +302,25 @@
   async function handleMoveToInbox(filePath: string, fileName: string) {
     if (isOperating) return;
     
-    showConfirm('移回收件箱', `确定将「${fileName}」移回收件箱？`, async () => {
-      isOperating = true;
-      operationMessage = `正在移动: ${fileName}`;
-      
-      const result = await moveToInbox(filePath);
-      operationMessage = result.success ? `已移回收件箱` : `失败: ${result.message}`;
-      isOperating = false;
-      
-      // Refresh shows
-      shows = await fetchTVShows();
-      if (selectedShowForDetail) {
-        selectedShowForDetail = shows.find(s => s.path === selectedShowForDetail!.path) || null;
+    confirmDialog.show({
+      title: '移回收件箱',
+      message: `确定将「${fileName}」移回收件箱？`,
+      onConfirm: async () => {
+        isOperating = true;
+        operationMessage = `正在移动: ${fileName}`;
+        
+        const result = await moveToInbox(filePath);
+        operationMessage = result.success ? `已移回收件箱` : `失败: ${result.message}`;
+        isOperating = false;
+        
+        // Refresh shows
+        shows = await fetchTVShows();
+        if (selectedShowForDetail) {
+          selectedShowForDetail = shows.find(s => s.path === selectedShowForDetail!.path) || null;
+        }
+        
+        setTimeout(() => { operationMessage = ''; }, 3000);
       }
-      
-      setTimeout(() => { operationMessage = ''; }, 3000);
     });
   }
   
@@ -441,7 +391,7 @@
         </thead>
         <tbody>
           {#each filteredShows as show}
-            {@const badge = getStatusBadge(show.groupStatus)}
+            {@const badge = getGroupStatusBadge(show.groupStatus)}
             <tr 
               class="border-b border-border hover:bg-accent/50 cursor-pointer {selectedShows.has(show.path) ? 'bg-accent/30 border-l-2 border-l-primary' : ''}"
               on:click={(e) => toggleShow(show.path, e)}
@@ -534,47 +484,31 @@
   </div>
   
   <!-- Bottom Bar (appears when items selected or operating) -->
-  {#if selectedShows.size > 0 || isOperating}
-    <div 
-      class="fixed bottom-0 left-0 right-0 border-t border-border bg-card shadow-lg z-40"
-      transition:fly={{ y: 100, duration: 250, easing: quintOut }}
-    >
-      <!-- Progress bar at top of bottom bar -->
-      {#if batchProgress.total > 0}
-        <div class="h-1 bg-muted">
-          <div 
-            class="h-full bg-linear-to-r from-primary to-green-500 transition-all duration-300" 
-            style="width: {(batchProgress.current / batchProgress.total) * 100}%"
-          ></div>
-        </div>
-      {/if}
-      <div class="container mx-auto flex items-center justify-between p-4">
-        <div class="flex items-center gap-4">
-          {#if operationMessage}
-            <span class="text-sm font-medium">{operationMessage}</span>
-          {:else}
-            <span class="text-sm text-muted-foreground">已选择 {selectedShows.size} 部剧集</span>
-          {/if}
-        </div>
-        <div class="flex gap-2">
-          <button 
-            class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50" 
-            disabled={isOperating}
-            on:click={batchRefreshMetadata}
-          >
-            {isOperating ? '处理中...' : '刷新元数据'}
-          </button>
-          <button 
-            class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-secondary text-secondary-foreground hover:opacity-90 disabled:opacity-50" 
-            disabled={isOperating}
-            on:click={batchRematch}
-          >
-            重新匹配
-          </button>
-        </div>
-      </div>
-    </div>
-  {/if}
+  <BatchActionBar 
+    show={selectedShows.size > 0 || isOperating}
+    selectedCount={selectedShows.size}
+    {isOperating}
+    {operationMessage}
+    progress={batchProgress}
+    itemLabel="部剧集"
+  >
+    <svelte:fragment slot="actions">
+      <button 
+        class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50" 
+        disabled={isOperating}
+        on:click={batchRefreshMetadata}
+      >
+        {isOperating ? '处理中...' : '刷新元数据'}
+      </button>
+      <button 
+        class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-secondary text-secondary-foreground hover:opacity-90 disabled:opacity-50" 
+        disabled={isOperating}
+        on:click={batchRematch}
+      >
+        重新匹配
+      </button>
+    </svelte:fragment>
+  </BatchActionBar>
 </main>
 
 <!-- Detail Drawer -->
@@ -607,7 +541,7 @@
           </div>
           <div>
             <p class="text-muted-foreground">状态</p>
-            <p class="font-medium">{getStatusBadge(selectedShowForDetail.groupStatus).label}</p>
+            <p class="font-medium">{getGroupStatusBadge(selectedShowForDetail.groupStatus).label}</p>
           </div>
           <div>
             <p class="text-muted-foreground">季数</p>
@@ -747,81 +681,12 @@
 {/if}
 
 <!-- TMDB Search Modal -->
-{#if showSearchModal}
-  <div class="fixed inset-0 z-50 flex items-center justify-center">
-    <button 
-      class="absolute inset-0 bg-black/50" 
-      on:click={closeSearchModal}
-      transition:fade={{ duration: 200 }}
-    ></button>
-    <div 
-      class="relative w-full max-w-xl bg-card border border-border rounded-lg shadow-lg overflow-hidden"
-      transition:scale={{ duration: 200, start: 0.95, easing: quintOut }}
-    >
-      <div class="flex items-center justify-between border-b border-border p-4">
-        <h2 class="text-lg font-semibold">TMDB 搜索</h2>
-        <button class="inline-flex items-center justify-center rounded-md h-8 w-8 hover:bg-accent" on:click={closeSearchModal}>
-          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-        </button>
-      </div>
-      <div class="p-4 space-y-4">
-        <div class="flex gap-2">
-          <input 
-            type="text" 
-            class="flex-1 h-10 rounded-md border border-input bg-background px-3 text-sm" 
-            placeholder="输入搜索关键词..."
-            bind:value={tmdbSearchQuery}
-            on:keydown={(e) => e.key === 'Enter' && handleTMDBSearch()}
-          />
-          <button 
-            class="inline-flex items-center justify-center rounded-md text-sm font-medium h-10 px-4 py-2 bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
-            on:click={handleTMDBSearch}
-            disabled={isSearchingTMDB}
-          >
-            {isSearchingTMDB ? '搜索中...' : '搜索'}
-          </button>
-        </div>
-        
-        <div class="max-h-80 overflow-y-auto space-y-2">
-          {#if tmdbSearchResults.length > 0}
-            {#each tmdbSearchResults as result}
-              <button 
-                class="w-full flex items-center gap-4 p-3 rounded-md border border-border hover:bg-accent/50 text-left"
-                on:click={() => selectTMDBResult(result)}
-              >
-                {#if result.posterPath}
-                  <img src={result.posterPath} alt="{result.name || result.title}" class="w-10 h-14 object-cover rounded shrink-0" />
-                {:else}
-                  <div class="w-10 h-14 bg-muted rounded flex items-center justify-center shrink-0">
-                    <svg class="h-5 w-5 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>
-                  </div>
-                {/if}
-                <div class="flex-1 min-w-0">
-                  <p class="font-medium truncate">{result.name || result.title}</p>
-                  <p class="text-sm text-muted-foreground">{result.firstAirDate?.slice(0, 4) || result.releaseDate?.slice(0, 4) || '未知'}</p>
-                </div>
-                <span class="text-xs text-muted-foreground">TMDB#{result.id}</span>
-              </button>
-            {/each}
-          {:else if !isSearchingTMDB}
-            <p class="text-center text-muted-foreground py-8">输入关键词搜索 TMDB</p>
-          {/if}
-        </div>
-      </div>
-      <div class="flex justify-end gap-2 border-t border-border p-4">
-        <button class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 border border-input bg-background hover:bg-accent" on:click={closeSearchModal}>取消</button>
-      </div>
-    </div>
-  </div>
-{/if}
-
-<!-- Confirm Dialog -->
-<ConfirmDialog 
-  show={showConfirmDialog}
-  title={confirmTitle}
-  message={confirmMessage}
-  on:confirm={handleConfirm}
-  on:cancel={handleCancelConfirm}
+<TMDBSearchModal
+  bind:show={showSearchModal}
+  type="tv"
+  initialQuery={selectedShowForDetail?.name || ''}
+  on:select={handleTMDBSelect}
+  on:close={() => showSearchModal = false}
 />
 
 <style lang="postcss">

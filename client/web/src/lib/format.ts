@@ -97,3 +97,61 @@ export function getScrapedStatus(scraped: boolean): { icon: string; text: string
     ? { icon: '✅', text: '已刮削', class: 'text-green-500' }
     : { icon: '⚠️', text: '未刮削', class: 'text-yellow-500' };
 }
+
+/**
+ * 状态徽章配置
+ */
+export type GroupStatusType = 'scraped' | 'unscraped' | 'supplement' | 'processing' | 'success' | 'failed';
+
+export interface StatusBadge {
+  label: string;
+  color: string;
+  border: string;
+  bgColor: string;
+}
+
+/**
+ * 获取分组状态徽章样式
+ * 用于 TV/Movies 列表的状态显示
+ */
+export function getGroupStatusBadge(status: GroupStatusType | string | undefined): StatusBadge {
+  switch (status) {
+    case 'scraped':
+    case 'success':
+      return { 
+        label: status === 'success' ? '成功' : '已刮削', 
+        color: 'text-green-500', 
+        border: 'border-green-500/50',
+        bgColor: 'bg-green-500/10'
+      };
+    case 'unscraped':
+    case 'failed':
+      return { 
+        label: status === 'failed' ? '失败' : '未刮削', 
+        color: 'text-red-500', 
+        border: 'border-red-500/50',
+        bgColor: 'bg-red-500/10'
+      };
+    case 'supplement':
+      return { 
+        label: '待处理', 
+        color: 'text-yellow-500', 
+        border: 'border-yellow-500/50',
+        bgColor: 'bg-yellow-500/10'
+      };
+    case 'processing':
+      return { 
+        label: '处理中', 
+        color: 'text-primary', 
+        border: 'border-primary/50',
+        bgColor: 'bg-primary/10'
+      };
+    default:
+      return { 
+        label: '未知', 
+        color: 'text-muted-foreground', 
+        border: 'border-border',
+        bgColor: 'bg-muted/40'
+      };
+  }
+}
