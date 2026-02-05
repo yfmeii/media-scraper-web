@@ -10,7 +10,7 @@
     "allowSyntheticDefaultImports": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "types": ["bun", "node"],
+    "types": ["bun"],
     "paths": {
       "@media-scraper/shared": ["../packages/shared/src"]
     }
