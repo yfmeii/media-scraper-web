@@ -79,5 +79,7 @@ console.log(`🎬 媒体刮削服务运行在 http://localhost:${port}`);
 
 export default {
   port,
+  // Disable idle timeout for SSE connections
+  idleTimeout: 0,
   fetch: app.fetch,
 };
