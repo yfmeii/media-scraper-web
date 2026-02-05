@@ -764,34 +764,58 @@
           </section>
         </div>
 
-        <div class="shrink-0 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 p-4">
-          <div class="flex flex-wrap gap-2">
+        <div class="shrink-0 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 p-4 space-y-3">
+          {#if operationMessage}
+            <div class="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
+              <svg class="h-4 w-4 shrink-0 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+              </svg>
+              <span>{operationMessage}</span>
+            </div>
+          {/if}
+          <div class="flex items-center gap-2">
             {#if !selectedShowForDetail?.tmdbId}
               <button 
-                class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                class="flex-1 inline-flex items-center justify-center gap-2 rounded-lg text-sm font-medium h-10 px-4 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
                 disabled={isOperating}
                 onclick={() => { if (selectedShowForDetail) handleScrapeShow(selectedShowForDetail); }}
               >
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="m5 12 7-7 7 7"/>
+                  <path d="M12 19V5"/>
+                </svg>
                 {isOperating ? '处理中...' : '自动匹配'}
               </button>
             {:else}
               <button 
-                class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                class="flex-1 inline-flex items-center justify-center gap-2 rounded-lg text-sm font-medium h-10 px-4 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
                 disabled={isOperating}
                 onclick={() => { if (selectedShowForDetail) handleRefreshShow(selectedShowForDetail); }}
               >
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                  <path d="M3 3v5h5"/>
+                  <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                  <path d="M16 16h5v5"/>
+                </svg>
                 {isOperating ? '处理中...' : '刷新元数据'}
               </button>
             {/if}
-            <button class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-secondary text-secondary-foreground hover:opacity-90" onclick={() => { 
-              const show = selectedShowForDetail;
-              closeDetailDrawer();
-              if (show) openSearchModal(show);
-            }}>重新匹配</button>
+            <button 
+              class="inline-flex items-center justify-center gap-2 rounded-lg text-sm font-medium h-10 px-4 border border-border bg-background hover:bg-accent transition-colors"
+              onclick={() => { 
+                const show = selectedShowForDetail;
+                closeDetailDrawer();
+                if (show) openSearchModal(show);
+              }}
+            >
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"/>
+                <path d="m21 21-4.3-4.3"/>
+              </svg>
+              重新匹配
+            </button>
           </div>
-          {#if operationMessage}
-            <p class="mt-2 text-sm text-muted-foreground">{operationMessage}</p>
-          {/if}
         </div>
       </div>
     </div>
