@@ -157,6 +157,21 @@
       selectFileForDetail(file);
     }
   }
+
+  function toggleFileSelection(path: string, event: MouseEvent) {
+    if (event.shiftKey && selectedFiles.size > 0) {
+      selectedFiles = handleItemClick(path, event, selectedFiles, files, f => f.path);
+      return;
+    }
+
+    const nextSelected = new Set(selectedFiles);
+    if (nextSelected.has(path)) {
+      nextSelected.delete(path);
+    } else {
+      nextSelected.add(path);
+    }
+    selectedFiles = nextSelected;
+  }
   
   async function selectFileForDetail(file: MediaFile) {
     selectedFile = file;
@@ -368,7 +383,7 @@
         const searchKeyword = file.parsed.title || file.name.replace(/\.[^/.]+$/, '');
         const matchResult = await autoMatch(file.path, detectedType, searchKeyword, file.parsed.year);
         
-        if (!matchResult.matched || !matchResult.result) {
+        if (!matchResult.result) {
           failCount++;
           setFileStatus(file.path, 'failed');
           batchProgress.current++;
@@ -411,13 +426,18 @@
       batchProgress = { ...batchProgress };
     }
     
+    const hadSuccess = successCount > 0;
     operationMessage = `完成: ${successCount} 成功 (${tvCount} 剧集, ${movieCount} 电影), ${failCount} 失败`;
-    await loadData();
+    if (hadSuccess) {
+      await loadData();
+    }
     
     setTimeout(() => {
       isOperating = false;
       operationMessage = '';
-      selectedFiles = new Set();
+      if (hadSuccess) {
+        selectedFiles = new Set();
+      }
     }, 3000);
   }
   
@@ -449,9 +469,11 @@
       
       try {
         // 1. 调用 AI 识别（不传 kind，让 AI 自动判断）
-        const result = await recognizePath(file.relativePath, 'tv');  // 参数被忽略，AI 会自动判断
+        const recognizeInput = file.relativePath || file.path;
+        const result = await recognizePath(recognizeInput, 'tv');  // 参数被忽略，AI 会自动判断
         
-        if (!result || !result.tmdb_id) {
+        const tmdbId = result?.tmdb_id ?? (result as any)?.tmdbId ?? (result as any)?.tmdbID ?? null;
+        if (!result || !tmdbId) {
           failCount++;
           setFileStatus(file.path, 'failed');
           batchProgress.current++;
@@ -460,23 +482,25 @@
         }
         
         // 使用 AI 判断的媒体类型
-        const mediaType = result.media_type || 'tv';  // 兼容旧版本
+        const mediaType = (result.media_type || (result as any)?.mediaType || 'tv') as 'tv' | 'movie';  // 兼容旧版本
+        const fallbackName = file.parsed.title || file.name.replace(/\.[^/.]+$/, '');
+        const showName = result.tmdb_name || (result as any)?.tmdbName || result.title || fallbackName;
         operationMessage = `入库中 (${batchProgress.current + 1}/${batchProgress.total}): ${file.relativePath} [${mediaType === 'movie' ? '电影' : '剧集'}]`;
         
         // 2. 根据 AI 判断的媒体类型入库
         if (mediaType === 'movie') {
           await processMovie({
             sourcePath: file.path,
-            tmdbId: result.tmdb_id,
+            tmdbId,
           });
           movieCount++;
         } else {
-          const season = result.season ?? file.parsed.season ?? 1;
-          const episode = result.episode ?? file.parsed.episode ?? 1;
+          const season = result.season ?? (result as any)?.Season ?? file.parsed.season ?? 1;
+          const episode = result.episode ?? (result as any)?.Episode ?? file.parsed.episode ?? 1;
           await processTV({
             sourcePath: file.path,
-            showName: result.tmdb_name || result.title || file.parsed.title || file.name,
-            tmdbId: result.tmdb_id,
+            showName,
+            tmdbId,
             season,
             episodes: [{ source: file.path, episode }],
           });
@@ -496,13 +520,18 @@
       batchProgress = { ...batchProgress };
     }
     
+    const hadSuccess = successCount > 0;
     operationMessage = `完成: ${successCount} 成功 (${tvCount} 剧集, ${movieCount} 电影), ${failCount} 失败`;
-    await loadData();
+    if (hadSuccess) {
+      await loadData();
+    }
     
     setTimeout(() => {
       isOperating = false;
       operationMessage = '';
-      selectedFiles = new Set();
+      if (hadSuccess) {
+        selectedFiles = new Set();
+      }
     }, 3000);  // 延长显示时间以便用户看到统计
   }
   
@@ -718,7 +747,7 @@
                       checked={selectedFiles.has(file.path)}
                       onclick={(e) => {
                         e.stopPropagation();
-                        toggleFile(file.path, e);
+                        toggleFileSelection(file.path, e);
                       }}
                     />
                   </label>

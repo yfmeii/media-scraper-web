@@ -68,18 +68,32 @@ export async function recognizePath(filePath: string): Promise<PathRecognizeResu
 
     console.log('[recognizePath] Full answer:', fullAnswer);
 
-    const parsed = parseJsonFromAnswer<PathRecognizeResult>(fullAnswer);
+    const parsed = parseJsonFromAnswer<any>(fullAnswer);
     if (!parsed) {
       console.error('[recognizePath] Failed to parse JSON:', fullAnswer);
       return null;
     }
-    
-    // Ensure path is set
-    if (!parsed.path) {
-      parsed.path = filePath;
-    }
-    
-    return parsed;
+
+    const mediaTypeRaw = parsed.media_type ?? parsed.mediaType ?? parsed.type;
+    const mediaType = mediaTypeRaw === 'movie' ? 'movie' : 'tv';
+    const tmdbId = parsed.tmdb_id ?? parsed.tmdbId ?? parsed.tmdbID ?? null;
+    const tmdbName = parsed.tmdb_name ?? parsed.tmdbName ?? parsed.name ?? null;
+    const title = parsed.title ?? tmdbName ?? parsed.name ?? '';
+
+    const normalized: PathRecognizeResult = {
+      path: parsed.path || filePath,
+      title,
+      media_type: mediaType,
+      year: parsed.year ?? null,
+      season: parsed.season ?? null,
+      episode: parsed.episode ?? null,
+      tmdb_id: tmdbId,
+      tmdb_name: tmdbName,
+      confidence: parsed.confidence ?? 0,
+      reason: parsed.reason ?? '',
+    };
+
+    return normalized;
   } catch (error) {
     console.error('Path recognizer call error:', error);
     return null;
