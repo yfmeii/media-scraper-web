@@ -8,7 +8,7 @@
   import { handleItemClick, toggleAllSelection } from '$lib/selection';
   import { createProgressHandler } from '$lib/progress';
   import { formatFileSize, getGroupStatusBadge } from '$lib/format';
-  import { TMDBSearchModal, BatchActionBar, TableSkeleton, PosterThumbnail, AssetIndicators, StatusBadge, SearchToolbar } from '$lib/components';
+  import { TMDBSearchModal, BatchActionBar, TableSkeleton, PosterThumbnail, AssetIndicators, StatusBadge, SearchToolbar, MediaDetailHeader, MediaOverview, MediaDetailActions } from '$lib/components';
   import { confirmDialog } from '$lib/stores';
   
   // Helper functions for typed array operations

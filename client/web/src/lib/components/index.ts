@@ -17,3 +17,6 @@ export { default as AssetIndicators } from './AssetIndicators.svelte';
 export { default as StatusBadge } from './StatusBadge.svelte';
 export { default as FilterTabs } from './FilterTabs.svelte';
 export { default as SearchToolbar } from './SearchToolbar.svelte';
+export { default as MediaDetailHeader } from './MediaDetailHeader.svelte';
+export { default as MediaOverview } from './MediaOverview.svelte';
+export { default as MediaDetailActions } from './MediaDetailActions.svelte';
