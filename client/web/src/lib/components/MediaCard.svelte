@@ -23,7 +23,7 @@
     onDblclick?: () => void;
   } = $props();
   
-  const status = $derived(() => getScrapedStatus(scraped));
+  const status = $derived.by(() => getScrapedStatus(scraped));
 </script>
 
 <button
@@ -68,7 +68,7 @@
         <div 
           class="h-full bg-primary transition-all"
           style="width: {progress}%"
-        />
+        ></div>
       </div>
     {/if}
   </div>
