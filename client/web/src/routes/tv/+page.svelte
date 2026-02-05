@@ -450,7 +450,7 @@
                 <StatusBadge status={show.groupStatus} />
               </td>
               <td class="p-3">
-                <AssetIndicators assets={{ hasPoster: show.assets?.hasPoster, hasNfo: show.assets?.hasNfo }} showLabels={true} />
+                <AssetIndicators assets={{ hasPoster: show.assets?.hasPoster, hasNfo: show.assets?.hasNfo }} showFanart={false} />
               </td>
               <td class="p-3">
                 <div class="flex gap-1">

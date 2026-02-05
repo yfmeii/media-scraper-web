@@ -325,7 +325,7 @@ import { TMDBSearchModal, BatchActionBar, TableSkeleton, PosterThumbnail, AssetI
                 <StatusBadge status={movie.isProcessed ? 'scraped' : 'unscraped'} />
               </td>
               <td class="p-3">
-                <AssetIndicators assets={{ hasPoster: movie.assets?.hasPoster, hasNfo: movie.assets?.hasNfo }} showLabels={true} />
+                <AssetIndicators assets={{ hasPoster: movie.assets?.hasPoster, hasNfo: movie.assets?.hasNfo }} showFanart={false} />
               </td>
               <td class="p-3">
                 <div class="flex gap-1">
