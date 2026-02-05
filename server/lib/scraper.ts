@@ -14,7 +14,9 @@ export function generateTVShowNFO(show: TMDBShowDetails): string {
   <originaltitle>${escapeXml(show.original_name)}</originaltitle>
   <year>${show.first_air_date?.split('-')[0] || ''}</year>
   <premiered>${show.first_air_date || ''}</premiered>
+  <status>${escapeXml(show.status || '')}</status>
   <plot>${escapeXml(show.overview)}</plot>
+  <rating>${show.vote_average ?? ''}</rating>
   <tmdbid>${show.id}</tmdbid>
   <generator>${NFO_GENERATOR}</generator>
 </tvshow>
@@ -76,7 +78,9 @@ export function generateMovieNFO(movie: TMDBMovieDetails): string {
   <year>${movie.release_date?.split('-')[0] || ''}</year>
   <premiered>${movie.release_date || ''}</premiered>
   <plot>${escapeXml(movie.overview)}</plot>
+  <tagline>${escapeXml(movie.tagline || '')}</tagline>
   <runtime>${movie.runtime || ''}</runtime>
+  <rating>${movie.vote_average ?? ''}</rating>
   <tmdbid>${movie.id}</tmdbid>
   <generator>${NFO_GENERATOR}</generator>
 </movie>
