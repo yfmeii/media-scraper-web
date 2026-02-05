@@ -29,7 +29,7 @@
             <div 
               class="h-full bg-primary rounded-full transition-all"
               style="width: {(progress.current / progress.total) * 100}%"
-            />
+            ></div>
           </div>
           <span class="text-xs text-muted-foreground">
             {progress.current}/{progress.total}
