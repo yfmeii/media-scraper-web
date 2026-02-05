@@ -7,7 +7,7 @@
   import type { SeasonInfo, MediaFile } from '@media-scraper/shared';
   import { handleItemClick, toggleAllSelection } from '$lib/selection';
   import { createProgressHandler } from '$lib/progress';
-  import { formatFileSize } from '$lib/format';
+  import { formatFileSize, getGroupStatusBadge } from '$lib/format';
   import { TMDBSearchModal, BatchActionBar, TableSkeleton, PosterThumbnail, AssetIndicators, StatusBadge, SearchToolbar } from '$lib/components';
   import { confirmDialog } from '$lib/stores';
   
