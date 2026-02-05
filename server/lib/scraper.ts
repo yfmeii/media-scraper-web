@@ -1,5 +1,6 @@
 import { mkdir, rename, writeFile, rm, stat, readdir } from 'fs/promises';
 import { join, dirname, extname, basename } from 'path';
+import { DEFAULT_LANGUAGE } from '@media-scraper/shared';
 import { NFO_GENERATOR, MEDIA_PATHS } from './config';
 import { getTVDetails, getMovieDetails, getSeasonDetails, getPosterUrl, getBackdropUrl, type TMDBShowDetails, type TMDBMovieDetails, type TMDBSeasonDetails } from './tmdb';
 import { extractTmdbIdFromNfo, parseFilename } from './scanner';
@@ -127,7 +128,7 @@ export async function processTVShow(
   tmdbId: number,
   season: number,
   episodes: { source: string; episode: number; episodeEnd?: number }[],
-  language = 'zh-CN'
+  language = DEFAULT_LANGUAGE
 ): Promise<{ success: boolean; message: string; destPath?: string }> {
   try {
     // Get show details first
@@ -232,7 +233,7 @@ export async function processTVShow(
 export async function processMovie(
   sourcePath: string,
   tmdbId: number,
-  language = 'zh-CN'
+  language = DEFAULT_LANGUAGE
 ): Promise<{ success: boolean; message: string; destPath?: string }> {
   try {
     // Get movie details
@@ -293,7 +294,7 @@ export async function refreshMetadata(
   tmdbId: number,
   season?: number,
   episode?: number,
-  language = 'zh-CN'
+  language = DEFAULT_LANGUAGE
 ): Promise<{ success: boolean; message: string }> {
   try {
     if (kind === 'tv') {
@@ -499,7 +500,7 @@ export async function refreshMetadata(
 // 补刮功能 - 处理已刮削目录中的新文件
 export async function supplementTVShow(
   showPath: string,
-  language = 'zh-CN'
+  language = DEFAULT_LANGUAGE
 ): Promise<{ success: boolean; message: string; processed: number }> {
   try {
     // 从 tvshow.nfo 获取 TMDB ID
@@ -587,7 +588,7 @@ export async function fixMissingAssets(
   kind: 'tv' | 'movie',
   path: string,
   tmdbId: number,
-  language = 'zh-CN'
+  language = DEFAULT_LANGUAGE
 ): Promise<{ success: boolean; message: string; fixed: string[] }> {
   const fixed: string[] = [];
   
@@ -707,7 +708,7 @@ export async function generatePreviewPlan(
     season?: number;
     episodes?: Array<{ source: string; episode: number; episodeEnd?: number }>;
   }>,
-  language = 'zh-CN'
+  language = DEFAULT_LANGUAGE
 ): Promise<{
   actions: Array<{
     type: 'move' | 'create-nfo' | 'download-poster' | 'create-dir';

@@ -3,11 +3,6 @@
  */
 
 export { default as TMDBSearchModal } from './TMDBSearchModal.svelte';
-export { default as DisambiguationModal } from './DisambiguationModal.svelte';
-export { default as PreviewModal } from './PreviewModal.svelte';
-export { default as OperationBar } from './OperationBar.svelte';
-export { default as MediaCard } from './MediaCard.svelte';
-export { default as ConfirmDialog } from './ConfirmDialog.svelte';
 export { default as GlobalConfirmDialog } from './GlobalConfirmDialog.svelte';
 export { default as DetailDrawer } from './DetailDrawer.svelte';
 export { default as BatchActionBar } from './BatchActionBar.svelte';
@@ -15,7 +10,6 @@ export { default as TableSkeleton } from './TableSkeleton.svelte';
 export { default as PosterThumbnail } from './PosterThumbnail.svelte';
 export { default as AssetIndicators } from './AssetIndicators.svelte';
 export { default as StatusBadge } from './StatusBadge.svelte';
-export { default as FilterTabs } from './FilterTabs.svelte';
 export { default as SearchToolbar } from './SearchToolbar.svelte';
 export { default as MediaDetailHeader } from './MediaDetailHeader.svelte';
 export { default as MediaOverview } from './MediaOverview.svelte';

@@ -1,3 +1,4 @@
+import { DEFAULT_LANGUAGE } from '@media-scraper/shared';
 import type {
   Stats,
   SearchResult,
@@ -116,7 +117,7 @@ export async function refreshMetadata(
   tmdbId: number, 
   options?: { season?: number; episode?: number; language?: string }
 ): Promise<ScrapeResult> {
-  const { season, episode, language = 'zh-CN' } = options || {};
+  const { season, episode, language = DEFAULT_LANGUAGE } = options || {};
   const res = await fetch(`${API_BASE}/scrape/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -126,7 +127,7 @@ export async function refreshMetadata(
   return { success: data.success, message: data.error || data.data?.message, taskId: data.taskId };
 }
 
-export async function fixAssets(kind: 'tv' | 'movie', path: string, tmdbId: number, language = 'zh-CN'): Promise<ScrapeResult> {
+export async function fixAssets(kind: 'tv' | 'movie', path: string, tmdbId: number, language = DEFAULT_LANGUAGE): Promise<ScrapeResult> {
   const res = await fetch(`${API_BASE}/scrape/fix-assets`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -147,7 +148,7 @@ export async function recognizePath(path: string, kind: 'tv' | 'movie'): Promise
   return data.success ? data.data : null;
 }
 
-export async function autoMatch(path: string, kind: 'tv' | 'movie', title?: string, year?: number, language = 'zh-CN'): Promise<MatchResult> {
+export async function autoMatch(path: string, kind: 'tv' | 'movie', title?: string, year?: number, language = DEFAULT_LANGUAGE): Promise<MatchResult> {
   const res = await fetch(`${API_BASE}/scrape/match`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -159,7 +160,7 @@ export async function autoMatch(path: string, kind: 'tv' | 'movie', title?: stri
 
 export async function batchScrape(
   items: BatchScrapeItem[],
-  language = 'zh-CN'
+  language = DEFAULT_LANGUAGE
 ): Promise<BatchScrapeResult> {
   const res = await fetch(`${API_BASE}/scrape/batch`, {
     method: 'POST',
@@ -206,7 +207,7 @@ export async function moveToInbox(sourcePath: string): Promise<{ success: boolea
   return { success: data.success, message: data.error || data.message };
 }
 
-export async function previewPlan(items: PreviewItem[], language = 'zh-CN'): Promise<PreviewPlan> {
+export async function previewPlan(items: PreviewItem[], language = DEFAULT_LANGUAGE): Promise<PreviewPlan> {
   const res = await fetch(`${API_BASE}/scrape/preview`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

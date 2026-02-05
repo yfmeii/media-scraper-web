@@ -1,7 +1,6 @@
 <script lang="ts">
   import { fly } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
-  import { PosterThumbnail } from '$lib/components';
 
   type StatusBadge = {
     label: string;
@@ -16,6 +15,7 @@
     title,
     metaItems = [] as string[],
     statusBadge,
+    subtitle,
     onClose,
     animationDelay = 200
   }: {
@@ -24,6 +24,7 @@
     title: string;
     metaItems?: string[];
     statusBadge: StatusBadge;
+    subtitle?: string;
     onClose: () => void;
     animationDelay?: number;
   } = $props();
@@ -71,6 +72,9 @@
           {statusBadge.label}
         </span>
       </div>
+      {#if subtitle}
+        <p class="mt-2 text-sm italic text-muted-foreground">{subtitle}</p>
+      {/if}
     </div>
   </div>
 </div>

@@ -1,5 +1,8 @@
 export type MediaKind = 'tv' | 'movie' | 'unknown';
 
+// Default language for TMDB and related APIs
+export const DEFAULT_LANGUAGE = 'zh-CN' as const;
+
 export interface ParsedInfo {
   title: string;
   year?: number;
@@ -84,6 +87,22 @@ export interface DirectoryGroup {
 
 export type TaskStatus = 'pending' | 'running' | 'success' | 'failed' | 'cancelled';
 export type TaskType = 'scrape' | 'process' | 'refresh' | 'supplement' | 'fix-assets';
+
+export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
+  pending: '等待',
+  running: '进行中',
+  success: '完成',
+  failed: '失败',
+  cancelled: '已取消',
+};
+
+export const TASK_TYPE_LABELS: Record<TaskType, string> = {
+  scrape: '刮削',
+  process: '处理',
+  refresh: '刷新',
+  supplement: '补刮',
+  'fix-assets': '修复资产',
+};
 
 export interface TaskItem {
   id: string;

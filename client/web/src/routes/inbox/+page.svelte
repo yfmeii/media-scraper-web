@@ -15,7 +15,9 @@
     type SearchResult, 
     type DirectoryGroup,
     type PathRecognizeResult,
-    type PreviewItem
+    type PreviewItem,
+    type PreviewAction,
+    type PreviewPlan
   } from '$lib/api';
   import { confirmDialog } from '$lib/stores';
   import { handleItemClick, toggleAllSelection } from '$lib/selection';
@@ -54,8 +56,8 @@
   
   // Preview modal
   let showPreviewModal = $state(false);
-  let previewActions = $state<Array<{ type: string; source?: string; destination: string; willOverwrite: boolean }>>([]);
-  let previewSummary = $state<{ filesMoving: number; nfoCreating: number; nfoOverwriting: number } | null>(null);
+  let previewActions = $state<PreviewAction[]>([]);
+  let previewSummary = $state<PreviewPlan['impactSummary'] | null>(null);
   let isLoadingPreview = $state(false);
   
   // AI 识别状态

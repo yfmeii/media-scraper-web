@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { DEFAULT_LANGUAGE } from '@media-scraper/shared';
 import { searchTV, searchMovie, findBestMatch, getTVDetails, getMovieDetails, getPosterUrl } from '../lib/tmdb';
 import { recognizePath } from '../lib/dify';
 import { processTVShow, processMovie, refreshMetadata, supplementTVShow, fixMissingAssets, generatePreviewPlan } from '../lib/scraper';
@@ -14,7 +15,7 @@ export const scrapeRoutes = new Hono();
 scrapeRoutes.get('/search/tv', async (c) => {
   const query = c.req.query('q');
   const year = c.req.query('year');
-  const language = c.req.query('language') || 'zh-CN';
+  const language = c.req.query('language') || DEFAULT_LANGUAGE;
   
   if (!query) {
     return c.json({ success: false, error: 'Missing query parameter' }, 400);
@@ -39,7 +40,7 @@ scrapeRoutes.get('/search/tv', async (c) => {
 scrapeRoutes.get('/search/movie', async (c) => {
   const query = c.req.query('q');
   const year = c.req.query('year');
-  const language = c.req.query('language') || 'zh-CN';
+  const language = c.req.query('language') || DEFAULT_LANGUAGE;
   
   if (!query) {
     return c.json({ success: false, error: 'Missing query parameter' }, 400);
@@ -92,7 +93,7 @@ scrapeRoutes.post('/recognize', async (c) => {
 // Auto-match a file
 scrapeRoutes.post('/match', async (c) => {
   const body = await c.req.json();
-  const { path, kind, title, year, language = 'zh-CN' } = body;
+  const { path, kind, title, year, language = DEFAULT_LANGUAGE } = body;
   
   if (!path || !kind) {
     return c.json({ success: false, error: 'Missing path or kind' }, 400);
@@ -152,7 +153,7 @@ scrapeRoutes.post('/match', async (c) => {
 // Process TV show (move and scrape)
 scrapeRoutes.post('/process/tv', async (c) => {
   const body = await c.req.json();
-  const { sourcePath, showName, tmdbId, season, episodes, language = 'zh-CN' } = body;
+  const { sourcePath, showName, tmdbId, season, episodes, language = DEFAULT_LANGUAGE } = body;
   
   if (!sourcePath || !showName || !tmdbId || !season || !episodes) {
     return c.json({ success: false, error: 'Missing required parameters' }, 400);
@@ -165,7 +166,7 @@ scrapeRoutes.post('/process/tv', async (c) => {
 // Process movie (move and scrape)
 scrapeRoutes.post('/process/movie', async (c) => {
   const body = await c.req.json();
-  const { sourcePath, tmdbId, language = 'zh-CN' } = body;
+  const { sourcePath, tmdbId, language = DEFAULT_LANGUAGE } = body;
   
   if (!sourcePath || !tmdbId) {
     return c.json({ success: false, error: 'Missing required parameters' }, 400);
@@ -231,7 +232,7 @@ scrapeRoutes.post('/move-to-inbox', async (c) => {
 // Refresh metadata only
 scrapeRoutes.post('/refresh', async (c) => {
   const body = await c.req.json();
-  const { kind, path, tmdbId, season, episode, language = 'zh-CN' } = body;
+  const { kind, path, tmdbId, season, episode, language = DEFAULT_LANGUAGE } = body;
   
   console.log('[refresh] Request:', { kind, path, tmdbId, season, episode, language });
   
@@ -248,7 +249,7 @@ scrapeRoutes.post('/refresh', async (c) => {
 // 预览清单 API - 返回移动/覆盖预览
 scrapeRoutes.post('/preview', async (c) => {
   const body = await c.req.json();
-  const { items, language = 'zh-CN' } = body;
+  const { items, language = DEFAULT_LANGUAGE } = body;
   
   if (!items || !Array.isArray(items)) {
     return c.json({ success: false, error: 'Missing items array' }, 400);
@@ -265,7 +266,7 @@ scrapeRoutes.post('/preview', async (c) => {
 // Batch process multiple items
 scrapeRoutes.post('/batch', async (c) => {
   const body = await c.req.json();
-  const { items, language = 'zh-CN' } = body;
+  const { items, language = DEFAULT_LANGUAGE } = body;
   
   if (!items || !Array.isArray(items)) {
     return c.json({ success: false, error: 'Missing items array' }, 400);
@@ -375,7 +376,7 @@ scrapeRoutes.post('/batch', async (c) => {
 // 补刮 API - 处理已刮削目录中的新文件
 scrapeRoutes.post('/supplement', async (c) => {
   const body = await c.req.json();
-  const { showPath, language = 'zh-CN' } = body;
+  const { showPath, language = DEFAULT_LANGUAGE } = body;
   
   if (!showPath) {
     return c.json({ success: false, error: 'Missing showPath' }, 400);
@@ -409,7 +410,7 @@ scrapeRoutes.post('/supplement', async (c) => {
 // 修复缺失资产 API
 scrapeRoutes.post('/fix-assets', async (c) => {
   const body = await c.req.json();
-  const { kind, path, tmdbId, language = 'zh-CN' } = body;
+  const { kind, path, tmdbId, language = DEFAULT_LANGUAGE } = body;
   
   if (!kind || !path || !tmdbId) {
     return c.json({ success: false, error: 'Missing required parameters' }, 400);
