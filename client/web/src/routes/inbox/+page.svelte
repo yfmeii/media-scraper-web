@@ -38,6 +38,7 @@
   let matchScore = $state(0);  // Match confidence score
   let isSearchingTMDB = $state(false);
   let manualSearchQuery = $state('');
+  let showDetailModal = $state(false);
   
   // Target library path
   let targetPath = $state('');
@@ -137,6 +138,7 @@
     }
     selectedFiles = new Set();
     selectedFile = null;
+    showDetailModal = false;
   }
   
   function toggleFile(path: string, event: MouseEvent) {
@@ -161,6 +163,7 @@
     isAutoMatched = false;
     matchScore = 0;
     fileStatus = new Map();
+    showDetailModal = true;
 
     if (file.kind !== 'unknown') {
       manualSearchType = file.kind;
@@ -706,22 +709,17 @@
                 in:fly={{ y: 20, duration: 300, easing: cubicOut }}
               >
                 <td class="p-2 w-10 text-center" onclick={(e) => e.stopPropagation()}>
-                  <div class="flex items-center justify-center w-full h-full p-1 -m-1 cursor-pointer" onclick={(e) => {
-                      e.stopPropagation();
-                      if (selectedFiles.has(file.path)) {
-                        selectedFiles.delete(file.path);
-                      } else {
-                        selectedFiles.add(file.path);
-                      }
-                      selectedFiles = new Set(selectedFiles);
-                    }}>
+                  <label class="flex items-center justify-center w-full h-full p-1 -m-1 cursor-pointer">
                     <input 
                       type="checkbox" 
                       class="h-4 w-4 rounded border-input accent-primary transition-all duration-200 cursor-pointer" 
-                      checked={selectedFiles.has(file.path)} 
-                      readonly
+                      checked={selectedFiles.has(file.path)}
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        toggleFile(file.path, e);
+                      }}
                     />
-                  </div>
+                  </label>
                 </td>
                 <td class="p-2">
                   <div class="flex items-center gap-2">
@@ -824,16 +822,19 @@
 </div>
 
 <!-- Details Modal -->
-{#if selectedFiles.size === 1}
+{#if showDetailModal && selectedFile}
   <div 
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+    class="fixed inset-0 z-50 flex items-center justify-center"
     transition:fade={{ duration: 200 }}
-    onclick={(e) => {
-       if (e.target === e.currentTarget) selectedFiles = new Set();
-    }}
   >
+    <button
+      type="button"
+      class="absolute inset-0 bg-black/50 backdrop-blur-sm"
+      aria-label="关闭详情"
+      onclick={() => { showDetailModal = false; }}
+    ></button>
     <div 
-      class="bg-card w-full max-w-4xl max-h-[85vh] rounded-xl shadow-2xl overflow-hidden flex flex-col border border-border ring-1 ring-white/10"
+      class="relative bg-card w-full max-w-4xl max-h-[85vh] rounded-xl shadow-2xl overflow-hidden flex flex-col border border-border ring-1 ring-white/10"
       transition:scale={{ duration: 250, start: 0.96, easing: quintOut }}
     >
        <!-- Header -->
@@ -845,8 +846,10 @@
             <span>文件入库详情</span>
           </h3>
           <button 
+            type="button"
             class="h-8 w-8 rounded-full hover:bg-accent flex items-center justify-center transition-colors text-muted-foreground hover:text-foreground"
-            onclick={() => selectedFiles = new Set()}
+            aria-label="关闭详情"
+            onclick={() => showDetailModal = false}
           >
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 15-6-6-6 6"/></svg>
           </button>
