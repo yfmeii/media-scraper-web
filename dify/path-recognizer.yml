@@ -1,0 +1,445 @@
+app:
+  description: 从文件路径智能识别媒体信息（支持电影和剧集）
+  icon: 🤖
+  icon_background: '#E4FBCC'
+  mode: advanced-chat
+  name: 路径识别器
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/openai:0.2.8@aae2be0913b8c6f0b80cff58e08d7a8b4c214569b41778413fcaea204561ff16
+    version: null
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: lcandy/tmdb:0.0.1@8c444e57919681f3a35f19ad34c402637353bd8d5a71315fc1e618b3a9b75e0d
+    version: null
+kind: app
+version: 0.5.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      enabled: false
+      fileUploadConfig:
+        attachment_image_file_size_limit: 2
+        audio_file_size_limit: 50
+        batch_count_limit: 5
+        file_size_limit: 15
+        file_upload_limit: 20
+        image_file_batch_limit: 10
+        image_file_size_limit: 10
+        single_chunk_attachment_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        sourceType: start
+        targetType: llm
+      id: start-title
+      source: start
+      sourceHandle: source
+      target: extract_title
+      targetHandle: target
+      type: custom
+    - data:
+        sourceType: llm
+        targetType: answer
+      id: match-answer
+      source: match_llm
+      sourceHandle: source
+      target: answer
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: tool
+      id: extract_title-source-1770180990557-target
+      source: extract_title
+      sourceHandle: source
+      target: '1770180990557'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: tool
+        targetType: llm
+      id: 1770180990557-source-match_llm-target
+      source: '1770180990557'
+      sourceHandle: source
+      target: match_llm
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        desc: 接收文件相对路径
+        selected: false
+        title: 开始
+        type: start
+        variables: []
+      height: 101
+      id: start
+      position:
+        x: 0
+        y: 0
+      positionAbsolute:
+        x: 0
+        y: 0
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: 从路径中提取媒体标题
+        model:
+          completion_params:
+            frequency_penalty: 0
+            presence_penalty: 0
+            temperature: 0.1
+          mode: chat
+          name: gpt-5-nano
+          provider: langgenius/openai/openai
+        prompt_template:
+        - id: system-prompt
+          role: system
+          text: |
+            You are a media file path parser.
+
+            Task: Extract media name from file path for TMDB search.
+
+            Rules:
+            1. Output only one name, nothing else
+            2. Extract from first directory level or filename
+            3. Remove special chars, encoding info, resolution tags
+
+            Examples:
+            - "Swallowed Star/T S-X/207 4K.mkv" -> Swallowed Star
+            - "Game.of.Thrones.S08E06.1080p.mkv" -> Game of Thrones
+            - "Avatar (2009)/Avatar.2009.BluRay.mkv" -> Avatar
+            - "My Show/Season 01/12.mp4" -> My Show
+            - "Inception.2010.1080p.BluRay.mkv" -> Inception
+        - id: user-input
+          role: user
+          text: '{{#sys.query#}}'
+        selected: false
+        title: 提取标题
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 116
+      id: extract_title
+      position:
+        x: 300
+        y: 0
+      positionAbsolute:
+        x: 300
+        y: 0
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: 判断媒体类型，选择最佳匹配并解析路径信息
+        model:
+          completion_params:
+            frequency_penalty: 0.5
+            json_schema: |
+              {
+                "name": "MatchResult",
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "path": {"type": "string"},
+                    "title": {"type": "string"},
+                    "media_type": {"type": "string", "enum": ["tv", "movie"]},
+                    "year": {"type": ["integer", "null"]},
+                    "season": {"type": ["integer", "null"]},
+                    "episode": {"type": ["integer", "null"]},
+                    "tmdb_id": {"type": ["integer", "null"]},
+                    "tmdb_name": {"type": ["string", "null"]},
+                    "confidence": {"type": "number"},
+                    "reason": {"type": "string"}
+                  },
+                  "required": ["path", "title", "media_type", "year", "season", "episode", "tmdb_id", "tmdb_name", "confidence", "reason"]
+                },
+                "strict": true
+              }
+            presence_penalty: 0.5
+            response_format: json_schema
+            temperature: 0.2
+          mode: chat
+          name: gpt-5-nano
+          provider: langgenius/openai/openai
+        prompt_template:
+        - id: system-prompt
+          role: system
+          text: |
+            You are a media matching expert.
+
+            Tasks:
+            1. Determine if this is a movie or TV show
+            2. Parse relevant info from original path
+            3. Select best match from TMDB results
+
+            Media type rules:
+            - Movie: contains year like "(2020)", single video file, no season/episode
+            - TV: contains Season, SxxExx, multiple episodes, directory has season
+
+            Path parsing rules:
+            - year: extract year, e.g. "(2020)" -> 2020
+            - season: from "Season XX", "SXX", null for movie, 1 for TV if missing
+            - episode: from filename, e.g. "207 4K.mkv" -> 207, null for movie
+
+            Output:
+            - path: original file path (return as-is)
+            - title: extracted title
+            - media_type: "tv" or "movie"
+            - year: year (optional)
+            - season: season number (null for movie)
+            - episode: episode number (null for movie)
+            - tmdb_id: selected TMDB ID (null if no match)
+            - tmdb_name: selected TMDB name
+            - confidence: confidence score (0-1)
+            - reason: selection reason
+        - id: user-input
+          role: user
+          text: |
+            Original path: {{#sys.query#}}
+
+            Extracted title: {{#extract_title.text#}}
+
+            TMDB search results (JSON array, movies and TV shows):
+            {{#1770180990557.json#}}
+        selected: false
+        title: AI 匹配
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 116
+      id: match_llm
+      position:
+        x: 959.1387711983743
+        y: 14.261520126412051
+      positionAbsolute:
+        x: 959.1387711983743
+        y: 14.261520126412051
+      selected: true
+      type: custom
+      width: 242
+    - data:
+        answer: '{{#match_llm.text#}}'
+        desc: 返回匹配结果
+        selected: false
+        title: 返回结果
+        type: answer
+        variables: []
+      height: 131
+      id: answer
+      position:
+        x: 1500
+        y: 0
+      positionAbsolute:
+        x: 1500
+        y: 0
+      type: custom
+      width: 242
+    - data:
+        is_team_authorization: true
+        paramSchemas:
+        - auto_generate: null
+          default: null
+          form: llm
+          human_description:
+            en_US: The keywords to search for movies, TV shows, and people
+            ja_JP: 映画、テレビ番組、人物を検索するためのキーワード
+            pt_BR: As palavras-chave para pesquisar filmes, programas de TV e pessoas
+            zh_Hans: 用于搜索电影、电视节目和人物的关键词
+          label:
+            en_US: Search Keywords
+            ja_JP: 検索キーワード
+            pt_BR: Palavras-chave de Pesquisa
+            zh_Hans: 搜索关键词
+          llm_description: The keywords to search for in TMDB across movies, TV shows,
+            and people
+          max: null
+          min: null
+          name: query
+          options: []
+          placeholder: null
+          precision: null
+          required: true
+          scope: null
+          template: null
+          type: string
+        - auto_generate: null
+          default: en-US
+          form: form
+          human_description:
+            en_US: The ISO 639-1 language code to search in (default is en-US)
+            ja_JP: 検索するISO 639-1言語コード（デフォルトはen-US）
+            pt_BR: O código de idioma ISO 639-1 para pesquisar (o padrão é en-US)
+            zh_Hans: 要搜索的 ISO 639-1 语言代码（默认为 en-US）
+          label:
+            en_US: Language
+            ja_JP: 言語
+            pt_BR: Idioma
+            zh_Hans: 语言
+          llm_description: The ISO 639-1 language code to search in (e.g., en-US,
+            zh-CN, fr-FR)
+          max: null
+          min: null
+          name: language
+          options: []
+          placeholder: null
+          precision: null
+          required: false
+          scope: null
+          template: null
+          type: string
+        - auto_generate: null
+          default: false
+          form: form
+          human_description:
+            en_US: Whether to include adult content in search results
+            ja_JP: 検索結果にアダルトコンテンツを含めるかどうか
+            pt_BR: Se deve incluir conteúdo adulto nos resultados da pesquisa
+            zh_Hans: 是否在搜索结果中包括成人内容
+          label:
+            en_US: Include Adult Content
+            ja_JP: アダルトコンテンツを含める
+            pt_BR: Incluir Conteúdo Adulto
+            zh_Hans: 包括成人内容
+          llm_description: Set to true to include adult content in search results,
+            false to exclude
+          max: null
+          min: null
+          name: include_adult
+          options: []
+          placeholder: null
+          precision: null
+          required: false
+          scope: null
+          template: null
+          type: boolean
+        - auto_generate: null
+          default: 10
+          form: form
+          human_description:
+            en_US: Maximum number of results to return (1-20, default is 10)
+            ja_JP: 返す結果の最大数（1-20、デフォルトは10）
+            pt_BR: Número máximo de resultados a serem retornados (1-20, o padrão
+              é 10)
+            zh_Hans: 要返回的最大结果数（1-20，默认为10）
+          label:
+            en_US: Number of Results
+            ja_JP: 結果の数
+            pt_BR: Número de Resultados
+            zh_Hans: 结果数量
+          llm_description: Maximum total number of results to return across all types
+            (1-20)
+          max: 20
+          min: 1
+          name: results_limit
+          options: []
+          placeholder: null
+          precision: null
+          required: false
+          scope: null
+          template: null
+          type: number
+        params:
+          include_adult: ''
+          language: ''
+          query: ''
+          results_limit: ''
+        plugin_id: lcandy/tmdb
+        plugin_unique_identifier: lcandy/tmdb:0.0.1@8c444e57919681f3a35f19ad34c402637353bd8d5a71315fc1e618b3a9b75e0d
+        provider_icon: /console/api/workspaces/current/plugin/icon?tenant_id=3ed4f0d0-d779-44c5-975e-1a45bb745929&filename=b15928f9cd40dd90b778674febbc942f2f79af54bee86b6b5e0795671bdd100b.svg
+        provider_id: lcandy/tmdb/tmdb
+        provider_name: lcandy/tmdb/tmdb
+        provider_type: builtin
+        selected: true
+        title: 多类型搜索
+        tool_configurations:
+          include_adult:
+            type: constant
+            value: false
+          language:
+            type: mixed
+            value: zh-CN
+          results_limit:
+            type: constant
+            value: 10
+        tool_description: 在单个请求中搜索电影、电视节目和人物。返回多种类型的结果及其各自的详情。
+        tool_label: 多类型搜索
+        tool_name: tmdb_multi_search
+        tool_node_version: '2'
+        tool_parameters:
+          query:
+            type: mixed
+            value: '{{#extract_title.text#}}'
+        type: tool
+      height: 140
+      id: '1770180990557'
+      position:
+        x: 600
+        y: 0
+      positionAbsolute:
+        x: 600
+        y: 0
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    viewport:
+      x: -608.0559167003842
+      y: 215.26297791679366
+      zoom: 1.2621375449777166
+  rag_pipeline_variables: []

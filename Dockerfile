@@ -1,9 +1,9 @@
-# Build stage for frontend
-FROM oven/bun:1 AS frontend-builder
-WORKDIR /app/frontend
-COPY frontend/package.json frontend/bun.lockb* ./
+# Build stage for web client
+FROM oven/bun:1 AS web-builder
+WORKDIR /app/client/web
+COPY client/web/package.json client/web/bun.lockb* ./
 RUN bun install
-COPY frontend/ ./
+COPY client/web/ ./
 RUN bun run build
 
 # Production stage
@@ -13,10 +13,10 @@ WORKDIR /app
 # Copy backend
 COPY package.json bun.lockb* ./
 RUN bun install --production
-COPY src/ ./src/
+COPY server/ ./server/
 
-# Copy built frontend
-COPY --from=frontend-builder /app/frontend/build ./frontend/build
+# Copy built web client
+COPY --from=web-builder /app/client/web/build ./client/web/build
 
 # Create directories for media
 RUN mkdir -p /media/inbox /media/tv /media/movies
@@ -24,4 +24,4 @@ RUN mkdir -p /media/inbox /media/tv /media/movies
 ENV PORT=3000
 EXPOSE 3000
 
-CMD ["bun", "run", "src/server.ts"]
+CMD ["bun", "run", "server/server.ts"]
