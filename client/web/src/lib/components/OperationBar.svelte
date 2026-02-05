@@ -1,7 +1,13 @@
 <script lang="ts">
-  export let isOperating = false;
-  export let message = '';
-  export let progress: { current: number; total: number } | null = null;
+  let {
+    isOperating = false,
+    message = '',
+    progress = null
+  }: {
+    isOperating?: boolean;
+    message?: string;
+    progress?: { current: number; total: number } | null;
+  } = $props();
 </script>
 
 {#if isOperating || message}

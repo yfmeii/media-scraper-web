@@ -2,8 +2,11 @@
   import '../app.css';
   import { page } from '$app/stores';
   import { GlobalConfirmDialog } from '$lib/components';
+  import type { Snippet } from 'svelte';
   
-  $: currentPath = $page.url.pathname;
+  let { children }: { children?: Snippet } = $props();
+  
+  const currentPath = $derived(() => $page.url.pathname);
 </script>
 
 <div class="min-h-screen bg-background">
@@ -27,7 +30,7 @@
     </div>
   </header>
   
-  <slot />
+  {@render children?.()}
 </div>
 
 <!-- 全局确认对话框 -->

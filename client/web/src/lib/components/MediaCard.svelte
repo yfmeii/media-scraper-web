@@ -1,29 +1,37 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
   import { getScrapedStatus } from '$lib/format';
   
-  export let name: string;
-  export let poster: string | null = null;
-  export let year: string | number | null = null;
-  export let subtitle: string | null = null;  // 如 "3 季" 或分辨率
-  export let scraped = false;
-  export let selected = false;
-  export let progress: number | null = null;  // 0-100
+  let {
+    name,
+    poster = null,
+    year = null,
+    subtitle = null,  // 如 "3 季" 或分辨率
+    scraped = false,
+    selected = false,
+    progress = null,
+    onClick,
+    onDblclick
+  }: {
+    name: string;
+    poster?: string | null;
+    year?: string | number | null;
+    subtitle?: string | null;
+    scraped?: boolean;
+    selected?: boolean;
+    progress?: number | null;
+    onClick?: (event: MouseEvent) => void;
+    onDblclick?: () => void;
+  } = $props();
   
-  const dispatch = createEventDispatcher<{
-    click: MouseEvent;
-    dblclick: void;
-  }>();
-  
-  const status = getScrapedStatus(scraped);
+  const status = $derived(() => getScrapedStatus(scraped));
 </script>
 
 <button
   class="group relative w-full text-left rounded-lg border border-border bg-card overflow-hidden transition-all hover:shadow-md"
   class:ring-2={selected}
   class:ring-primary={selected}
-  on:click={(e) => dispatch('click', e)}
-  on:dblclick={() => dispatch('dblclick')}
+  onclick={(e) => onClick?.(e)}
+  ondblclick={() => onDblclick?.()}
 >
   <!-- Poster -->
   <div class="aspect-[2/3] bg-muted relative">

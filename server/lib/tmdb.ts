@@ -53,6 +53,16 @@ export interface TMDBEpisodeDetails {
   still_path?: string;
 }
 
+export interface TMDBSeasonDetails {
+  id: number;
+  name: string;
+  season_number: number;
+  overview: string;
+  poster_path?: string;
+  air_date?: string;
+  episodes?: TMDBEpisodeDetails[];
+}
+
 // Search TV shows
 export async function searchTV(query: string, year?: number, language = 'zh-CN'): Promise<TMDBSearchResult[]> {
   const params = new URLSearchParams({
@@ -117,17 +127,19 @@ export async function getEpisodeDetails(tvId: number, season: number, episode: n
   return res.json();
 }
 
-// Get season details (all episodes)
-export async function getSeasonDetails(tvId: number, season: number, language = 'zh-CN'): Promise<TMDBEpisodeDetails[]> {
+// Get season details (includes all episodes)
+export async function getSeasonDetails(tvId: number, season: number, language = 'zh-CN'): Promise<TMDBSeasonDetails | null> {
   const params = new URLSearchParams({
     api_key: TMDB_API_KEY,
     language,
   });
   
   const res = await fetch(`${TMDB_BASE}/tv/${tvId}/season/${season}?${params}`);
-  if (!res.ok) return [];
+  if (!res.ok) return null;
   const data = await res.json();
-  return data.episodes || [];
+  if (!data) return null;
+  data.episodes = data.episodes || [];
+  return data as TMDBSeasonDetails;
 }
 
 // Calculate match score

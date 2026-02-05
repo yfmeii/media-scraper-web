@@ -4,10 +4,17 @@ export const SUB_EXTS = new Set(['.srt', '.ass', '.ssa', '.sub']);
 export const NFO_EXTS = new Set(['.nfo']);
 
 // Directory paths (can be overridden by environment variables)
+// Use getters so tests can override env vars safely at runtime.
 export const MEDIA_PATHS = {
-  inbox: process.env.INBOX_PATH || '/mnt/media/Inbox',
-  tv: process.env.TV_PATH || '/mnt/media/TV',
-  movies: process.env.MOVIES_PATH || '/mnt/media/Movies',
+  get inbox() {
+    return process.env.INBOX_PATH || '/mnt/media/Inbox';
+  },
+  get tv() {
+    return process.env.TV_PATH || '/mnt/media/TV';
+  },
+  get movies() {
+    return process.env.MOVIES_PATH || '/mnt/media/Movies';
+  },
 };
 
 // API Keys - should be set via environment variables

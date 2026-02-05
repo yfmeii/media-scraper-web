@@ -1,27 +1,30 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
   
-  export let show = false;
-  
-  const dispatch = createEventDispatcher<{
-    select: 'ai' | 'manual';
-    close: void;
-  }>();
+  let {
+    show = false,
+    onSelect,
+    onClose
+  }: {
+    show?: boolean;
+    onSelect?: (mode: 'ai' | 'manual') => void;
+    onClose?: () => void;
+  } = $props();
   
   function handleSelect(mode: 'ai' | 'manual') {
-    dispatch('select', mode);
+    onSelect?.(mode);
   }
   
   function handleClose() {
-    show = false;
-    dispatch('close');
+    onClose?.();
   }
 </script>
 
 {#if show}
   <div 
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-    on:click|self={handleClose}
+    onclick={(e) => {
+      if (e.target === e.currentTarget) handleClose();
+    }}
     role="dialog"
     aria-modal="true"
   >
@@ -31,7 +34,7 @@
         <h3 class="font-semibold">选择处理模式</h3>
         <button 
           class="h-8 w-8 rounded-md hover:bg-accent flex items-center justify-center"
-          on:click={handleClose}
+          onclick={handleClose}
         >
           ✕
         </button>
@@ -41,7 +44,7 @@
       <div class="p-4 space-y-3">
         <button 
           class="w-full p-4 rounded-md border border-border hover:border-primary hover:bg-accent/50 text-left transition-colors"
-          on:click={() => handleSelect('ai')}
+          onclick={() => handleSelect('ai')}
         >
           <div class="flex items-center gap-3">
             <span class="text-2xl">🤖</span>
@@ -56,7 +59,7 @@
         
         <button 
           class="w-full p-4 rounded-md border border-border hover:border-primary hover:bg-accent/50 text-left transition-colors"
-          on:click={() => handleSelect('manual')}
+          onclick={() => handleSelect('manual')}
         >
           <div class="flex items-center gap-3">
             <span class="text-2xl">👤</span>
@@ -74,7 +77,7 @@
       <div class="p-4 border-t border-border">
         <button 
           class="w-full h-9 rounded-md border border-input bg-background hover:bg-accent text-sm font-medium"
-          on:click={handleClose}
+          onclick={handleClose}
         >
           取消
         </button>

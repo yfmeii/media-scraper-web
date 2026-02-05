@@ -1,4 +1,14 @@
 import type {
+  Stats,
+  SearchResult,
+  ScrapeResult,
+  MatchResult,
+  PathRecognizeResult,
+  BatchScrapeItem,
+  BatchScrapeResult,
+  ProcessTVParams,
+  ProcessMovieParams,
+  PreviewItem,
   MediaFile,
   ShowInfo,
   MovieInfo,
@@ -10,32 +20,29 @@ import type {
   ProgressEvent,
 } from '@media-scraper/shared';
 
-export type { MediaFile, ShowInfo, MovieInfo, DirectoryGroup, TaskItem, TaskStats, PreviewAction, PreviewPlan, ProgressEvent } from '@media-scraper/shared';
+export type {
+  Stats,
+  SearchResult,
+  ScrapeResult,
+  MatchResult,
+  PathRecognizeResult,
+  BatchScrapeItem,
+  BatchScrapeResult,
+  ProcessTVParams,
+  ProcessMovieParams,
+  PreviewItem,
+  MediaFile,
+  ShowInfo,
+  MovieInfo,
+  DirectoryGroup,
+  TaskItem,
+  TaskStats,
+  PreviewAction,
+  PreviewPlan,
+  ProgressEvent
+} from '@media-scraper/shared';
 
 const API_BASE = '/api';
-
-export interface Stats {
-  tvShows: number;
-  tvEpisodes: number;
-  tvProcessed: number;
-  movies: number;
-  moviesProcessed: number;
-  inbox: number;
-}
-
-
-export interface SearchResult {
-  id: number;
-  name?: string;
-  title?: string;
-  originalName?: string;
-  originalTitle?: string;
-  overview?: string;
-  releaseDate?: string;
-  firstAirDate?: string;
-  voteAverage?: number;
-  posterPath?: string;
-}
 
 export async function fetchStats(): Promise<Stats> {
   const res = await fetch(`${API_BASE}/media/stats`);
@@ -103,12 +110,6 @@ export async function cancelTaskApi(id: string): Promise<boolean> {
 }
 
 // Scrape APIs
-export interface ScrapeResult {
-  success: boolean;
-  message?: string;
-  taskId?: string;
-}
-
 export async function refreshMetadata(
   kind: 'tv' | 'movie', 
   path: string, 
@@ -135,41 +136,6 @@ export async function fixAssets(kind: 'tv' | 'movie', path: string, tmdbId: numb
   return { success: data.success, message: data.error || data.data?.message, taskId: data.taskId };
 }
 
-export interface MatchResult {
-  matched: boolean;
-  result?: {
-    id: number;
-    name: string;
-    originalName?: string;
-    date?: string;
-    posterPath?: string;
-    score: number;
-  };
-  candidates: Array<{
-    id: number;
-    name: string;
-    originalName?: string;
-    date?: string;
-    posterPath?: string;
-    overview?: string;
-  }>;
-  ambiguous?: boolean;
-}
-
-// AI 路径识别结果
-export interface PathRecognizeResult {
-  path: string;
-  title: string;
-  media_type: 'tv' | 'movie';  // AI 判断的媒体类型
-  year: number | null;
-  season: number | null;
-  episode: number | null;
-  tmdb_id: number | null;
-  tmdb_name: string | null;
-  confidence: number;
-  reason: string;
-}
-
 // AI 路径识别
 export async function recognizePath(path: string, kind: 'tv' | 'movie'): Promise<PathRecognizeResult | null> {
   const res = await fetch(`${API_BASE}/scrape/recognize`, {
@@ -191,24 +157,6 @@ export async function autoMatch(path: string, kind: 'tv' | 'movie', title?: stri
   return data.data || { matched: false, candidates: [] };
 }
 
-// Batch scrape with disambiguation mode
-export interface BatchScrapeItem {
-  sourcePath: string;
-  kind: 'tv' | 'movie';
-  showName?: string;
-  tmdbId?: number;
-  season?: number;
-  episodes?: Array<{ source: string; episode: number; episodeEnd?: number }>;
-  candidates?: Array<{ id: number; name: string }>;
-}
-
-export interface BatchScrapeResult {
-  success: boolean;
-  processed: number;
-  failed: number;
-  taskId?: string;
-}
-
 export async function batchScrape(
   items: BatchScrapeItem[],
   language = 'zh-CN'
@@ -227,16 +175,6 @@ export async function batchScrape(
   };
 }
 
-// Process TV show from inbox
-export interface ProcessTVParams {
-  sourcePath: string;
-  showName: string;
-  tmdbId: number;
-  season: number;
-  episodes: Array<{ source: string; episode: number; episodeEnd?: number }>;
-  language?: string;
-}
-
 export async function processTV(params: ProcessTVParams): Promise<ScrapeResult> {
   const res = await fetch(`${API_BASE}/scrape/process/tv`, {
     method: 'POST',
@@ -245,13 +183,6 @@ export async function processTV(params: ProcessTVParams): Promise<ScrapeResult> 
   });
   const data = await res.json();
   return { success: data.success, message: data.error || data.message };
-}
-
-// Process movie from inbox
-export interface ProcessMovieParams {
-  sourcePath: string;
-  tmdbId: number;
-  language?: string;
 }
 
 export async function processMovie(params: ProcessMovieParams): Promise<ScrapeResult> {
@@ -273,16 +204,6 @@ export async function moveToInbox(sourcePath: string): Promise<{ success: boolea
   });
   const data = await res.json();
   return { success: data.success, message: data.error || data.message };
-}
-
-// Preview move plan
-export interface PreviewItem {
-  sourcePath: string;
-  kind: 'tv' | 'movie';
-  tmdbId?: number;
-  showName?: string;
-  season?: number;
-  episodes?: Array<{ source: string; episode: number; episodeEnd?: number }>;
 }
 
 export async function previewPlan(items: PreviewItem[], language = 'zh-CN'): Promise<PreviewPlan> {

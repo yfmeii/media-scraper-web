@@ -3,10 +3,10 @@
   import { fetchStats, fetchTasks, fetchTaskStats, cancelTaskApi, type Stats, type TaskItem, type TaskStats } from '$lib/api';
   import { formatTime, getStatusDisplay, getTypeDisplay } from '$lib/format';
   
-  let stats: Stats | null = null;
-  let tasks: TaskItem[] = [];
-  let taskStats: TaskStats | null = null;
-  let loading = true;
+  let stats = $state<Stats | null>(null);
+  let tasks = $state<TaskItem[]>([]);
+  let taskStats = $state<TaskStats | null>(null);
+  let loading = $state(true);
   
   onMount(async () => {
     try {
@@ -157,14 +157,14 @@
                   <div class="flex gap-1">
                     <button 
                       class="inline-flex items-center justify-center rounded-md text-xs font-medium h-7 px-2 border border-input bg-background hover:bg-accent"
-                      on:click={() => viewTask(task.id)}
+                      onclick={() => viewTask(task.id)}
                     >
                       查看
                     </button>
                     {#if task.status === 'running' || task.status === 'pending'}
                       <button 
                         class="inline-flex items-center justify-center rounded-md text-xs font-medium h-7 px-2 bg-destructive text-destructive-foreground hover:opacity-90"
-                        on:click={() => handleCancelTask(task.id)}
+                        onclick={() => handleCancelTask(task.id)}
                       >
                         取消
                       </button>

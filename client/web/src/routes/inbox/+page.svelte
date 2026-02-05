@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { fade, fly, scale, slide } from 'svelte/transition';
+  import { fade, scale, slide } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
   import { 
     fetchInboxByDirectory, 
@@ -17,48 +17,49 @@
     type PreviewItem
   } from '$lib/api';
   import { confirmDialog } from '$lib/stores';
+  import { handleItemClick, toggleAllSelection } from '$lib/selection';
   
-  let directories: DirectoryGroup[] = [];
-  let files: MediaFile[] = [];
-  let allFiles: MediaFile[] = [];
-  let selectedFiles = new Set<string>();
-  let selectedFile: MediaFile | null = null;
-  let loading = true;
-  let filterStatus = 'all';
-  let searchQuery = '';
+  let directories = $state<DirectoryGroup[]>([]);
+  let files = $state<MediaFile[]>([]);
+  let allFiles = $state<MediaFile[]>([]);
+  let selectedFiles = $state(new Set<string>());
+  let selectedFile = $state<MediaFile | null>(null);
+  let loading = $state(true);
+  let filterStatus = $state('all');
+  let searchQuery = $state('');
   
-  let currentDir = '';
+  let currentDir = $state('');
   
   // Match candidates for selected file
-  let matchCandidates: SearchResult[] = [];
-  let selectedCandidate: SearchResult | null = null;
-  let isAutoMatched = false;  // Whether current selection is from auto-match
-  let matchScore = 0;  // Match confidence score
-  let isSearchingTMDB = false;
-  let manualSearchQuery = '';
+  let matchCandidates = $state<SearchResult[]>([]);
+  let selectedCandidate = $state<SearchResult | null>(null);
+  let isAutoMatched = $state(false);  // Whether current selection is from auto-match
+  let matchScore = $state(0);  // Match confidence score
+  let isSearchingTMDB = $state(false);
+  let manualSearchQuery = $state('');
   
   // Target library path
-  let targetPath = '';
+  let targetPath = $state('');
   
   // 用户可编辑的季数和集数
-  let editSeason = 1;
-  let editEpisode = 1;
+  let editSeason = $state(1);
+  let editEpisode = $state(1);
   
   // Batch operation state
-  let isOperating = false;
-  let operationMessage = '';
-  let batchProgress = { current: 0, total: 0 };
+  let isOperating = $state(false);
+  let operationMessage = $state('');
+  let batchProgress = $state({ current: 0, total: 0 });
   
   // Preview modal
-  let showPreviewModal = false;
-  let previewActions: Array<{ type: string; source?: string; destination: string; willOverwrite: boolean }> = [];
-  let previewSummary: { filesMoving: number; nfoCreating: number; nfoOverwriting: number } | null = null;
-  let isLoadingPreview = false;
+  let showPreviewModal = $state(false);
+  let previewActions = $state<Array<{ type: string; source?: string; destination: string; willOverwrite: boolean }>>([]);
+  let previewSummary = $state<{ filesMoving: number; nfoCreating: number; nfoOverwriting: number } | null>(null);
+  let isLoadingPreview = $state(false);
   
   // AI 识别状态
-  let isAIRecognizing = false;
-  let aiRecognizeResult: PathRecognizeResult | null = null;
-  let fileStatus = new Map<string, 'processing' | 'success' | 'failed'>();
+  let isAIRecognizing = $state(false);
+  let aiRecognizeResult = $state<PathRecognizeResult | null>(null);
+  let fileStatus = $state(new Map<string, 'processing' | 'success' | 'failed'>());
 
   function setFileStatus(path: string, status: 'processing' | 'success' | 'failed') {
     fileStatus = new Map(fileStatus).set(path, status);
@@ -75,13 +76,13 @@
     }
 
     if (selectedFile?.path === path && selectedFile && !selectedFile.isProcessed) {
-      selectedFile.isProcessed = true;
+      selectedFile = { ...selectedFile, isProcessed: true };
       updated = true;
     }
 
     if (updated) {
-      files = files;
-      allFiles = allFiles;
+      files = [...files];
+      allFiles = [...allFiles];
     }
   }
   
@@ -112,8 +113,7 @@
       }
       
       // Clear selection
-      selectedFiles.clear();
-      selectedFiles = selectedFiles;
+      selectedFiles = new Set();
       selectedFile = null;
       matchCandidates = [];
       selectedCandidate = null;
@@ -134,37 +134,15 @@
       currentDir = dir.path;
       files = dir.files;
     }
-    selectedFiles.clear();
-    selectedFiles = selectedFiles;
+    selectedFiles = new Set();
     selectedFile = null;
   }
   
   function toggleFile(path: string, event: MouseEvent) {
     const isRangeSelect = event.shiftKey && selectedFiles.size > 0;
     const isToggleSelect = event.ctrlKey || event.metaKey;
-    const nextSelected = new Set(selectedFiles);
-
-    if (isRangeSelect) {
-      // Shift-click: select range
-      const paths = files.map(f => f.path);
-      const lastSelected = Array.from(nextSelected).pop()!;
-      const lastIdx = paths.indexOf(lastSelected);
-      const currentIdx = paths.indexOf(path);
-      const [start, end] = lastIdx < currentIdx ? [lastIdx, currentIdx] : [currentIdx, lastIdx];
-      for (let i = start; i <= end; i++) {
-        nextSelected.add(paths[i]);
-      }
-    } else if (isToggleSelect) {
-      // Ctrl-click: toggle single
-      if (nextSelected.has(path)) nextSelected.delete(path);
-      else nextSelected.add(path);
-    } else {
-      // Normal click: select single
-      nextSelected.clear();
-      nextSelected.add(path);
-    }
-
-    selectedFiles = nextSelected;
+    
+    selectedFiles = handleItemClick(path, event, selectedFiles, files, f => f.path);
 
     if (isRangeSelect || isToggleSelect) return;
 
@@ -250,13 +228,11 @@
   }
   
   function toggleAll() {
-    if (selectedFiles.size === files.length) selectedFiles.clear();
-    else files.forEach(f => selectedFiles.add(f.path));
-    selectedFiles = selectedFiles;
+    selectedFiles = toggleAllSelection(selectedFiles, filteredFiles, f => f.path);
   }
   
   // 手动选择的搜索类型（tv 或 movie）
-  let manualSearchType: 'tv' | 'movie' = 'tv';
+  let manualSearchType = $state<'tv' | 'movie'>('tv');
   
   async function handleManualSearch() {
     if (!manualSearchQuery.trim() || !selectedFile) return;
@@ -390,7 +366,7 @@
           failCount++;
           setFileStatus(file.path, 'failed');
           batchProgress.current++;
-          batchProgress = batchProgress;
+          batchProgress = { ...batchProgress };
           continue;
         }
         
@@ -426,7 +402,7 @@
       }
       
       batchProgress.current++;
-      batchProgress = batchProgress;
+      batchProgress = { ...batchProgress };
     }
     
     operationMessage = `完成: ${successCount} 成功 (${tvCount} 剧集, ${movieCount} 电影), ${failCount} 失败`;
@@ -435,8 +411,7 @@
     setTimeout(() => {
       isOperating = false;
       operationMessage = '';
-      selectedFiles.clear();
-      selectedFiles = selectedFiles;
+      selectedFiles = new Set();
     }, 3000);
   }
   
@@ -473,7 +448,7 @@
           failCount++;
           setFileStatus(file.path, 'failed');
           batchProgress.current++;
-          batchProgress = batchProgress;
+          batchProgress = { ...batchProgress };
           continue;
         }
         
@@ -511,7 +486,7 @@
       }
       
       batchProgress.current++;
-      batchProgress = batchProgress;
+      batchProgress = { ...batchProgress };
     }
     
     operationMessage = `完成: ${successCount} 成功 (${tvCount} 剧集, ${movieCount} 电影), ${failCount} 失败`;
@@ -520,8 +495,7 @@
     setTimeout(() => {
       isOperating = false;
       operationMessage = '';
-      selectedFiles.clear();
-      selectedFiles = selectedFiles;
+      selectedFiles = new Set();
     }, 3000);  // 延长显示时间以便用户看到统计
   }
   
@@ -618,17 +592,21 @@
   }
   
   // 当类型选择器改变时，更新预计路径
-  $: if (manualSearchType && selectedCandidate) {
-    updateTargetPath();
-  }
-  
-  $: filteredFiles = files.filter(f => {
-    if (filterStatus === 'processed' && !f.isProcessed) return false;
-    if (filterStatus === 'unprocessed' && f.isProcessed) return false;
-    // 搜索时使用相对路径
-    if (searchQuery && !f.relativePath.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-    return true;
+  $effect(() => {
+    if (manualSearchType && selectedCandidate) {
+      updateTargetPath();
+    }
   });
+  
+  const filteredFiles = $derived(() => (
+    files.filter(f => {
+      if (filterStatus === 'processed' && !f.isProcessed) return false;
+      if (filterStatus === 'unprocessed' && f.isProcessed) return false;
+      // 搜索时使用相对路径
+      if (searchQuery && !f.relativePath.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+      return true;
+    })
+  ));
 </script>
 
 <div class="container mx-auto px-4 py-4">
@@ -647,7 +625,7 @@
         <!-- All files option -->
         <button 
           class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-accent/50 {currentDir === '' ? 'bg-accent/30 border-l-2 border-l-primary' : ''}"
-          on:click={() => selectDirectory(null)}
+          onclick={() => selectDirectory(null)}
         >
           <svg class="h-4 w-4 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M3 12h18"/><path d="M3 18h18"/></svg>
           <span class="flex-1">全部</span>
@@ -657,7 +635,7 @@
         {#each directories as dir}
           <button 
             class="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-accent/50 {currentDir === dir.path ? 'bg-accent/30 border-l-2 border-l-primary' : ''}"
-            on:click={() => selectDirectory(dir)}
+            onclick={() => selectDirectory(dir)}
           >
             <svg class="h-4 w-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
             <span class="flex-1 truncate">{dir.name}</span>
@@ -685,7 +663,7 @@
           <input type="text" class="h-8 w-32 rounded-md border border-input bg-background px-2 text-xs" bind:value={searchQuery} />
           <button 
             class="inline-flex items-center justify-center rounded-md text-xs font-medium h-8 px-3 border border-input bg-background hover:bg-accent"
-            on:click={loadData}
+            onclick={loadData}
           >
             刷新
           </button>
@@ -697,7 +675,7 @@
           <thead class="sticky top-0 bg-card border-b border-border">
             <tr>
               <th class="w-10 p-2 text-left">
-                <input type="checkbox" class="h-4 w-4 rounded border-input accent-primary" checked={selectedFiles.size === filteredFiles.length && filteredFiles.length > 0} on:change={toggleAll} />
+                <input type="checkbox" class="h-4 w-4 rounded border-input accent-primary" checked={selectedFiles.size === filteredFiles.length && filteredFiles.length > 0} onchange={toggleAll} />
               </th>
               <th class="p-2 text-left font-medium text-muted-foreground text-xs">文件名</th>
               <th class="p-2 text-left font-medium text-muted-foreground text-xs">解析结果</th>
@@ -708,21 +686,22 @@
             {#each filteredFiles as file}
               <tr 
                 class="border-b border-border hover:bg-accent/50 cursor-pointer {selectedFiles.has(file.path) ? 'bg-accent/30 border-l-2 border-l-primary' : ''}"
-                on:click={(e) => toggleFile(file.path, e)}
-                on:dblclick={() => handleDoubleClick(file)}
+                onclick={(e) => toggleFile(file.path, e)}
+                ondblclick={() => handleDoubleClick(file)}
               >
                 <td class="p-2">
                   <input 
                     type="checkbox" 
                     class="h-4 w-4 rounded border-input accent-primary" 
                     checked={selectedFiles.has(file.path)} 
-                    on:click|stopPropagation={() => {
+                    onclick={(e) => {
+                      e.stopPropagation();
                       if (selectedFiles.has(file.path)) {
                         selectedFiles.delete(file.path);
                       } else {
                         selectedFiles.add(file.path);
                       }
-                      selectedFiles = selectedFiles;
+                      selectedFiles = new Set(selectedFiles);
                     }}
                   />
                 </td>
@@ -804,7 +783,7 @@
           <button 
             class="inline-flex items-center justify-center rounded-md text-xs font-medium h-8 px-3 border border-border bg-background hover:bg-muted disabled:opacity-50" 
             disabled={selectedFiles.size === 0 || isOperating} 
-            on:click={batchAutoMatchAndProcess}
+            onclick={batchAutoMatchAndProcess}
           >
             📂 一键匹配入库
           </button>
@@ -813,7 +792,7 @@
           <button 
             class="inline-flex items-center justify-center rounded-md text-xs font-medium h-8 px-3 bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50" 
             disabled={selectedFiles.size === 0 || isOperating} 
-            on:click={batchAIRecognizeAndProcess}
+            onclick={batchAIRecognizeAndProcess}
           >
             🤖 一键 AI 识别入库
           </button>
@@ -864,7 +843,7 @@
               <button 
                 class="ml-auto inline-flex items-center justify-center rounded-md text-[10px] font-medium h-6 px-2 border border-input bg-background hover:bg-accent disabled:opacity-50"
                 disabled={isAIRecognizing}
-                on:click={handleAIRecognize}
+                onclick={handleAIRecognize}
               >
                 {#if isAIRecognizing}
                   <svg class="h-3 w-3 animate-spin mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
@@ -875,7 +854,7 @@
               </button>
               <button 
                 class="inline-flex items-center justify-center rounded-md text-[10px] font-medium h-6 px-2 border border-input bg-background hover:bg-accent"
-                on:click={() => manualSearchQuery = selectedFile?.parsed.title || ''}
+                onclick={() => manualSearchQuery = selectedFile?.parsed.title || ''}
               >
                 手动搜索
               </button>
@@ -931,7 +910,7 @@
                 />
                 <button 
                   class="inline-flex items-center justify-center rounded-md text-[10px] font-medium h-7 px-3 bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
-                  on:click={handleManualSearch}
+                  onclick={handleManualSearch}
                   disabled={isSearchingTMDB}
                 >
                   {isSearchingTMDB ? '搜索中...' : '搜索'}
@@ -945,7 +924,7 @@
               {#each matchCandidates as candidate}
                 <button 
                   class="w-full flex items-center gap-3 p-2 rounded border border-border hover:bg-accent/50 text-left {selectedCandidate?.id === candidate.id ? 'border-primary bg-accent/30' : ''}"
-                  on:click={() => selectCandidate(candidate)}
+                  onclick={() => selectCandidate(candidate)}
                 >
                   {#if candidate.posterPath}
                     <img src={candidate.posterPath} alt="{candidate.name || candidate.title}" class="w-8 h-12 object-cover rounded shrink-0" />
@@ -976,7 +955,7 @@
                   min="1"
                   class="w-16 h-7 rounded-md border border-input bg-background px-2 text-xs text-center"
                   bind:value={editSeason}
-                  on:change={updateTargetPath}
+                  onchange={updateTargetPath}
                 />
               </label>
               <label class="flex items-center gap-2">
@@ -1005,7 +984,7 @@
               <button 
                 class="inline-flex items-center justify-center rounded-md text-[10px] font-medium h-7 px-2 border border-input bg-background hover:bg-accent disabled:opacity-50"
                 disabled={!selectedCandidate}
-                on:click={showPreview}
+                onclick={showPreview}
               >
                 预览移动计划
               </button>
@@ -1017,7 +996,7 @@
             <button 
               class="w-full inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
               disabled={!selectedCandidate || isOperating}
-              on:click={processSingleFile}
+              onclick={processSingleFile}
             >
               {#if isOperating}
                 <svg class="h-4 w-4 animate-spin mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
@@ -1108,14 +1087,14 @@
       <div class="flex justify-end gap-2 pt-4 border-t border-border">
         <button 
           class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 border border-input bg-background hover:bg-accent"
-          on:click={() => showPreviewModal = false}
+          onclick={() => showPreviewModal = false}
         >
           关闭
         </button>
         <button 
           class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
           disabled={previewActions.length === 0 || isLoadingPreview}
-          on:click={() => { showPreviewModal = false; processSingleFile(); }}
+          onclick={() => { showPreviewModal = false; processSingleFile(); }}
         >
           确认执行
         </button>

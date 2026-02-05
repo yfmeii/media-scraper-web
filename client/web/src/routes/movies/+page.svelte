@@ -1,53 +1,45 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { fade, fly, scale } from 'svelte/transition';
+  import { fade, fly } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
-  import { fetchMovies, refreshMetadata, subscribeToProgress, type MovieInfo, type SearchResult, type ProgressEvent } from '$lib/api';
+  import { fetchMovies, refreshMetadata, subscribeToProgress, type MovieInfo, type SearchResult } from '$lib/api';
   import { handleItemClick, toggleAllSelection } from '$lib/selection';
-  import { formatFileSize, getScrapedStatus } from '$lib/format';
-  import { TMDBSearchModal, DetailDrawer, BatchActionBar } from '$lib/components';
+  import { createProgressHandler } from '$lib/progress';
+  import { TMDBSearchModal, BatchActionBar } from '$lib/components';
   
-  let movies: MovieInfo[] = [];
-  let loading = true;
-  let selectedMovies = new Set<string>();
+  let movies = $state<MovieInfo[]>([]);
+  let loading = $state(true);
+  let selectedMovies = $state(new Set<string>());
   
   // Filters
-  let searchQuery = '';
-  let activeTab = 'all';
+  let searchQuery = $state('');
+  let activeTab = $state('all');
   
   // Detail drawer state
-  let showDetailDrawer = false;
-  let selectedMovieForDetail: MovieInfo | null = null;
+  let showDetailDrawer = $state(false);
+  let selectedMovieForDetail = $state<MovieInfo | null>(null);
   
   // TMDB search modal state
-  let showSearchModal = false;
+  let showSearchModal = $state(false);
   
   // Operation state
-  let isOperating = false;
-  let operationMessage = '';
+  let isOperating = $state(false);
+  let operationMessage = $state('');
   
   // Progress state
-  let progressMap = new Map<string, number>(); // path -> percent
-  let processingPaths = new Set<string>(); // Currently processing paths
+  let progressMap = $state(new Map<string, number>()); // path -> percent
+  let processingPaths = $state(new Set<string>()); // Currently processing paths
   let unsubscribeProgress: (() => void) | null = null;
-  let batchProgress: { current: number; total: number } | null = null;
+  let batchProgress = $state<{ current: number; total: number } | null>(null);
   
-  function handleProgress(event: ProgressEvent) {
-    // Check if the item is in our processing list
-    if (event.item && processingPaths.has(event.item)) {
-      progressMap.set(event.item, event.percent);
-      progressMap = progressMap;
-      operationMessage = event.message || '';
+  const handleProgress = createProgressHandler(
+    () => ({ progressMap, processingPaths, operationMessage }),
+    (state) => {
+      if (state.progressMap) progressMap = state.progressMap;
+      if (state.processingPaths) processingPaths = state.processingPaths;
+      if ('operationMessage' in state) operationMessage = state.operationMessage ?? '';
     }
-    
-    if (event.type === 'complete' && processingPaths.size > 0) {
-      setTimeout(() => {
-        progressMap.clear();
-        progressMap = progressMap;
-        processingPaths.clear();
-      }, 2000);
-    }
-  }
+  );
   
   onMount(async () => {
     try {
@@ -89,8 +81,7 @@
     showSearchModal = true;
   }
   
-  async function handleTMDBSelect(event: CustomEvent<SearchResult>) {
-    const result = event.detail;
+  async function handleTMDBSelect(result: SearchResult) {
     if (!selectedMovieForDetail || isOperating) return;
     
     const moviePath = selectedMovieForDetail.path;
@@ -146,7 +137,7 @@
     for (const path of paths) {
       progressMap.set(path, 0);
     }
-    progressMap = progressMap;
+    progressMap = new Map(progressMap);
     
     for (const movie of selectedMoviesList) {
       operationMessage = `正在刷新 (${batchProgress.current + 1}/${batchProgress.total}): ${movie.name}`;
@@ -164,8 +155,7 @@
     
     operationMessage = `完成: ${successCount} 成功, ${failCount} 失败`;
     isOperating = false;
-    selectedMovies.clear();
-    selectedMovies = selectedMovies;
+    selectedMovies = new Set();
     
     setTimeout(() => { 
       operationMessage = '';
@@ -210,15 +200,17 @@
   
   
   // Filtered movies
-  $: filteredMovies = movies.filter(movie => {
-    if (activeTab === 'scraped' && !movie.isProcessed) return false;
-    if (activeTab === 'unscraped' && movie.isProcessed) return false;
-    if (searchQuery && !movie.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-    return true;
-  });
+  const filteredMovies = $derived(() => (
+    movies.filter(movie => {
+      if (activeTab === 'scraped' && !movie.isProcessed) return false;
+      if (activeTab === 'unscraped' && movie.isProcessed) return false;
+      if (searchQuery && !movie.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+      return true;
+    })
+  ));
   
-  $: scrapedCount = movies.filter(m => m.isProcessed).length;
-  $: unscrapedCount = movies.filter(m => !m.isProcessed).length;
+  const scrapedCount = $derived(() => movies.filter(m => m.isProcessed).length);
+  const unscrapedCount = $derived(() => movies.filter(m => !m.isProcessed).length);
 </script>
 
 <main class="container mx-auto px-4 py-8" class:pb-24={selectedMovies.size > 0 || isOperating}>
@@ -240,9 +232,9 @@
     
     <div class="flex items-center justify-between flex-wrap gap-4">
       <div class="inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground">
-        <button class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all {activeTab === 'all' ? 'bg-background text-foreground shadow-sm' : ''}" on:click={() => activeTab = 'all'}>全部 ({movies.length})</button>
-        <button class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all {activeTab === 'scraped' ? 'bg-background text-foreground shadow-sm' : ''}" on:click={() => activeTab = 'scraped'}>已刮削 ({scrapedCount})</button>
-        <button class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all {activeTab === 'unscraped' ? 'bg-background text-foreground shadow-sm' : ''}" on:click={() => activeTab = 'unscraped'}>未刮削 ({unscrapedCount})</button>
+        <button class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all {activeTab === 'all' ? 'bg-background text-foreground shadow-sm' : ''}" onclick={() => activeTab = 'all'}>全部 ({movies.length})</button>
+        <button class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all {activeTab === 'scraped' ? 'bg-background text-foreground shadow-sm' : ''}" onclick={() => activeTab = 'scraped'}>已刮削 ({scrapedCount})</button>
+        <button class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all {activeTab === 'unscraped' ? 'bg-background text-foreground shadow-sm' : ''}" onclick={() => activeTab = 'unscraped'}>未刮削 ({unscrapedCount})</button>
       </div>
     </div>
   </div>
@@ -257,7 +249,7 @@
       <table class="w-full">
         <thead class="bg-card">
           <tr class="border-b border-border text-xs text-muted-foreground">
-            <th class="w-12 p-3 text-left"><input type="checkbox" class="h-4 w-4 rounded border-input accent-primary" checked={selectedMovies.size === filteredMovies.length && filteredMovies.length > 0} on:change={toggleAll} /></th>
+            <th class="w-12 p-3 text-left"><input type="checkbox" class="h-4 w-4 rounded border-input accent-primary" checked={selectedMovies.size === filteredMovies.length && filteredMovies.length > 0} onchange={toggleAll} /></th>
             <th class="w-16 p-3 text-left font-medium">海报</th>
             <th class="p-3 text-left font-medium">电影名称</th>
             <th class="w-20 p-3 text-left font-medium">年份</th>
@@ -270,21 +262,22 @@
           {#each filteredMovies as movie}
             <tr 
               class="border-b border-border hover:bg-accent/50 cursor-pointer {selectedMovies.has(movie.path) ? 'bg-accent/30 border-l-2 border-l-primary' : ''}"
-              on:click={(e) => toggleMovie(movie.path, e)}
-              on:dblclick={() => handleRowDoubleClick(movie)}
+              onclick={(e) => toggleMovie(movie.path, e)}
+              ondblclick={() => handleRowDoubleClick(movie)}
             >
               <td class="p-3">
                 <input 
                   type="checkbox" 
                   class="h-4 w-4 rounded border-input accent-primary" 
                   checked={selectedMovies.has(movie.path)} 
-                  on:click|stopPropagation={() => {
+                  onclick={(e) => {
+                    e.stopPropagation();
                     if (selectedMovies.has(movie.path)) {
                       selectedMovies.delete(movie.path);
                     } else {
                       selectedMovies.add(movie.path);
                     }
-                    selectedMovies = selectedMovies;
+                    selectedMovies = new Set(selectedMovies);
                   }}
                 />
               </td>
@@ -338,13 +331,19 @@
                 <div class="flex gap-1">
                   <button 
                     class="inline-flex items-center justify-center rounded-md text-xs font-medium h-7 px-2 border border-input bg-background hover:bg-accent"
-                    on:click|stopPropagation={() => handleRowDoubleClick(movie)}
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      handleRowDoubleClick(movie);
+                    }}
                   >
                     详情
                   </button>
                   <button 
                     class="inline-flex items-center justify-center rounded-md text-xs font-medium h-7 px-2 border border-input bg-background hover:bg-accent"
-                    on:click|stopPropagation={() => openSearchModal(movie)}
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      openSearchModal(movie);
+                    }}
                   >
                     匹配
                   </button>
@@ -366,22 +365,22 @@
     progress={batchProgress}
     itemLabel="部电影"
   >
-    <svelte:fragment slot="actions">
+    {#snippet actions()}
       <button 
         class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50" 
         disabled={isOperating}
-        on:click={batchRefreshMetadata}
+        onclick={batchRefreshMetadata}
       >
         {isOperating ? '处理中...' : '刷新元数据'}
       </button>
       <button 
         class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-secondary text-secondary-foreground hover:opacity-90 disabled:opacity-50" 
         disabled={isOperating}
-        on:click={batchRematch}
+        onclick={batchRematch}
       >
         重新匹配
       </button>
-    </svelte:fragment>
+    {/snippet}
   </BatchActionBar>
 </main>
 
@@ -390,7 +389,7 @@
   <div class="fixed inset-0 z-50">
     <button 
       class="absolute inset-0 bg-black/50" 
-      on:click={closeDetailDrawer}
+      onclick={closeDetailDrawer}
       transition:fade={{ duration: 200 }}
     ></button>
     <div 
@@ -399,7 +398,7 @@
     >
       <div class="sticky top-0 flex items-center justify-between border-b border-border bg-card p-4">
         <h2 class="text-lg font-semibold">电影详情</h2>
-        <button class="inline-flex items-center justify-center rounded-md h-8 w-8 hover:bg-accent" on:click={closeDetailDrawer}>
+        <button class="inline-flex items-center justify-center rounded-md h-8 w-8 hover:bg-accent" onclick={closeDetailDrawer}>
           <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
         </button>
       </div>
@@ -453,11 +452,11 @@
             <button 
               class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
               disabled={isOperating}
-              on:click={() => { if (selectedMovieForDetail) handleScrapeMovie(selectedMovieForDetail); }}
+              onclick={() => { if (selectedMovieForDetail) handleScrapeMovie(selectedMovieForDetail); }}
             >
               {isOperating ? '处理中...' : '刷新元数据'}
             </button>
-            <button class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-secondary text-secondary-foreground hover:opacity-90" on:click={() => { 
+            <button class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-secondary text-secondary-foreground hover:opacity-90" onclick={() => { 
               const movie = selectedMovieForDetail;
               closeDetailDrawer();
               if (movie) openSearchModal(movie);
@@ -474,11 +473,11 @@
 
 <!-- TMDB Search Modal -->
 <TMDBSearchModal
-  bind:show={showSearchModal}
+  show={showSearchModal}
   type="movie"
   initialQuery={selectedMovieForDetail?.name || ''}
-  on:select={handleTMDBSelect}
-  on:close={() => showSearchModal = false}
+  onSelect={handleTMDBSelect}
+  onClose={() => { showSearchModal = false; }}
 />
 
 <style lang="postcss">

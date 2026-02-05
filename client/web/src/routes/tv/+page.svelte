@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { fade, fly, scale } from 'svelte/transition';
+  import { fade, fly } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
-  import { fetchTVShows, searchTMDB, refreshMetadata, autoMatch, subscribeToProgress, moveToInbox, type ShowInfo, type SearchResult, type ProgressEvent } from '$lib/api';
+  import { fetchTVShows, refreshMetadata, autoMatch, subscribeToProgress, moveToInbox, type ShowInfo, type SearchResult } from '$lib/api';
   import type { SeasonInfo, MediaFile } from '@media-scraper/shared';
   import { handleItemClick, toggleAllSelection } from '$lib/selection';
-  import { formatFileSize, getGroupStatusBadge } from '$lib/format';
-  import { TMDBSearchModal, DetailDrawer, BatchActionBar } from '$lib/components';
+  import { createProgressHandler } from '$lib/progress';
+  import { getGroupStatusBadge } from '$lib/format';
+  import { TMDBSearchModal, BatchActionBar } from '$lib/components';
   import { confirmDialog } from '$lib/stores';
   
   // Helper functions for typed array operations
@@ -22,48 +23,39 @@
     return [...episodes].sort((a, b) => (a.parsed.episode || 0) - (b.parsed.episode || 0));
   }
   
-  let shows: ShowInfo[] = [];
-  let loading = true;
-  let selectedShows = new Set<string>();
+  let shows = $state<ShowInfo[]>([]);
+  let loading = $state(true);
+  let selectedShows = $state(new Set<string>());
   
   // Filters
-  let searchQuery = '';
-  let activeTab = 'all';
+  let searchQuery = $state('');
+  let activeTab = $state('all');
   
   // Detail drawer state
-  let showDetailDrawer = false;
-  let selectedShowForDetail: ShowInfo | null = null;
+  let showDetailDrawer = $state(false);
+  let selectedShowForDetail = $state<ShowInfo | null>(null);
   
   // TMDB search modal state
-  let showSearchModal = false;
+  let showSearchModal = $state(false);
   
   // Operation state
-  let isOperating = false;
-  let operationMessage = '';
+  let isOperating = $state(false);
+  let operationMessage = $state('');
   
   // Progress state
-  let progressMap = new Map<string, number>(); // path -> percent
-  let processingPaths = new Set<string>(); // Currently processing paths
+  let progressMap = $state(new Map<string, number>()); // path -> percent
+  let processingPaths = $state(new Set<string>()); // Currently processing paths
   let unsubscribeProgress: (() => void) | null = null;
-  let batchProgress: { current: number; total: number } | null = null;
+  let batchProgress = $state<{ current: number; total: number } | null>(null);
   
-  function handleProgress(event: ProgressEvent) {
-    // Check if the item is in our processing list
-    if (event.item && processingPaths.has(event.item)) {
-      progressMap.set(event.item, event.percent);
-      progressMap = progressMap; // Trigger reactivity
-      operationMessage = event.message || '';
+  const handleProgress = createProgressHandler(
+    () => ({ progressMap, processingPaths, operationMessage }),
+    (state) => {
+      if (state.progressMap) progressMap = state.progressMap;
+      if (state.processingPaths) processingPaths = state.processingPaths;
+      if ('operationMessage' in state) operationMessage = state.operationMessage ?? '';
     }
-    
-    if (event.type === 'complete' && processingPaths.size > 0) {
-      // Clear progress after completion
-      setTimeout(() => {
-        progressMap.clear();
-        progressMap = progressMap;
-        processingPaths.clear();
-      }, 2000);
-    }
-  }
+  );
   
   onMount(async () => {
     try {
@@ -106,8 +98,7 @@
     showSearchModal = true;
   }
   
-  async function handleTMDBSelect(event: CustomEvent<SearchResult>) {
-    const result = event.detail;
+  async function handleTMDBSelect(result: SearchResult) {
     if (!selectedShowForDetail || isOperating) return;
     
     const showPath = selectedShowForDetail.path;
@@ -166,7 +157,7 @@
     for (const path of paths) {
       progressMap.set(path, 0);
     }
-    progressMap = progressMap;
+    progressMap = new Map(progressMap);
     
     for (const show of selectedShowsList) {
       operationMessage = `正在刷新 (${batchProgress.current + 1}/${batchProgress.total}): ${show.name}`;
@@ -184,8 +175,7 @@
     
     operationMessage = `完成: ${successCount} 成功, ${failCount} 失败`;
     isOperating = false;
-    selectedShows.clear();
-    selectedShows = selectedShows;
+    selectedShows = new Set();
     
     setTimeout(() => { 
       operationMessage = '';
@@ -325,19 +315,21 @@
   }
   
   // Filtered shows based on current filters
-  $: filteredShows = shows.filter(show => {
-    // Tab filter
-    if (activeTab === 'scraped' && show.groupStatus !== 'scraped') return false;
-    if (activeTab === 'unscraped' && show.groupStatus !== 'unscraped') return false;
-    
-    // Search query
-    if (searchQuery && !show.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-    
-    return true;
-  });
+  const filteredShows = $derived(() => (
+    shows.filter(show => {
+      // Tab filter
+      if (activeTab === 'scraped' && show.groupStatus !== 'scraped') return false;
+      if (activeTab === 'unscraped' && show.groupStatus !== 'unscraped') return false;
+      
+      // Search query
+      if (searchQuery && !show.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+      
+      return true;
+    })
+  ));
   
-  $: scrapedCount = shows.filter(s => s.groupStatus === 'scraped').length;
-  $: unscrapedCount = shows.filter(s => s.groupStatus === 'unscraped').length;
+  const scrapedCount = $derived(() => shows.filter(s => s.groupStatus === 'scraped').length);
+  const unscrapedCount = $derived(() => shows.filter(s => s.groupStatus === 'unscraped').length);
 </script>
 
 <main class="container mx-auto px-4 py-8" class:pb-24={selectedShows.size > 0 || isOperating}>
@@ -355,9 +347,9 @@
     <div class="flex items-center justify-between flex-wrap gap-4">
       <!-- Tabs -->
       <div class="inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground">
-        <button class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all {activeTab === 'all' ? 'bg-background text-foreground shadow-sm' : ''}" on:click={() => activeTab = 'all'}>全部 ({shows.length})</button>
-        <button class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all {activeTab === 'scraped' ? 'bg-background text-foreground shadow-sm' : ''}" on:click={() => activeTab = 'scraped'}>已刮削 ({scrapedCount})</button>
-        <button class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all {activeTab === 'unscraped' ? 'bg-background text-foreground shadow-sm' : ''}" on:click={() => activeTab = 'unscraped'}>未刮削 ({unscrapedCount})</button>
+        <button class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all {activeTab === 'all' ? 'bg-background text-foreground shadow-sm' : ''}" onclick={() => activeTab = 'all'}>全部 ({shows.length})</button>
+        <button class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all {activeTab === 'scraped' ? 'bg-background text-foreground shadow-sm' : ''}" onclick={() => activeTab = 'scraped'}>已刮削 ({scrapedCount})</button>
+        <button class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all {activeTab === 'unscraped' ? 'bg-background text-foreground shadow-sm' : ''}" onclick={() => activeTab = 'unscraped'}>未刮削 ({unscrapedCount})</button>
       </div>
       
       <!-- Action Buttons -->
@@ -379,7 +371,7 @@
       <table class="w-full">
         <thead class="bg-card">
           <tr class="border-b border-border text-xs text-muted-foreground">
-            <th class="w-12 p-3 text-left"><input type="checkbox" class="h-4 w-4 rounded border-input accent-primary" checked={selectedShows.size === filteredShows.length && filteredShows.length > 0} on:change={toggleAll} /></th>
+            <th class="w-12 p-3 text-left"><input type="checkbox" class="h-4 w-4 rounded border-input accent-primary" checked={selectedShows.size === filteredShows.length && filteredShows.length > 0} onchange={toggleAll} /></th>
             <th class="w-16 p-3 text-left font-medium">海报</th>
             <th class="p-3 text-left font-medium">剧集名称</th>
             <th class="w-24 p-3 text-left font-medium">季数</th>
@@ -394,21 +386,22 @@
             {@const badge = getGroupStatusBadge(show.groupStatus)}
             <tr 
               class="border-b border-border hover:bg-accent/50 cursor-pointer {selectedShows.has(show.path) ? 'bg-accent/30 border-l-2 border-l-primary' : ''}"
-              on:click={(e) => toggleShow(show.path, e)}
-              on:dblclick={() => handleRowDoubleClick(show)}
+              onclick={(e) => toggleShow(show.path, e)}
+              ondblclick={() => handleRowDoubleClick(show)}
             >
               <td class="p-3">
                 <input 
                   type="checkbox" 
                   class="h-4 w-4 rounded border-input accent-primary" 
                   checked={selectedShows.has(show.path)} 
-                  on:click|stopPropagation={() => {
+                  onclick={(e) => {
+                    e.stopPropagation();
                     if (selectedShows.has(show.path)) {
                       selectedShows.delete(show.path);
                     } else {
                       selectedShows.add(show.path);
                     }
-                    selectedShows = selectedShows;
+                    selectedShows = new Set(selectedShows);
                   }}
                 />
               </td>
@@ -464,13 +457,19 @@
                 <div class="flex gap-1">
                   <button 
                     class="inline-flex items-center justify-center rounded-md text-xs font-medium h-7 px-2 border border-input bg-background hover:bg-accent"
-                    on:click|stopPropagation={() => handleRowDoubleClick(show)}
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      handleRowDoubleClick(show);
+                    }}
                   >
                     详情
                   </button>
                   <button 
                     class="inline-flex items-center justify-center rounded-md text-xs font-medium h-7 px-2 border border-input bg-background hover:bg-accent"
-                    on:click|stopPropagation={() => openSearchModal(show)}
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      openSearchModal(show);
+                    }}
                   >
                     匹配
                   </button>
@@ -492,22 +491,22 @@
     progress={batchProgress}
     itemLabel="部剧集"
   >
-    <svelte:fragment slot="actions">
+    {#snippet actions()}
       <button 
         class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50" 
         disabled={isOperating}
-        on:click={batchRefreshMetadata}
+        onclick={batchRefreshMetadata}
       >
         {isOperating ? '处理中...' : '刷新元数据'}
       </button>
       <button 
         class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-secondary text-secondary-foreground hover:opacity-90 disabled:opacity-50" 
         disabled={isOperating}
-        on:click={batchRematch}
+        onclick={batchRematch}
       >
         重新匹配
       </button>
-    </svelte:fragment>
+    {/snippet}
   </BatchActionBar>
 </main>
 
@@ -516,7 +515,7 @@
   <div class="fixed inset-0 z-50">
     <button 
       class="absolute inset-0 bg-black/50" 
-      on:click={closeDetailDrawer}
+      onclick={closeDetailDrawer}
       transition:fade={{ duration: 200 }}
     ></button>
     <div 
@@ -525,7 +524,7 @@
     >
       <div class="sticky top-0 flex items-center justify-between border-b border-border bg-card p-4">
         <h2 class="text-lg font-semibold">剧集详情</h2>
-        <button class="inline-flex items-center justify-center rounded-md h-8 w-8 hover:bg-accent" on:click={closeDetailDrawer}>
+        <button class="inline-flex items-center justify-center rounded-md h-8 w-8 hover:bg-accent" onclick={closeDetailDrawer}>
           <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
         </button>
       </div>
@@ -600,12 +599,12 @@
                     <span class="text-xs text-muted-foreground">{seasonItem.episodes.length} 集</span>
                   </div>
                   <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-                  <div class="flex items-center gap-1" on:click|stopPropagation>
+                  <div class="flex items-center gap-1" onclick={(e) => e.stopPropagation()}>
                     <button 
                       class="inline-flex items-center justify-center rounded h-6 w-6 hover:bg-accent text-muted-foreground hover:text-foreground"
                       title="刷新该季元数据"
                       disabled={isOperating || !selectedShowForDetail?.tmdbId}
-                      on:click={() => handleRefreshSeason(seasonItem.season)}
+                      onclick={() => handleRefreshSeason(seasonItem.season)}
                     >
                       <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
                     </button>
@@ -624,7 +623,7 @@
                           class="inline-flex items-center justify-center rounded h-5 w-5 opacity-0 group-hover/ep:opacity-100 hover:bg-accent text-muted-foreground hover:text-foreground transition-opacity"
                           title="刷新该集元数据"
                           disabled={isOperating || !selectedShowForDetail?.tmdbId}
-                          on:click={() => handleRefreshEpisode(seasonItem.season, ep.parsed.episode || 0)}
+                          onclick={() => handleRefreshEpisode(seasonItem.season, ep.parsed.episode || 0)}
                         >
                           <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
                         </button>
@@ -632,7 +631,7 @@
                           class="inline-flex items-center justify-center rounded h-5 w-5 opacity-0 group-hover/ep:opacity-100 hover:bg-accent text-orange-500 hover:text-orange-600 transition-opacity"
                           title="移回收件箱"
                           disabled={isOperating}
-                          on:click={() => handleMoveToInbox(ep.path, ep.name)}
+                          onclick={() => handleMoveToInbox(ep.path, ep.name)}
                         >
                           <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
                         </button>
@@ -652,7 +651,7 @@
               <button 
                 class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
                 disabled={isOperating}
-                on:click={() => { if (selectedShowForDetail) handleScrapeShow(selectedShowForDetail); }}
+                onclick={() => { if (selectedShowForDetail) handleScrapeShow(selectedShowForDetail); }}
               >
                 {isOperating ? '处理中...' : '自动匹配'}
               </button>
@@ -660,12 +659,12 @@
               <button 
                 class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
                 disabled={isOperating}
-                on:click={() => { if (selectedShowForDetail) handleRefreshShow(selectedShowForDetail); }}
+                onclick={() => { if (selectedShowForDetail) handleRefreshShow(selectedShowForDetail); }}
               >
                 {isOperating ? '处理中...' : '刷新元数据'}
               </button>
             {/if}
-            <button class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-secondary text-secondary-foreground hover:opacity-90" on:click={() => { 
+            <button class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-secondary text-secondary-foreground hover:opacity-90" onclick={() => { 
               const show = selectedShowForDetail;
               closeDetailDrawer();
               if (show) openSearchModal(show);
@@ -682,11 +681,11 @@
 
 <!-- TMDB Search Modal -->
 <TMDBSearchModal
-  bind:show={showSearchModal}
+  show={showSearchModal}
   type="tv"
   initialQuery={selectedShowForDetail?.name || ''}
-  on:select={handleTMDBSelect}
-  on:close={() => showSearchModal = false}
+  onSelect={handleTMDBSelect}
+  onClose={() => { showSearchModal = false; }}
 />
 
 <style lang="postcss">

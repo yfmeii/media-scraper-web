@@ -130,3 +130,106 @@ export interface ProgressEvent {
   percent: number;
   message?: string;
 }
+
+export interface Stats {
+  tvShows: number;
+  tvEpisodes: number;
+  tvProcessed: number;
+  movies: number;
+  moviesProcessed: number;
+  inbox: number;
+}
+
+export interface SearchResult {
+  id: number;
+  name?: string;
+  title?: string;
+  originalName?: string;
+  originalTitle?: string;
+  overview?: string;
+  releaseDate?: string;
+  firstAirDate?: string;
+  voteAverage?: number;
+  posterPath?: string;
+}
+
+export interface ScrapeResult {
+  success: boolean;
+  message?: string;
+  taskId?: string;
+}
+
+export interface MatchResult {
+  matched: boolean;
+  result?: {
+    id: number;
+    name: string;
+    originalName?: string;
+    date?: string;
+    posterPath?: string;
+    score: number;
+  };
+  candidates: Array<{
+    id: number;
+    name: string;
+    originalName?: string;
+    date?: string;
+    posterPath?: string;
+    overview?: string;
+  }>;
+  ambiguous?: boolean;
+}
+
+export interface PathRecognizeResult {
+  path: string;
+  title: string;
+  media_type: 'tv' | 'movie';
+  year: number | null;
+  season: number | null;
+  episode: number | null;
+  tmdb_id: number | null;
+  tmdb_name: string | null;
+  confidence: number;
+  reason: string;
+}
+
+export interface BatchScrapeItem {
+  sourcePath: string;
+  kind: 'tv' | 'movie';
+  showName?: string;
+  tmdbId?: number;
+  season?: number;
+  episodes?: Array<{ source: string; episode: number; episodeEnd?: number }>;
+  candidates?: Array<{ id: number; name: string }>;
+}
+
+export interface BatchScrapeResult {
+  success: boolean;
+  processed: number;
+  failed: number;
+  taskId?: string;
+}
+
+export interface ProcessTVParams {
+  sourcePath: string;
+  showName: string;
+  tmdbId: number;
+  season: number;
+  episodes: Array<{ source: string; episode: number; episodeEnd?: number }>;
+  language?: string;
+}
+
+export interface ProcessMovieParams {
+  sourcePath: string;
+  tmdbId: number;
+  language?: string;
+}
+
+export interface PreviewItem {
+  sourcePath: string;
+  kind: 'tv' | 'movie';
+  tmdbId?: number;
+  showName?: string;
+  season?: number;
+  episodes?: Array<{ source: string; episode: number; episodeEnd?: number }>;
+}

@@ -12,7 +12,7 @@
   <div class="fixed inset-0 z-50 flex items-center justify-center">
     <button 
       class="absolute inset-0 bg-black/50" 
-      on:click={() => confirmDialog.cancel()}
+      onclick={() => confirmDialog.cancel()}
       transition:fade={{ duration: 200 }}
     ></button>
     <div 
@@ -26,13 +26,13 @@
       <div class="flex justify-end gap-2 border-t border-border p-4">
         <button 
           class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 border border-input bg-background hover:bg-accent" 
-          on:click={() => confirmDialog.cancel()}
+          onclick={() => confirmDialog.cancel()}
         >
           {$confirmDialog.cancelText}
         </button>
         <button 
           class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 {$confirmDialog.confirmVariant === 'destructive' ? 'bg-destructive text-destructive-foreground' : 'bg-primary text-primary-foreground'} hover:opacity-90" 
-          on:click={() => confirmDialog.confirm()}
+          onclick={() => confirmDialog.confirm()}
         >
           {$confirmDialog.confirmText}
         </button>

@@ -1,33 +1,38 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
   
-  export let show = false;
-  export let loading = false;
-  export let title = '预览移动计划';
-  export let actions: Array<{
-    type: string;
-    source?: string;
-    destination: string;
-    willOverwrite?: boolean;
-  }> = [];
-  export let summary: {
-    filesMoving: number;
-    nfoCreating: number;
-    nfoOverwriting: number;
-  } | null = null;
-  
-  const dispatch = createEventDispatcher<{
-    confirm: void;
-    close: void;
-  }>();
+  let {
+    show = false,
+    loading = false,
+    title = '预览移动计划',
+    actions = [],
+    summary = null,
+    onConfirm,
+    onClose
+  }: {
+    show?: boolean;
+    loading?: boolean;
+    title?: string;
+    actions?: Array<{
+      type: string;
+      source?: string;
+      destination: string;
+      willOverwrite?: boolean;
+    }>;
+    summary?: {
+      filesMoving: number;
+      nfoCreating: number;
+      nfoOverwriting: number;
+    } | null;
+    onConfirm?: () => void;
+    onClose?: () => void;
+  } = $props();
   
   function handleConfirm() {
-    dispatch('confirm');
+    onConfirm?.();
   }
   
   function handleClose() {
-    show = false;
-    dispatch('close');
+    onClose?.();
   }
   
   function getActionIcon(type: string): string {
@@ -54,7 +59,9 @@
 {#if show}
   <div 
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-    on:click|self={handleClose}
+    onclick={(e) => {
+      if (e.target === e.currentTarget) handleClose();
+    }}
     role="dialog"
     aria-modal="true"
   >
@@ -64,7 +71,7 @@
         <h3 class="font-semibold">{title}</h3>
         <button 
           class="h-8 w-8 rounded-md hover:bg-accent flex items-center justify-center"
-          on:click={handleClose}
+          onclick={handleClose}
         >
           ✕
         </button>
@@ -127,14 +134,14 @@
       <div class="p-4 border-t border-border flex justify-end gap-2">
         <button 
           class="h-9 px-4 rounded-md border border-input bg-background hover:bg-accent text-sm font-medium"
-          on:click={handleClose}
+          onclick={handleClose}
         >
           取消
         </button>
         <button 
           class="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50"
           disabled={loading || actions.length === 0}
-          on:click={handleConfirm}
+          onclick={handleConfirm}
         >
           确认执行
         </button>

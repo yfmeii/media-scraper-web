@@ -1,24 +1,31 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
   import { searchTMDB, type SearchResult } from '$lib/api';
   
-  export let show = false;
-  export let type: 'tv' | 'movie' = 'tv';
-  export let initialQuery = '';
+  let {
+    show = false,
+    type: initialType = 'tv',
+    initialQuery = '',
+    onSelect,
+    onClose
+  }: {
+    show?: boolean;
+    type?: 'tv' | 'movie';
+    initialQuery?: string;
+    onSelect?: (result: SearchResult) => void;
+    onClose?: () => void;
+  } = $props();
   
-  const dispatch = createEventDispatcher<{
-    select: SearchResult;
-    close: void;
-  }>();
+  let type = $state<'tv' | 'movie'>(initialType);
+  let query = $state('');
+  let results = $state<SearchResult[]>([]);
+  let isSearching = $state(false);
   
-  let query = '';
-  let results: SearchResult[] = [];
-  let isSearching = false;
-  
-  $: if (show && initialQuery) {
-    query = initialQuery;
-    handleSearch();
-  }
+  $effect(() => {
+    if (show && initialQuery) {
+      query = initialQuery;
+      void handleSearch();
+    }
+  });
   
   async function handleSearch() {
     if (!query.trim()) return;
@@ -34,13 +41,12 @@
   }
   
   function handleSelect(result: SearchResult) {
-    dispatch('select', result);
+    onSelect?.(result);
   }
   
   function handleClose() {
-    show = false;
     results = [];
-    dispatch('close');
+    onClose?.();
   }
   
   function handleKeydown(e: KeyboardEvent) {
@@ -55,8 +61,10 @@
 {#if show}
   <div 
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-    on:click|self={handleClose}
-    on:keydown={handleKeydown}
+    onclick={(e) => {
+      if (e.target === e.currentTarget) handleClose();
+    }}
+    onkeydown={handleKeydown}
     role="dialog"
     aria-modal="true"
   >
@@ -66,7 +74,7 @@
         <h3 class="font-semibold">TMDB 搜索</h3>
         <button 
           class="h-8 w-8 rounded-md hover:bg-accent flex items-center justify-center"
-          on:click={handleClose}
+          onclick={handleClose}
         >
           ✕
         </button>
@@ -87,12 +95,12 @@
             class="flex-1 h-9 rounded-md border border-input bg-background px-3 text-sm"
             placeholder="输入搜索关键词..."
             bind:value={query}
-            on:keydown={(e) => e.key === 'Enter' && handleSearch()}
+            onkeydown={(e) => e.key === 'Enter' && handleSearch()}
           />
           <button 
             class="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50"
             disabled={isSearching}
-            on:click={handleSearch}
+            onclick={handleSearch}
           >
             {isSearching ? '搜索中...' : '搜索'}
           </button>
@@ -106,7 +114,7 @@
             {#each results as result}
               <button 
                 class="w-full flex items-start gap-3 p-3 rounded-md border border-border hover:bg-accent text-left"
-                on:click={() => handleSelect(result)}
+                onclick={() => handleSelect(result)}
               >
                 {#if result.posterPath}
                   <img 

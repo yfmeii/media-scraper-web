@@ -181,6 +181,7 @@ async function buildSeasonInfos(
       } catch {}
 
       seasonInfo.hasNfo = seasonHasNfo;
+      seasonAssets.hasNfo = seasonHasNfo;
       seasonInfo.assets = seasonAssets;
     }
 

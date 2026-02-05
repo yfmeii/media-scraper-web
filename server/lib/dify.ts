@@ -1,18 +1,5 @@
 import { DIFY_PATH_RECOGNIZER_KEY, DIFY_BASE_URL } from './config';
-
-// 路径识别结果（包含 TMDB 匹配）
-export interface PathRecognizeResult {
-  path: string;
-  title: string;
-  media_type: 'tv' | 'movie';  // AI 判断的媒体类型
-  year: number | null;
-  season: number | null;
-  episode: number | null;
-  tmdb_id: number | null;
-  tmdb_name: string | null;
-  confidence: number;
-  reason: string;
-}
+import type { PathRecognizeResult } from '@media-scraper/shared';
 
 function extractStreamingAnswer(text: string): string | null {
   const answerParts: string[] = [];
