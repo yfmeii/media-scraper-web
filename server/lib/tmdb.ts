@@ -25,6 +25,7 @@ export interface TMDBShowDetails {
   backdrop_path?: string;
   first_air_date: string;
   vote_average: number;
+  status?: string;
   genres: { id: number; name: string }[];
   number_of_seasons: number;
 }
@@ -39,6 +40,7 @@ export interface TMDBMovieDetails {
   release_date: string;
   vote_average: number;
   runtime: number;
+  tagline?: string;
   genres: { id: number; name: string }[];
 }
 
