@@ -1,13 +1,13 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { fade, fly } from 'svelte/transition';
+  import { fade, fly, slide } from 'svelte/transition';
   import { flip } from 'svelte/animate';
   import { quintOut, cubicOut } from 'svelte/easing';
   import { fetchTVShows, refreshMetadata, autoMatch, subscribeToProgress, moveToInbox, type ShowInfo, type SearchResult } from '$lib/api';
   import type { SeasonInfo, MediaFile } from '@media-scraper/shared';
   import { handleItemClick, toggleAllSelection } from '$lib/selection';
   import { createProgressHandler } from '$lib/progress';
-  import { getGroupStatusBadge } from '$lib/format';
+  import { formatFileSize, getGroupStatusBadge } from '$lib/format';
   import { TMDBSearchModal, BatchActionBar } from '$lib/components';
   import { confirmDialog } from '$lib/stores';
   
@@ -35,6 +35,8 @@
   // Detail drawer state
   let showDetailDrawer = $state(false);
   let selectedShowForDetail = $state<ShowInfo | null>(null);
+  let overviewExpanded = $state(false);
+  let openSeasons = $state(new Set<number>());
   
   // TMDB search modal state
   let showSearchModal = $state(false);
@@ -85,6 +87,8 @@
   }
   
   function handleRowDoubleClick(show: ShowInfo) {
+    overviewExpanded = false;
+    openSeasons = new Set();
     selectedShowForDetail = show;
     showDetailDrawer = true;
   }
@@ -92,6 +96,8 @@
   function closeDetailDrawer() {
     showDetailDrawer = false;
     selectedShowForDetail = null;
+    overviewExpanded = false;
+    openSeasons = new Set();
   }
   
   function openSearchModal(show: ShowInfo) {
@@ -331,6 +337,49 @@
   
   const scrapedCount = $derived.by(() => shows.filter(s => s.groupStatus === 'scraped').length);
   const unscrapedCount = $derived.by(() => shows.filter(s => s.groupStatus === 'unscraped').length);
+
+  const detailDelay = (i: number) => i * 60 + 200;
+
+  function getFanartUrl(path?: string, hasFanart?: boolean): string | undefined {
+    if (!path || !hasFanart) return undefined;
+    return `/api/media/poster?path=${encodeURIComponent(`${path}/fanart.jpg`)}`;
+  }
+
+  function copyPath(path?: string) {
+    if (!path) return;
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(path).catch(() => {});
+    }
+  }
+
+  function toggleSeason(season: number) {
+    if (openSeasons.has(season)) openSeasons.delete(season);
+    else openSeasons.add(season);
+    openSeasons = new Set(openSeasons);
+  }
+
+  const showStatusBadge = $derived.by(() => getGroupStatusBadge(selectedShowForDetail?.groupStatus));
+
+  const showFanartUrl = $derived.by(() => 
+    getFanartUrl(selectedShowForDetail?.path, selectedShowForDetail?.assets?.hasFanart)
+  );
+
+  const showMetaItems = $derived.by(() => {
+    if (!selectedShowForDetail) return [];
+    const items: string[] = [];
+    if (typeof selectedShowForDetail.voteAverage === 'number') {
+      items.push(`评分 ${selectedShowForDetail.voteAverage.toFixed(1)}`);
+    }
+    if (selectedShowForDetail.year) items.push(String(selectedShowForDetail.year));
+    if (selectedShowForDetail.status) items.push(selectedShowForDetail.status);
+    items.push(`${selectedShowForDetail.seasons.length} 季`);
+    const episodeCount = countTotalEpisodes(selectedShowForDetail.seasons);
+    if (episodeCount) items.push(`${episodeCount} 集`);
+    return items;
+  });
+
+  const showOverview = $derived.by(() => selectedShowForDetail?.overview?.trim() || '');
+  const canExpandShowOverview = $derived.by(() => showOverview.length > 140);
 </script>
 
 <main class="container mx-auto px-4 py-8" class:pb-24={selectedShows.size > 0 || isOperating}>
@@ -517,139 +566,205 @@
 {#if showDetailDrawer && selectedShowForDetail}
   <div class="fixed inset-0 z-50">
     <button 
-      class="absolute inset-0 bg-black/50" 
+      class="absolute inset-0 bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/60" 
       aria-label="关闭详情"
       onclick={closeDetailDrawer}
       transition:fade={{ duration: 200 }}
     ></button>
     <div 
-      class="absolute right-0 top-0 bottom-0 w-full max-w-lg bg-card border-l border-border overflow-y-auto"
-      transition:fly={{ x: 400, duration: 300, easing: quintOut }}
+      class="absolute right-0 top-0 bottom-0 w-full max-w-2xl bg-card border-l border-border shadow-2xl overflow-hidden"
+      transition:fly={{ x: 400, duration: 400, opacity: 1, easing: quintOut }}
     >
-      <div class="sticky top-0 flex items-center justify-between border-b border-border bg-card p-4">
-        <h2 class="text-lg font-semibold">剧集详情</h2>
-        <button class="inline-flex items-center justify-center rounded-md h-8 w-8 hover:bg-accent" aria-label="关闭详情" onclick={closeDetailDrawer}>
-          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-        </button>
-      </div>
-      <div class="p-4 space-y-6">
-        <div>
-          <h3 class="text-xl font-bold mb-2">{selectedShowForDetail.name}</h3>
-        </div>
-        
-        <div class="grid grid-cols-2 gap-4 text-sm">
-          <div>
-            <p class="text-muted-foreground">TMDB ID</p>
-            <p class="font-medium">{selectedShowForDetail.tmdbId ? `#${selectedShowForDetail.tmdbId}` : '未匹配'}</p>
+      <div class="flex h-full flex-col">
+        <div class="relative">
+          <div class="relative h-60">
+            <div 
+              class="absolute inset-0 bg-muted bg-cover bg-center"
+              style={showFanartUrl ? `background-image: url('${showFanartUrl}')` : ''}
+            ></div>
+            <div class="absolute inset-0 bg-gradient-to-t from-background via-background/70 to-transparent"></div>
+            <button class="absolute right-4 top-4 inline-flex items-center justify-center rounded-md h-8 w-8 bg-background/70 hover:bg-background" aria-label="关闭详情" onclick={closeDetailDrawer}>
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
           </div>
-          <div>
-            <p class="text-muted-foreground">状态</p>
-            <p class="font-medium">{getGroupStatusBadge(selectedShowForDetail.groupStatus).label}</p>
-          </div>
-          <div>
-            <p class="text-muted-foreground">季数</p>
-            <p class="font-medium">{selectedShowForDetail.seasons.length}</p>
-          </div>
-          <div>
-            <p class="text-muted-foreground">集数</p>
-            <p class="font-medium">{countTotalEpisodes(selectedShowForDetail.seasons) || 24}</p>
-          </div>
-        </div>
-        
-        <div>
-          <p class="text-sm text-muted-foreground mb-2">路径</p>
-          <p class="font-mono text-xs bg-muted p-2 rounded">{selectedShowForDetail.path}</p>
-        </div>
-        
-        <div>
-          <p class="text-sm text-muted-foreground mb-2">完整性</p>
-          <div class="flex gap-4">
-            <span class="flex items-center gap-1 text-sm {selectedShowForDetail.assets?.hasPoster ? 'text-green-500' : 'text-red-500'}">
-              {#if selectedShowForDetail.assets?.hasPoster}
-                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+          <div class="relative -mt-16 px-4 pb-4 flex gap-4 items-end" in:fly={{ y: 18, duration: 300, delay: detailDelay(0), easing: quintOut }}>
+            <div class="h-28 w-20 rounded-lg overflow-hidden shadow-2xl shadow-black/50 bg-muted border border-border">
+              {#if selectedShowForDetail.posterPath}
+                <img src={selectedShowForDetail.posterPath} alt={selectedShowForDetail.name} class="h-full w-full object-cover" />
               {:else}
-                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                <div class="h-full w-full flex items-center justify-center text-[10px] text-muted-foreground">No Poster</div>
               {/if}
-              海报
-            </span>
-            <span class="flex items-center gap-1 text-sm {selectedShowForDetail.assets?.hasNfo ? 'text-green-500' : 'text-red-500'}">
-              {#if selectedShowForDetail.assets?.hasNfo}
-                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
-              {:else}
-                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-              {/if}
-              NFO
-            </span>
-            <span class="flex items-center gap-1 text-sm {selectedShowForDetail.assets?.hasFanart ? 'text-green-500' : 'text-red-500'}">
-              {#if selectedShowForDetail.assets?.hasFanart}
-                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
-              {:else}
-                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-              {/if}
-              Fanart
-            </span>
+            </div>
+            <div class="min-w-0 pb-2">
+              <h2 class="text-2xl font-semibold tracking-tight">{selectedShowForDetail.name}</h2>
+              <div class="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                {#each showMetaItems as item}
+                  <span class="rounded-full border border-border/60 bg-background/60 px-2 py-0.5">{item}</span>
+                {/each}
+                <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 {showStatusBadge.bgColor} {showStatusBadge.border} {showStatusBadge.color}">
+                  {showStatusBadge.label}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
-        
-        <!-- 季/集分组展示 -->
-        <div>
-          <p class="text-sm text-muted-foreground mb-2">季/集文件</p>
-          <div class="space-y-2 max-h-80 overflow-y-auto">
-            {#each sortSeasons(selectedShowForDetail.seasons) as seasonItem}
-              <details class="group">
-                <summary class="flex items-center justify-between cursor-pointer p-2 rounded-md bg-muted/50 hover:bg-muted">
-                  <div class="flex items-center gap-2">
-                    <span class="text-sm font-medium">第 {seasonItem.season} 季</span>
-                    <span class="text-xs text-muted-foreground">{seasonItem.episodes.length} 集</span>
-                  </div>
-                  <button 
-                    class="inline-flex items-center justify-center rounded h-6 w-6 hover:bg-accent text-muted-foreground hover:text-foreground"
-                    title="刷新该季元数据"
-                    disabled={isOperating || !selectedShowForDetail?.tmdbId}
-                    onclick={(e) => {
-                      e.stopPropagation();
-                      handleRefreshSeason(seasonItem.season);
+
+        <div class="flex-1 overflow-y-auto px-4 pb-6 pt-2 space-y-6 scrollbar-thin scrollbar-thumb-muted scrollbar-track-transparent">
+          <section class="space-y-2" in:fly={{ y: 18, duration: 300, delay: detailDelay(1), easing: quintOut }}>
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-semibold">剧情简介</h3>
+              {#if showOverview && canExpandShowOverview}
+                <button class="text-xs text-muted-foreground hover:text-foreground" onclick={() => { overviewExpanded = !overviewExpanded; }}>
+                  {overviewExpanded ? '收起' : '展开'}
+                </button>
+              {/if}
+            </div>
+            <p class="text-sm text-muted-foreground leading-relaxed {showOverview && !overviewExpanded && canExpandShowOverview ? 'line-clamp-3' : ''}">
+              {showOverview || '暂无简介'}
+            </p>
+          </section>
+
+          <section class="space-y-3" in:fly={{ y: 18, duration: 300, delay: detailDelay(2), easing: quintOut }}>
+            <h3 class="text-sm font-semibold">元数据</h3>
+            <div class="grid grid-cols-2 gap-3 text-sm">
+              <div class="rounded-lg border border-border/60 bg-muted/30 p-3">
+                <p class="text-xs text-muted-foreground">TMDB</p>
+                {#if selectedShowForDetail.tmdbId}
+                  <a 
+                    class="mt-1 inline-flex items-center gap-1 text-sm font-medium text-primary hover:opacity-80"
+                    href={`https://www.themoviedb.org/tv/${selectedShowForDetail.tmdbId}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    #{selectedShowForDetail.tmdbId}
+                    <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg>
+                  </a>
+                {:else}
+                  <p class="mt-1 text-sm font-medium">未匹配</p>
+                {/if}
+              </div>
+              <div class="rounded-lg border border-border/60 bg-muted/30 p-3">
+                <p class="text-xs text-muted-foreground">状态</p>
+                <span class="mt-1 inline-flex items-center rounded-full border px-2 py-0.5 text-xs {showStatusBadge.bgColor} {showStatusBadge.border} {showStatusBadge.color}">
+                  {showStatusBadge.label}
+                </span>
+              </div>
+              <button 
+                class="col-span-2 rounded-lg border border-border/60 bg-muted/30 p-3 text-left hover:bg-muted/50"
+                title="点击复制路径"
+                onclick={() => copyPath(selectedShowForDetail?.path)}
+              >
+                <p class="text-xs text-muted-foreground">路径</p>
+                <p class="mt-1 font-mono text-xs break-all">{selectedShowForDetail.path}</p>
+                <p class="mt-1 text-[11px] text-muted-foreground">点击复制</p>
+              </button>
+              <div class="col-span-2 rounded-lg border border-border/60 bg-muted/30 p-3">
+                <p class="text-xs text-muted-foreground">资源完整性</p>
+                <div class="mt-2 flex flex-wrap gap-3">
+                  <span class="flex items-center gap-1 text-xs {selectedShowForDetail.assets?.hasPoster ? 'text-green-500' : 'text-red-500'}">
+                    {#if selectedShowForDetail.assets?.hasPoster}
+                      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+                    {:else}
+                      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                    {/if}
+                    海报
+                  </span>
+                  <span class="flex items-center gap-1 text-xs {selectedShowForDetail.assets?.hasNfo ? 'text-green-500' : 'text-red-500'}">
+                    {#if selectedShowForDetail.assets?.hasNfo}
+                      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+                    {:else}
+                      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                    {/if}
+                    NFO
+                  </span>
+                  <span class="flex items-center gap-1 text-xs {selectedShowForDetail.assets?.hasFanart ? 'text-green-500' : 'text-red-500'}">
+                    {#if selectedShowForDetail.assets?.hasFanart}
+                      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+                    {:else}
+                      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                    {/if}
+                    Fanart
+                  </span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="space-y-3" in:fly={{ y: 18, duration: 300, delay: detailDelay(3), easing: quintOut }}>
+            <h3 class="text-sm font-semibold">季/集文件</h3>
+            <div class="space-y-3">
+              {#each sortSeasons(selectedShowForDetail.seasons) as seasonItem (seasonItem.season)}
+                <div class="rounded-lg border border-border/60 bg-muted/30">
+                  <div 
+                    class="flex items-center justify-between gap-3 p-3 cursor-pointer hover:bg-muted/50"
+                    role="button"
+                    tabindex="0"
+                    aria-expanded={openSeasons.has(seasonItem.season)}
+                    onclick={() => toggleSeason(seasonItem.season)}
+                    onkeydown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        toggleSeason(seasonItem.season);
+                      }
                     }}
                   >
-                    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
-                  </button>
-                </summary>
-                <div class="mt-1 ml-4 space-y-1">
-                  {#each sortEpisodes(seasonItem.episodes) as ep}
-                    <div class="flex items-center justify-between p-2 rounded-md hover:bg-muted/30 text-xs group/ep">
-                      <div class="flex items-center gap-2 flex-1 min-w-0">
-                        <span class="text-muted-foreground shrink-0">E{String(ep.parsed.episode || 0).padStart(2, '0')}</span>
-                        <span class="truncate" title={ep.name}>{ep.name}</span>
-                      </div>
-                      <div class="flex items-center gap-1 shrink-0 ml-2">
-                        <span class="text-muted-foreground mr-2">{(ep.size / 1024 / 1024 / 1024).toFixed(2)} GB</span>
-                        <button 
-                          class="inline-flex items-center justify-center rounded h-5 w-5 opacity-0 group-hover/ep:opacity-100 hover:bg-accent text-muted-foreground hover:text-foreground transition-opacity"
-                          title="刷新该集元数据"
-                          disabled={isOperating || !selectedShowForDetail?.tmdbId}
-                          onclick={() => handleRefreshEpisode(seasonItem.season, ep.parsed.episode || 0)}
-                        >
-                          <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
-                        </button>
-                        <button 
-                          class="inline-flex items-center justify-center rounded h-5 w-5 opacity-0 group-hover/ep:opacity-100 hover:bg-accent text-orange-500 hover:text-orange-600 transition-opacity"
-                          title="移回收件箱"
-                          disabled={isOperating}
-                          onclick={() => handleMoveToInbox(ep.path, ep.name)}
-                        >
-                          <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
-                        </button>
-                      </div>
+                    <div class="flex items-center gap-2">
+                      <span class="text-sm font-medium">第 {seasonItem.season} 季</span>
+                      <span class="text-xs text-muted-foreground">{seasonItem.episodes.length} 集</span>
                     </div>
-                  {/each}
+                    <div class="flex items-center gap-2">
+                      <button 
+                        class="inline-flex items-center justify-center rounded h-6 w-6 hover:bg-accent text-muted-foreground hover:text-foreground"
+                        title="刷新该季元数据"
+                        disabled={isOperating || !selectedShowForDetail?.tmdbId}
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          handleRefreshSeason(seasonItem.season);
+                        }}
+                      >
+                        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+                      </button>
+                      <svg class="h-4 w-4 text-muted-foreground transition-transform {openSeasons.has(seasonItem.season) ? 'rotate-180' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+                    </div>
+                  </div>
+                  {#if openSeasons.has(seasonItem.season)}
+                    <div class="px-3 pb-3 space-y-1" transition:slide={{ duration: 200 }}>
+                      {#each sortEpisodes(seasonItem.episodes) as ep}
+                        <div class="flex items-center justify-between p-2 rounded-md hover:bg-muted/30 text-xs group/ep">
+                          <div class="flex items-center gap-2 flex-1 min-w-0">
+                            <span class="text-muted-foreground shrink-0">E{String(ep.parsed.episode || 0).padStart(2, '0')}</span>
+                            <span class="truncate" title={ep.name}>{ep.name}</span>
+                          </div>
+                          <div class="flex items-center gap-1 shrink-0 ml-2">
+                            <span class="text-muted-foreground mr-2">{formatFileSize(ep.size)}</span>
+                            <button 
+                              class="inline-flex items-center justify-center rounded h-5 w-5 opacity-0 group-hover/ep:opacity-100 hover:bg-accent text-muted-foreground hover:text-foreground transition-opacity"
+                              title="刷新该集元数据"
+                              disabled={isOperating || !selectedShowForDetail?.tmdbId}
+                              onclick={() => handleRefreshEpisode(seasonItem.season, ep.parsed.episode || 0)}
+                            >
+                              <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+                            </button>
+                            <button 
+                              class="inline-flex items-center justify-center rounded h-5 w-5 opacity-0 group-hover/ep:opacity-100 hover:bg-accent text-orange-500 hover:text-orange-600 transition-opacity"
+                              title="移回收件箱"
+                              disabled={isOperating}
+                              onclick={() => handleMoveToInbox(ep.path, ep.name)}
+                            >
+                              <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+                            </button>
+                          </div>
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
                 </div>
-              </details>
-            {/each}
-          </div>
+              {/each}
+            </div>
+          </section>
         </div>
-        
-        <div class="space-y-2">
-          <p class="text-sm text-muted-foreground">操作</p>
+
+        <div class="shrink-0 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 p-4">
           <div class="flex flex-wrap gap-2">
             {#if !selectedShowForDetail?.tmdbId}
               <button 
@@ -675,7 +790,7 @@
             }}>重新匹配</button>
           </div>
           {#if operationMessage}
-            <p class="text-sm text-muted-foreground">{operationMessage}</p>
+            <p class="mt-2 text-sm text-muted-foreground">{operationMessage}</p>
           {/if}
         </div>
       </div>
@@ -694,4 +809,11 @@
 
 <style lang="postcss">
   @reference "tailwindcss";
+
+  .line-clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
 </style>
