@@ -6,6 +6,7 @@
   import { fetchMovies, refreshMetadata, subscribeToProgress, type MovieInfo, type SearchResult } from '$lib/api';
   import { handleItemClick, toggleAllSelection } from '$lib/selection';
   import { createProgressHandler } from '$lib/progress';
+  import { formatFileSize, getGroupStatusBadge } from '$lib/format';
   import { TMDBSearchModal, BatchActionBar } from '$lib/components';
   
   let movies = $state<MovieInfo[]>([]);
@@ -19,6 +20,7 @@
   // Detail drawer state
   let showDetailDrawer = $state(false);
   let selectedMovieForDetail = $state<MovieInfo | null>(null);
+  let overviewExpanded = $state(false);
   
   // TMDB search modal state
   let showSearchModal = $state(false);
@@ -68,6 +70,7 @@
   }
   
   function handleRowDoubleClick(movie: MovieInfo) {
+    overviewExpanded = false;
     selectedMovieForDetail = movie;
     showDetailDrawer = true;
   }
@@ -75,6 +78,7 @@
   function closeDetailDrawer() {
     showDetailDrawer = false;
     selectedMovieForDetail = null;
+    overviewExpanded = false;
   }
   
   function openSearchModal(movie: MovieInfo) {
@@ -212,6 +216,47 @@
   
   const scrapedCount = $derived.by(() => movies.filter(m => m.isProcessed).length);
   const unscrapedCount = $derived.by(() => movies.filter(m => !m.isProcessed).length);
+
+  const detailDelay = (i: number) => i * 60 + 200;
+
+  function getFanartUrl(path?: string, hasFanart?: boolean): string | undefined {
+    if (!path || !hasFanart) return undefined;
+    return `/api/media/poster?path=${encodeURIComponent(`${path}/fanart.jpg`)}`;
+  }
+
+  function copyPath(path?: string) {
+    if (!path) return;
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(path).catch(() => {});
+    }
+  }
+
+  const movieStatusBadge = $derived.by(() => 
+    getGroupStatusBadge(selectedMovieForDetail?.isProcessed ? 'scraped' : 'unscraped')
+  );
+
+  const movieFanartUrl = $derived.by(() => 
+    getFanartUrl(selectedMovieForDetail?.path, selectedMovieForDetail?.assets?.hasFanart)
+  );
+
+  const movieMetaItems = $derived.by(() => {
+    if (!selectedMovieForDetail) return [];
+    const items: string[] = [];
+    if (typeof selectedMovieForDetail.voteAverage === 'number') {
+      items.push(`评分 ${selectedMovieForDetail.voteAverage.toFixed(1)}`);
+    }
+    if (selectedMovieForDetail.year) items.push(String(selectedMovieForDetail.year));
+    if (typeof selectedMovieForDetail.runtime === 'number' && selectedMovieForDetail.runtime > 0) {
+      items.push(`${selectedMovieForDetail.runtime} 分钟`);
+    }
+    if (selectedMovieForDetail.file?.parsed?.resolution) items.push(selectedMovieForDetail.file.parsed.resolution);
+    if (selectedMovieForDetail.file?.parsed?.codec) items.push(selectedMovieForDetail.file.parsed.codec);
+    if (selectedMovieForDetail.file?.parsed?.source) items.push(selectedMovieForDetail.file.parsed.source);
+    return items;
+  });
+
+  const movieOverview = $derived.by(() => selectedMovieForDetail?.overview?.trim() || '');
+  const canExpandMovieOverview = $derived.by(() => movieOverview.length > 160);
 </script>
 
 <main class="container mx-auto px-4 py-8" class:pb-24={selectedMovies.size > 0 || isOperating}>
@@ -391,67 +436,165 @@
 {#if showDetailDrawer && selectedMovieForDetail}
   <div class="fixed inset-0 z-50">
     <button 
-      class="absolute inset-0 bg-black/50" 
+      class="absolute inset-0 bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/60" 
       aria-label="关闭详情"
       onclick={closeDetailDrawer}
       transition:fade={{ duration: 200 }}
     ></button>
     <div 
-      class="absolute right-0 top-0 bottom-0 w-full max-w-lg bg-card border-l border-border overflow-y-auto"
-      transition:fly={{ x: 400, duration: 300, easing: quintOut }}
+      class="absolute right-0 top-0 bottom-0 w-full max-w-2xl bg-card border-l border-border shadow-2xl overflow-hidden"
+      transition:fly={{ x: 400, duration: 400, opacity: 1, easing: quintOut }}
     >
-      <div class="sticky top-0 flex items-center justify-between border-b border-border bg-card p-4">
-        <h2 class="text-lg font-semibold">电影详情</h2>
-        <button class="inline-flex items-center justify-center rounded-md h-8 w-8 hover:bg-accent" aria-label="关闭详情" onclick={closeDetailDrawer}>
-          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-        </button>
-      </div>
-      <div class="p-4 space-y-6">
-        <div>
-          <h3 class="text-xl font-bold mb-2">{selectedMovieForDetail.name}</h3>
-          <p class="text-muted-foreground">{selectedMovieForDetail.year || '未知年份'}</p>
-        </div>
-        
-        <div class="grid grid-cols-2 gap-4 text-sm">
-          <div>
-            <p class="text-muted-foreground">TMDB ID</p>
-            <p class="font-medium">{selectedMovieForDetail.tmdbId ? `#${selectedMovieForDetail.tmdbId}` : '未匹配'}</p>
+      <div class="flex h-full flex-col">
+        <div class="relative">
+          <div class="relative h-60">
+            <div 
+              class="absolute inset-0 bg-muted bg-cover bg-center"
+              style={movieFanartUrl ? `background-image: url('${movieFanartUrl}')` : ''}
+            ></div>
+            <div class="absolute inset-0 bg-gradient-to-t from-background via-background/70 to-transparent"></div>
+            <button class="absolute right-4 top-4 inline-flex items-center justify-center rounded-md h-8 w-8 bg-background/70 hover:bg-background" aria-label="关闭详情" onclick={closeDetailDrawer}>
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
           </div>
-          <div>
-            <p class="text-muted-foreground">状态</p>
-            <p class="font-medium">{selectedMovieForDetail.isProcessed ? '已刮削' : '未刮削'}</p>
-          </div>
-        </div>
-        
-        <div>
-          <p class="text-sm text-muted-foreground mb-2">路径</p>
-          <p class="font-mono text-xs bg-muted p-2 rounded">{selectedMovieForDetail.path}</p>
-        </div>
-        
-        <div>
-          <p class="text-sm text-muted-foreground mb-2">完整性</p>
-          <div class="flex gap-4">
-            <span class="flex items-center gap-1 text-sm {selectedMovieForDetail.assets?.hasPoster ? 'text-green-500' : 'text-red-500'}">
-              {#if selectedMovieForDetail.assets?.hasPoster}
-                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+          <div class="relative -mt-16 px-4 pb-4 flex gap-4 items-end" in:fly={{ y: 18, duration: 300, delay: detailDelay(0), easing: quintOut }}>
+            <div class="h-28 w-20 rounded-lg overflow-hidden shadow-2xl shadow-black/50 bg-muted border border-border">
+              {#if selectedMovieForDetail.posterPath}
+                <img src={selectedMovieForDetail.posterPath} alt={selectedMovieForDetail.name} class="h-full w-full object-cover" />
               {:else}
-                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                <div class="h-full w-full flex items-center justify-center text-[10px] text-muted-foreground">No Poster</div>
               {/if}
-              海报
-            </span>
-            <span class="flex items-center gap-1 text-sm {selectedMovieForDetail.assets?.hasNfo ? 'text-green-500' : 'text-red-500'}">
-              {#if selectedMovieForDetail.assets?.hasNfo}
-                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
-              {:else}
-                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+            </div>
+            <div class="min-w-0 pb-2">
+              <h2 class="text-2xl font-semibold tracking-tight">{selectedMovieForDetail.name}</h2>
+              <div class="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                {#each movieMetaItems as item}
+                  <span class="rounded-full border border-border/60 bg-background/60 px-2 py-0.5">{item}</span>
+                {/each}
+                <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 {movieStatusBadge.bgColor} {movieStatusBadge.border} {movieStatusBadge.color}">
+                  {movieStatusBadge.label}
+                </span>
+              </div>
+              {#if selectedMovieForDetail.tagline}
+                <p class="mt-2 text-sm italic text-muted-foreground">{selectedMovieForDetail.tagline}</p>
               {/if}
-              NFO
-            </span>
+            </div>
           </div>
         </div>
-        
-        <div class="space-y-2">
-          <p class="text-sm text-muted-foreground">操作</p>
+
+        <div class="flex-1 overflow-y-auto px-4 pb-6 pt-2 space-y-6">
+          <section class="space-y-2" in:fly={{ y: 18, duration: 300, delay: detailDelay(1), easing: quintOut }}>
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-semibold">剧情简介</h3>
+              {#if movieOverview && canExpandMovieOverview}
+                <button class="text-xs text-muted-foreground hover:text-foreground" onclick={() => { overviewExpanded = !overviewExpanded; }}>
+                  {overviewExpanded ? '收起' : '展开'}
+                </button>
+              {/if}
+            </div>
+            <p class="text-sm text-muted-foreground leading-relaxed {movieOverview && !overviewExpanded && canExpandMovieOverview ? 'line-clamp-4' : ''}">
+              {movieOverview || '暂无简介'}
+            </p>
+          </section>
+
+          <section class="space-y-3" in:fly={{ y: 18, duration: 300, delay: detailDelay(2), easing: quintOut }}>
+            <h3 class="text-sm font-semibold">元数据</h3>
+            <div class="grid grid-cols-2 gap-3 text-sm">
+              <div class="rounded-lg border border-border/60 bg-muted/30 p-3">
+                <p class="text-xs text-muted-foreground">TMDB</p>
+                {#if selectedMovieForDetail.tmdbId}
+                  <a 
+                    class="mt-1 inline-flex items-center gap-1 text-sm font-medium text-primary hover:opacity-80"
+                    href={`https://www.themoviedb.org/movie/${selectedMovieForDetail.tmdbId}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    #{selectedMovieForDetail.tmdbId}
+                    <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg>
+                  </a>
+                {:else}
+                  <p class="mt-1 text-sm font-medium">未匹配</p>
+                {/if}
+              </div>
+              <div class="rounded-lg border border-border/60 bg-muted/30 p-3">
+                <p class="text-xs text-muted-foreground">状态</p>
+                <span class="mt-1 inline-flex items-center rounded-full border px-2 py-0.5 text-xs {movieStatusBadge.bgColor} {movieStatusBadge.border} {movieStatusBadge.color}">
+                  {movieStatusBadge.label}
+                </span>
+              </div>
+              <button 
+                class="col-span-2 rounded-lg border border-border/60 bg-muted/30 p-3 text-left hover:bg-muted/50"
+                title="点击复制路径"
+                onclick={() => copyPath(selectedMovieForDetail?.path)}
+              >
+                <p class="text-xs text-muted-foreground">路径</p>
+                <p class="mt-1 font-mono text-xs break-all">{selectedMovieForDetail.path}</p>
+                <p class="mt-1 text-[11px] text-muted-foreground">点击复制</p>
+              </button>
+              <div class="col-span-2 rounded-lg border border-border/60 bg-muted/30 p-3">
+                <p class="text-xs text-muted-foreground">资源完整性</p>
+                <div class="mt-2 flex flex-wrap gap-3">
+                  <span class="flex items-center gap-1 text-xs {selectedMovieForDetail.assets?.hasPoster ? 'text-green-500' : 'text-red-500'}">
+                    {#if selectedMovieForDetail.assets?.hasPoster}
+                      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+                    {:else}
+                      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                    {/if}
+                    海报
+                  </span>
+                  <span class="flex items-center gap-1 text-xs {selectedMovieForDetail.assets?.hasNfo ? 'text-green-500' : 'text-red-500'}">
+                    {#if selectedMovieForDetail.assets?.hasNfo}
+                      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+                    {:else}
+                      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                    {/if}
+                    NFO
+                  </span>
+                  <span class="flex items-center gap-1 text-xs {selectedMovieForDetail.assets?.hasFanart ? 'text-green-500' : 'text-red-500'}">
+                    {#if selectedMovieForDetail.assets?.hasFanart}
+                      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+                    {:else}
+                      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                    {/if}
+                    Fanart
+                  </span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="space-y-3" in:fly={{ y: 18, duration: 300, delay: detailDelay(3), easing: quintOut }}>
+            <h3 class="text-sm font-semibold">文件技术信息</h3>
+            <div class="rounded-lg border border-border/60 bg-muted/30 p-4 space-y-3">
+              <div>
+                <p class="text-xs text-muted-foreground">文件</p>
+                <p class="mt-1 text-sm font-medium break-all">{selectedMovieForDetail.file.name}</p>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                {#if selectedMovieForDetail.file.parsed.resolution}
+                  <span class="rounded-md border border-blue-500/20 bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-500">
+                    {selectedMovieForDetail.file.parsed.resolution}
+                  </span>
+                {/if}
+                {#if selectedMovieForDetail.file.parsed.codec}
+                  <span class="rounded-md border border-purple-500/20 bg-purple-500/10 px-2 py-0.5 text-xs font-medium text-purple-500">
+                    {selectedMovieForDetail.file.parsed.codec}
+                  </span>
+                {/if}
+                {#if selectedMovieForDetail.file.parsed.source}
+                  <span class="rounded-md border border-border/60 bg-background/60 px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                    {selectedMovieForDetail.file.parsed.source}
+                  </span>
+                {/if}
+                <span class="rounded-md border border-green-500/20 bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-500">
+                  {formatFileSize(selectedMovieForDetail.file.size)}
+                </span>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="shrink-0 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 p-4">
           <div class="flex flex-wrap gap-2">
             <button 
               class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
@@ -467,7 +610,7 @@
             }}>重新匹配</button>
           </div>
           {#if operationMessage}
-            <p class="text-sm text-muted-foreground">{operationMessage}</p>
+            <p class="mt-2 text-sm text-muted-foreground">{operationMessage}</p>
           {/if}
         </div>
       </div>
@@ -486,4 +629,11 @@
 
 <style lang="postcss">
   @reference "tailwindcss";
+
+  .line-clamp-4 {
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
 </style>
