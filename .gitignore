@@ -7,6 +7,7 @@ frontend/build/
 frontend/.svelte-kit/
 client/web/.svelte-kit/
 public/
+*.tsbuildinfo
 
 # Environment files
 .env
