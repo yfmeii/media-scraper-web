@@ -5,8 +5,6 @@ import type {
   ScrapeResult,
   MatchResult,
   PathRecognizeResult,
-  BatchScrapeItem,
-  BatchScrapeResult,
   ProcessTVParams,
   ProcessMovieParams,
   PreviewItem,
@@ -18,7 +16,6 @@ import type {
   TaskStats,
   PreviewAction,
   PreviewPlan,
-  ProgressEvent,
 } from '@media-scraper/shared';
 
 export type {
@@ -27,8 +24,6 @@ export type {
   ScrapeResult,
   MatchResult,
   PathRecognizeResult,
-  BatchScrapeItem,
-  BatchScrapeResult,
   ProcessTVParams,
   ProcessMovieParams,
   PreviewItem,
@@ -39,8 +34,7 @@ export type {
   TaskItem,
   TaskStats,
   PreviewAction,
-  PreviewPlan,
-  ProgressEvent
+  PreviewPlan
 } from '@media-scraper/shared';
 
 const API_BASE = '/api';
@@ -98,12 +92,6 @@ export async function fetchTaskStats(): Promise<TaskStats> {
   return data.data || { total: 0, pending: 0, running: 0, success: 0, failed: 0 };
 }
 
-export async function fetchActiveTasks(): Promise<TaskItem[]> {
-  const res = await fetch(`${API_BASE}/tasks/active`);
-  const data = await res.json();
-  return data.data || [];
-}
-
 export async function cancelTaskApi(id: string): Promise<boolean> {
   const res = await fetch(`${API_BASE}/tasks/${id}/cancel`, { method: 'POST' });
   const data = await res.json();
@@ -122,16 +110,6 @@ export async function refreshMetadata(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ kind, path, tmdbId, season, episode, language }),
-  });
-  const data = await res.json();
-  return { success: data.success, message: data.error || data.data?.message, taskId: data.taskId };
-}
-
-export async function fixAssets(kind: 'tv' | 'movie', path: string, tmdbId: number, language = DEFAULT_LANGUAGE): Promise<ScrapeResult> {
-  const res = await fetch(`${API_BASE}/scrape/fix-assets`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ kind, path, tmdbId, language }),
   });
   const data = await res.json();
   return { success: data.success, message: data.error || data.data?.message, taskId: data.taskId };
@@ -156,24 +134,6 @@ export async function autoMatch(path: string, kind: 'tv' | 'movie', title?: stri
   });
   const data = await res.json();
   return data.data || { matched: false, candidates: [] };
-}
-
-export async function batchScrape(
-  items: BatchScrapeItem[],
-  language = DEFAULT_LANGUAGE
-): Promise<BatchScrapeResult> {
-  const res = await fetch(`${API_BASE}/scrape/batch`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ items, language }),
-  });
-  const data = await res.json();
-  return {
-    success: data.success,
-    processed: data.processed || 0,
-    failed: data.failed || 0,
-    taskId: data.taskId,
-  };
 }
 
 export async function processTV(params: ProcessTVParams): Promise<ScrapeResult> {
@@ -215,24 +175,4 @@ export async function previewPlan(items: PreviewItem[], language = DEFAULT_LANGU
   });
   const data = await res.json();
   return data.data || { actions: [], impactSummary: { filesMoving: 0, nfoCreating: 0, nfoOverwriting: 0, postersDownloading: 0, directoriesCreating: [] } };
-}
-
-export function subscribeToProgress(callback: (event: ProgressEvent) => void): () => void {
-  const eventSource = new EventSource(`${API_BASE}/progress`);
-  
-  eventSource.addEventListener('progress', (e) => {
-    try {
-      const data = JSON.parse(e.data);
-      callback(data);
-    } catch {}
-  });
-  
-  eventSource.onerror = () => {
-    // Reconnect on error
-    setTimeout(() => {
-      eventSource.close();
-    }, 1000);
-  };
-  
-  return () => eventSource.close();
 }

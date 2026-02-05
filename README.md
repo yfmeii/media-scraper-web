@@ -154,7 +154,6 @@ media-scraper-web/
 │   │   ├── tmdb.ts         # TMDB API
 │   │   ├── dify.ts         # AI 路径识别
 │   │   ├── tasks.ts        # 任务管理
-│   │   └── progress.ts     # SSE 进度
 │   ├── routes/
 │   │   ├── media.ts        # 媒体 API
 │   │   ├── scrape.ts       # 刮削 API
@@ -199,17 +198,12 @@ media-scraper-web/
 - `POST /api/scrape/process/movie` - 处理电影
 - `POST /api/scrape/refresh` - 刷新元数据
 - `POST /api/scrape/preview` - 预览移动计划
-- `POST /api/scrape/batch` - 批量处理
 - `POST /api/scrape/move-to-inbox` - 移回收件箱
 
 ### 任务
 - `GET /api/tasks` - 任务列表
 - `GET /api/tasks/stats` - 任务统计
-- `GET /api/tasks/active` - 活跃任务
 - `POST /api/tasks/:id/cancel` - 取消任务
-
-### 进度
-- `GET /api/progress` - SSE 实时进度
 
 ## 🛠 开发
 

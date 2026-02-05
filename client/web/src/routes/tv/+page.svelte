@@ -1,14 +1,14 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount } from 'svelte';
   import { fly, slide } from 'svelte/transition';
   import { flip } from 'svelte/animate';
   import { quintOut, cubicOut } from 'svelte/easing';
-  import { fetchTVShows, refreshMetadata, autoMatch, subscribeToProgress, moveToInbox, type ShowInfo, type SearchResult } from '$lib/api';
+  import { fetchTVShows, refreshMetadata, autoMatch, moveToInbox, type ShowInfo, type SearchResult } from '$lib/api';
   import type { SeasonInfo, MediaFile } from '@media-scraper/shared';
   import { handleItemClick, toggleAllSelection } from '$lib/selection';
-  import { createProgressHandler } from '$lib/progress';
   import { formatFileSize, getGroupStatusBadge } from '$lib/format';
   import { TMDBSearchModal, BatchActionBar, TableSkeleton, PosterThumbnail, AssetIndicators, StatusBadge, SearchToolbar, MediaDetailHeader, MediaOverview, MediaDetailActions, DetailDrawer } from '$lib/components';
+  import type { ActionButton } from '$lib/components/mediaDetailActions';
   import { confirmDialog } from '$lib/stores';
   import { copyPath, detailDelay, getFanartUrl } from '$lib/mediaDetail';
   
@@ -47,19 +47,7 @@
   let operationMessage = $state('');
   
   // Progress state
-  let progressMap = $state(new Map<string, number>()); // path -> percent
-  let processingPaths = $state(new Set<string>()); // Currently processing paths
-  let unsubscribeProgress: (() => void) | null = null;
   let batchProgress = $state<{ current: number; total: number } | null>(null);
-  
-  const handleProgress = createProgressHandler(
-    () => ({ progressMap, processingPaths, operationMessage }),
-    (state) => {
-      if (state.progressMap) progressMap = state.progressMap;
-      if (state.processingPaths) processingPaths = state.processingPaths;
-      if ('operationMessage' in state) operationMessage = state.operationMessage ?? '';
-    }
-  );
   
   onMount(async () => {
     try {
@@ -70,12 +58,6 @@
       loading = false;
     }
     
-    // Subscribe to SSE progress
-    unsubscribeProgress = subscribeToProgress(handleProgress);
-  });
-  
-  onDestroy(() => {
-    if (unsubscribeProgress) unsubscribeProgress();
   });
   
   // 使用通用选择逻辑
@@ -160,12 +142,7 @@
     let successCount = 0;
     let failCount = 0;
     
-    // Initialize progress
     batchProgress = { current: 0, total: paths.length };
-    for (const path of paths) {
-      progressMap.set(path, 0);
-    }
-    progressMap = new Map(progressMap);
     
     for (const show of selectedShowsList) {
       operationMessage = `正在刷新 (${batchProgress.current + 1}/${batchProgress.total}): ${show.name}`;
@@ -367,7 +344,7 @@
 
   const showOverview = $derived.by(() => selectedShowForDetail?.overview?.trim() || '');
   
-  const showDetailActions = $derived.by(() => {
+  const showDetailActions = $derived.by((): ActionButton[] => {
     if (!selectedShowForDetail) return [];
     const show = selectedShowForDetail;
     const isMatched = !!show.tmdbId;

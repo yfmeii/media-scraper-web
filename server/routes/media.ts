@@ -6,15 +6,12 @@ import {
   scanInboxByDirectory, 
   scanTVShowsWithAssets,
   scanMoviesWithAssets,
-  detectSupplementFiles,
   type ShowInfo, 
   type MovieInfo, 
   type MediaFile,
   type DirectoryGroup 
 } from '../lib/scanner';
 import { MEDIA_PATHS } from '../lib/config';
-import { stat } from 'fs/promises';
-import { join } from 'path';
 
 export const mediaRoutes = new Hono();
 
@@ -80,24 +77,6 @@ mediaRoutes.get('/inbox', async (c) => {
   }
   
   const files = await scanInbox(MEDIA_PATHS.inbox);
-  return c.json({
-    success: true,
-    data: files,
-    total: files.length,
-  });
-});
-
-// 检测补刮文件
-mediaRoutes.get('/tv/:name/supplement', async (c) => {
-  const name = c.req.param('name');
-  const showPath = join(MEDIA_PATHS.tv, decodeURIComponent(name));
-  
-  // 安全检查
-  if (!showPath.startsWith(MEDIA_PATHS.tv)) {
-    return c.json({ success: false, error: 'Invalid path' }, 403);
-  }
-  
-  const files = await detectSupplementFiles(showPath);
   return c.json({
     success: true,
     data: files,

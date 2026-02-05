@@ -149,16 +149,6 @@ export interface ScrapePlan {
 export type PreviewAction = ScrapePlanAction;
 export type PreviewPlan = ScrapePlan;
 
-export interface ProgressEvent {
-  type: 'start' | 'progress' | 'complete' | 'error';
-  taskId: string;
-  item?: string;
-  current: number;
-  total: number;
-  percent: number;
-  message?: string;
-}
-
 export interface Stats {
   tvShows: number;
   tvEpisodes: number;
@@ -219,23 +209,6 @@ export interface PathRecognizeResult {
   tmdb_name: string | null;
   confidence: number;
   reason: string;
-}
-
-export interface BatchScrapeItem {
-  sourcePath: string;
-  kind: 'tv' | 'movie';
-  showName?: string;
-  tmdbId?: number;
-  season?: number;
-  episodes?: Array<{ source: string; episode: number; episodeEnd?: number }>;
-  candidates?: Array<{ id: number; name: string }>;
-}
-
-export interface BatchScrapeResult {
-  success: boolean;
-  processed: number;
-  failed: number;
-  taskId?: string;
 }
 
 export interface ProcessTVParams {

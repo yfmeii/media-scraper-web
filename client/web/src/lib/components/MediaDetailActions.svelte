@@ -1,11 +1,5 @@
 <script lang="ts">
-  type ActionButton = {
-    label: string;
-    icon?: 'refresh' | 'search' | 'upload';
-    variant?: 'primary' | 'secondary';
-    disabled?: boolean;
-    onclick: () => void;
-  };
+  import type { ActionButton } from './mediaDetailActions';
 
   let {
     actions,
