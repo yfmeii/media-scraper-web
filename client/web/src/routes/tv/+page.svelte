@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { fade, fly } from 'svelte/transition';
-  import { quintOut } from 'svelte/easing';
+  import { flip } from 'svelte/animate';
+  import { quintOut, cubicOut } from 'svelte/easing';
   import { fetchTVShows, refreshMetadata, autoMatch, subscribeToProgress, moveToInbox, type ShowInfo, type SearchResult } from '$lib/api';
   import type { SeasonInfo, MediaFile } from '@media-scraper/shared';
   import { handleItemClick, toggleAllSelection } from '$lib/selection';
@@ -315,7 +316,7 @@
   }
   
   // Filtered shows based on current filters
-  const filteredShows = $derived(() => (
+  const filteredShows = $derived.by(() => (
     shows.filter(show => {
       // Tab filter
       if (activeTab === 'scraped' && show.groupStatus !== 'scraped') return false;
@@ -328,8 +329,8 @@
     })
   ));
   
-  const scrapedCount = $derived(() => shows.filter(s => s.groupStatus === 'scraped').length);
-  const unscrapedCount = $derived(() => shows.filter(s => s.groupStatus === 'unscraped').length);
+  const scrapedCount = $derived.by(() => shows.filter(s => s.groupStatus === 'scraped').length);
+  const unscrapedCount = $derived.by(() => shows.filter(s => s.groupStatus === 'unscraped').length);
 </script>
 
 <main class="container mx-auto px-4 py-8" class:pb-24={selectedShows.size > 0 || isOperating}>
@@ -382,12 +383,14 @@
           </tr>
         </thead>
         <tbody>
-          {#each filteredShows as show}
+          {#each filteredShows as show (show.path)}
             {@const badge = getGroupStatusBadge(show.groupStatus)}
             <tr 
-              class="border-b border-border hover:bg-accent/50 cursor-pointer {selectedShows.has(show.path) ? 'bg-accent/30 border-l-2 border-l-primary' : ''}"
+              class="border-b border-border hover:bg-accent/50 cursor-pointer {selectedShows.has(show.path) ? 'bg-accent/30 border-l-2 border-l-primary' : ''} transition-colors duration-150"
               onclick={(e) => toggleShow(show.path, e)}
               ondblclick={() => handleRowDoubleClick(show)}
+              animate:flip={{ duration: 300, easing: quintOut }}
+              in:fly={{ y: 20, duration: 300, easing: cubicOut }}
             >
               <td class="p-3">
                 <input 
@@ -515,6 +518,7 @@
   <div class="fixed inset-0 z-50">
     <button 
       class="absolute inset-0 bg-black/50" 
+      aria-label="关闭详情"
       onclick={closeDetailDrawer}
       transition:fade={{ duration: 200 }}
     ></button>
@@ -524,7 +528,7 @@
     >
       <div class="sticky top-0 flex items-center justify-between border-b border-border bg-card p-4">
         <h2 class="text-lg font-semibold">剧集详情</h2>
-        <button class="inline-flex items-center justify-center rounded-md h-8 w-8 hover:bg-accent" onclick={closeDetailDrawer}>
+        <button class="inline-flex items-center justify-center rounded-md h-8 w-8 hover:bg-accent" aria-label="关闭详情" onclick={closeDetailDrawer}>
           <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
         </button>
       </div>
@@ -598,17 +602,17 @@
                     <span class="text-sm font-medium">第 {seasonItem.season} 季</span>
                     <span class="text-xs text-muted-foreground">{seasonItem.episodes.length} 集</span>
                   </div>
-                  <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-                  <div class="flex items-center gap-1" onclick={(e) => e.stopPropagation()}>
-                    <button 
-                      class="inline-flex items-center justify-center rounded h-6 w-6 hover:bg-accent text-muted-foreground hover:text-foreground"
-                      title="刷新该季元数据"
-                      disabled={isOperating || !selectedShowForDetail?.tmdbId}
-                      onclick={() => handleRefreshSeason(seasonItem.season)}
-                    >
-                      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
-                    </button>
-                  </div>
+                  <button 
+                    class="inline-flex items-center justify-center rounded h-6 w-6 hover:bg-accent text-muted-foreground hover:text-foreground"
+                    title="刷新该季元数据"
+                    disabled={isOperating || !selectedShowForDetail?.tmdbId}
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      handleRefreshSeason(seasonItem.season);
+                    }}
+                  >
+                    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+                  </button>
                 </summary>
                 <div class="mt-1 ml-4 space-y-1">
                   {#each sortEpisodes(seasonItem.episodes) as ep}

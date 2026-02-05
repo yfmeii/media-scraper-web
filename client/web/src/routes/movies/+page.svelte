@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { fade, fly } from 'svelte/transition';
-  import { quintOut } from 'svelte/easing';
+  import { flip } from 'svelte/animate';
+  import { quintOut, cubicOut } from 'svelte/easing';
   import { fetchMovies, refreshMetadata, subscribeToProgress, type MovieInfo, type SearchResult } from '$lib/api';
   import { handleItemClick, toggleAllSelection } from '$lib/selection';
   import { createProgressHandler } from '$lib/progress';
@@ -200,7 +201,7 @@
   
   
   // Filtered movies
-  const filteredMovies = $derived(() => (
+  const filteredMovies = $derived.by(() => (
     movies.filter(movie => {
       if (activeTab === 'scraped' && !movie.isProcessed) return false;
       if (activeTab === 'unscraped' && movie.isProcessed) return false;
@@ -209,8 +210,8 @@
     })
   ));
   
-  const scrapedCount = $derived(() => movies.filter(m => m.isProcessed).length);
-  const unscrapedCount = $derived(() => movies.filter(m => !m.isProcessed).length);
+  const scrapedCount = $derived.by(() => movies.filter(m => m.isProcessed).length);
+  const unscrapedCount = $derived.by(() => movies.filter(m => !m.isProcessed).length);
 </script>
 
 <main class="container mx-auto px-4 py-8" class:pb-24={selectedMovies.size > 0 || isOperating}>
@@ -259,11 +260,13 @@
           </tr>
         </thead>
         <tbody>
-          {#each filteredMovies as movie}
+          {#each filteredMovies as movie (movie.path)}
             <tr 
-              class="border-b border-border hover:bg-accent/50 cursor-pointer {selectedMovies.has(movie.path) ? 'bg-accent/30 border-l-2 border-l-primary' : ''}"
+              class="border-b border-border hover:bg-accent/50 cursor-pointer {selectedMovies.has(movie.path) ? 'bg-accent/30 border-l-2 border-l-primary' : ''} transition-colors duration-150"
               onclick={(e) => toggleMovie(movie.path, e)}
               ondblclick={() => handleRowDoubleClick(movie)}
+              animate:flip={{ duration: 300, easing: quintOut }}
+              in:fly={{ y: 20, duration: 300, easing: cubicOut }}
             >
               <td class="p-3">
                 <input 
@@ -389,6 +392,7 @@
   <div class="fixed inset-0 z-50">
     <button 
       class="absolute inset-0 bg-black/50" 
+      aria-label="关闭详情"
       onclick={closeDetailDrawer}
       transition:fade={{ duration: 200 }}
     ></button>
@@ -398,7 +402,7 @@
     >
       <div class="sticky top-0 flex items-center justify-between border-b border-border bg-card p-4">
         <h2 class="text-lg font-semibold">电影详情</h2>
-        <button class="inline-flex items-center justify-center rounded-md h-8 w-8 hover:bg-accent" onclick={closeDetailDrawer}>
+        <button class="inline-flex items-center justify-center rounded-md h-8 w-8 hover:bg-accent" aria-label="关闭详情" onclick={closeDetailDrawer}>
           <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
         </button>
       </div>

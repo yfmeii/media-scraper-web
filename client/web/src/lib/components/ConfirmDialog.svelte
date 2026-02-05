@@ -1,6 +1,6 @@
 <script lang="ts">
   import { fade, scale } from 'svelte/transition';
-  import { quintOut } from 'svelte/easing';
+  import { backOut } from 'svelte/easing';
   
   let {
     show = false,
@@ -34,13 +34,13 @@
 {#if show}
   <div class="fixed inset-0 z-50 flex items-center justify-center">
     <button 
-      class="absolute inset-0 bg-black/50" 
+      class="absolute inset-0 bg-black/50 backdrop-blur-sm" 
       onclick={handleCancel}
       transition:fade={{ duration: 200 }}
     ></button>
     <div 
       class="relative z-10 w-full max-w-sm bg-background rounded-lg shadow-lg border border-border"
-      transition:scale={{ duration: 200, start: 0.95, easing: quintOut }}
+      transition:scale={{ duration: 300, start: 0.9, easing: backOut }}
     >
       <div class="p-6">
         <h3 class="text-lg font-semibold mb-2">{title}</h3>
@@ -48,13 +48,13 @@
       </div>
       <div class="flex justify-end gap-2 border-t border-border p-4">
         <button 
-          class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 border border-input bg-background hover:bg-accent" 
+          class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 border border-input bg-background hover:bg-accent transition-colors active:scale-95 duration-100" 
           onclick={handleCancel}
         >
           {cancelText}
         </button>
         <button 
-          class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 {confirmVariant === 'destructive' ? 'bg-destructive text-destructive-foreground' : 'bg-primary text-primary-foreground'} hover:opacity-90" 
+          class="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 {confirmVariant === 'destructive' ? 'bg-destructive text-destructive-foreground' : 'bg-primary text-primary-foreground'} hover:opacity-90 transition-all active:scale-95 duration-100 shadow-sm" 
           onclick={handleConfirm}
         >
           {confirmText}

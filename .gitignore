@@ -5,6 +5,7 @@ node_modules/
 dist/
 frontend/build/
 frontend/.svelte-kit/
+client/web/.svelte-kit/
 public/
 
 # Environment files

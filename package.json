@@ -10,16 +10,17 @@
   ],
   "scripts": {
     "dev": "bun run --hot server/server.ts",
+    "dev:all": "bunx concurrently -k -n server,web -c blue,green \"bun run --hot server/server.ts\" \"cd client/web && bun run dev -- --host 0.0.0.0\"",
     "build": "bun build server/server.ts --outdir=dist --target=bun",
     "start": "bun run dist/server.js",
-    "dev:web": "cd client/web && bun run dev",
+    "dev:web": "cd client/web && bun run dev -- --host 0.0.0.0",
     "build:web": "cd client/web && bun run build",
     "test": "bun test",
     "test:watch": "bun test --watch"
   },
   "dependencies": {
     "@media-scraper/shared": "workspace:*",
-    "hono": "^4.0.0"
+    "hono": "^4.11.7"
   },
   "devDependencies": {
     "@types/bun": "^1.3.8"
