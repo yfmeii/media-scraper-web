@@ -12,3 +12,8 @@ export { default as GlobalConfirmDialog } from './GlobalConfirmDialog.svelte';
 export { default as DetailDrawer } from './DetailDrawer.svelte';
 export { default as BatchActionBar } from './BatchActionBar.svelte';
 export { default as TableSkeleton } from './TableSkeleton.svelte';
+export { default as PosterThumbnail } from './PosterThumbnail.svelte';
+export { default as AssetIndicators } from './AssetIndicators.svelte';
+export { default as StatusBadge } from './StatusBadge.svelte';
+export { default as FilterTabs } from './FilterTabs.svelte';
+export { default as SearchToolbar } from './SearchToolbar.svelte';

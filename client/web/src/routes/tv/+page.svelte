@@ -7,8 +7,8 @@
   import type { SeasonInfo, MediaFile } from '@media-scraper/shared';
   import { handleItemClick, toggleAllSelection } from '$lib/selection';
   import { createProgressHandler } from '$lib/progress';
-  import { formatFileSize, getGroupStatusBadge } from '$lib/format';
-  import { TMDBSearchModal, BatchActionBar, TableSkeleton } from '$lib/components';
+  import { formatFileSize } from '$lib/format';
+  import { TMDBSearchModal, BatchActionBar, TableSkeleton, PosterThumbnail, AssetIndicators, StatusBadge, SearchToolbar } from '$lib/components';
   import { confirmDialog } from '$lib/stores';
   
   // Helper functions for typed array operations
@@ -384,32 +384,16 @@
 
 <main class="container mx-auto px-4 py-8" class:pb-24={selectedShows.size > 0 || isOperating}>
   <!-- Toolbar -->
-  <div class="mb-6 space-y-4">
-    <div class="flex items-center justify-between flex-wrap gap-4">
-      <div class="flex items-center gap-4 flex-wrap">
-        <div class="relative">
-          <svg class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-          <input type="text" placeholder="搜索剧集..." class="h-9 w-64 rounded-md border border-input bg-background pl-9 pr-3 text-sm" bind:value={searchQuery} />
-        </div>
-      </div>
-    </div>
-    
-    <div class="flex items-center justify-between flex-wrap gap-4">
-      <!-- Tabs -->
-      <div class="inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground">
-        <button class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all {activeTab === 'all' ? 'bg-background text-foreground shadow-sm' : ''}" onclick={() => activeTab = 'all'}>全部 ({shows.length})</button>
-        <button class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all {activeTab === 'scraped' ? 'bg-background text-foreground shadow-sm' : ''}" onclick={() => activeTab = 'scraped'}>已刮削 ({scrapedCount})</button>
-        <button class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all {activeTab === 'unscraped' ? 'bg-background text-foreground shadow-sm' : ''}" onclick={() => activeTab = 'unscraped'}>未刮削 ({unscrapedCount})</button>
-      </div>
-      
-      <!-- Action Buttons -->
-      <div class="flex gap-2 items-center">
-        {#if operationMessage && selectedShows.size === 0}
-          <span class="text-sm text-muted-foreground">{operationMessage}</span>
-        {/if}
-      </div>
-    </div>
-  </div>
+  <SearchToolbar 
+    searchPlaceholder="搜索剧集..."
+    bind:searchQuery
+    tabs={[
+      { id: 'all', label: '全部', count: shows.length },
+      { id: 'scraped', label: '已刮削', count: scrapedCount },
+      { id: 'unscraped', label: '未刮削', count: unscrapedCount }
+    ]}
+    bind:activeTab
+  />
   
   <!-- Table -->
   <div class="rounded-lg border border-border bg-card overflow-hidden">
@@ -433,7 +417,6 @@
         </thead>
         <tbody>
           {#each filteredShows as show (show.path)}
-            {@const badge = getGroupStatusBadge(show.groupStatus)}
             <tr 
               class="border-b border-border hover:bg-accent/50 cursor-pointer {selectedShows.has(show.path) ? 'bg-accent/30 border-l-2 border-l-primary' : ''} transition-colors duration-150"
               onclick={(e) => toggleShow(show.path, e)}
@@ -458,52 +441,16 @@
                 />
               </td>
               <td class="p-3">
-                {#if show.posterPath}
-                  <img src={show.posterPath} alt="{show.name}" class="h-12 w-9 object-cover rounded" />
-                {:else if show.assets?.hasPoster}
-                  <div class="flex h-12 w-9 items-center justify-center rounded bg-primary/10">
-                    <svg class="h-5 w-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-                  </div>
-                {:else}
-                  <div class="flex h-12 w-9 items-center justify-center rounded bg-muted">
-                    <svg class="h-4 w-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-                  </div>
-                {/if}
+                <PosterThumbnail src={show.posterPath} alt={show.name} hasPoster={show.assets?.hasPoster} size="sm" />
               </td>
               <td class="p-3"><div class="font-medium">{show.name}</div></td>
               <td class="p-3 text-muted-foreground">{show.seasons.length}</td>
               <td class="p-3 text-muted-foreground">{countTotalEpisodes(show.seasons) || '24'}</td>
               <td class="p-3">
-                <span class="inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold {badge.color} {badge.border}">
-                  {#if show.groupStatus === 'scraped'}
-                    <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
-                  {:else if show.groupStatus === 'unscraped'}
-                    <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-                  {:else}
-                    <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
-                  {/if}
-                  {badge.label}
-                </span>
+                <StatusBadge status={show.groupStatus} />
               </td>
               <td class="p-3">
-                <div class="flex items-center gap-2">
-                  <span class="flex items-center gap-1 text-xs {show.assets?.hasPoster ? 'text-green-500' : 'text-red-500'}">
-                    {#if show.assets?.hasPoster}
-                      <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
-                    {:else}
-                      <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-                    {/if}
-                    海报
-                  </span>
-                  <span class="flex items-center gap-1 text-xs {show.assets?.hasNfo ? 'text-green-500' : 'text-red-500'}">
-                    {#if show.assets?.hasNfo}
-                      <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
-                    {:else}
-                      <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-                    {/if}
-                    NFO
-                  </span>
-                </div>
+                <AssetIndicators assets={{ hasPoster: show.assets?.hasPoster, hasNfo: show.assets?.hasNfo }} showLabels={true} />
               </td>
               <td class="p-3">
                 <div class="flex gap-1">
