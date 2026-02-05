@@ -20,23 +20,40 @@ app.route('/api/tasks', taskRoutes);
 // SSE endpoint for progress updates
 app.get('/api/progress', async (c) => {
   return streamSSE(c, async (stream) => {
+    const writeSafe = (event: ProgressEvent | 'ping') => {
+      try {
+        if (event === 'ping') {
+          return stream.writeSSE({ data: 'ping', event: 'ping' });
+        }
+        return stream.writeSSE({
+          data: JSON.stringify(event),
+          event: 'progress',
+        });
+      } catch (error) {
+        console.error('[progress] writeSSE error:', error);
+      }
+    };
+
     const unsubscribe = progressEmitter.subscribe((event: ProgressEvent) => {
-      stream.writeSSE({
-        data: JSON.stringify(event),
-        event: 'progress',
-      });
+      writeSafe(event);
     });
     
     // Keep connection alive
     const keepAlive = setInterval(() => {
-      stream.writeSSE({ data: 'ping', event: 'ping' });
+      writeSafe('ping');
     }, 30000);
     
-    // Handle disconnection
-    stream.onAbort(() => {
+    const cleanup = () => {
       unsubscribe();
       clearInterval(keepAlive);
-    });
+    };
+
+    // Handle disconnection (support runtimes without stream.onAbort)
+    if (typeof (stream as any).onAbort === 'function') {
+      (stream as any).onAbort(cleanup);
+    } else if (c.req.raw?.signal) {
+      c.req.raw.signal.addEventListener('abort', cleanup);
+    }
     
     // Wait for client disconnect
     await new Promise(() => {});
