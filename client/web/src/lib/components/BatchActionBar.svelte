@@ -35,7 +35,7 @@
     {#if progress && progress.total > 0}
       <div class="h-1 bg-muted">
         <div 
-          class="h-full bg-gradient-to-r from-primary to-green-500 transition-all duration-300" 
+          class="h-full bg-linear-to-r from-primary to-green-500 transition-all duration-300" 
           style="width: {(progress.current / progress.total) * 100}%"
         ></div>
       </div>

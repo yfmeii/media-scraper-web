@@ -35,7 +35,7 @@
       class="absolute inset-0 bg-muted bg-cover bg-center"
       style={fanartUrl ? `background-image: url('${fanartUrl}')` : ''}
     ></div>
-    <div class="absolute inset-0 bg-gradient-to-t from-background via-background/70 to-transparent"></div>
+    <div class="absolute inset-0 bg-linear-to-t from-background via-background/70 to-transparent"></div>
   </div>
   
   <!-- Poster & Title -->

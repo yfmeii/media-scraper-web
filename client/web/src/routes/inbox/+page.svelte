@@ -1089,7 +1089,7 @@
                            </div>
                          {/if}
 
-                         <div class="aspect-[2/3] w-full bg-muted rounded-lg overflow-hidden relative shadow-sm">
+                         <div class="aspect-2/3 w-full bg-muted rounded-lg overflow-hidden relative shadow-sm">
                             {#if candidate.posterPath}
                               <img src={candidate.posterPath} alt={candidate.name} class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
                             {:else}
@@ -1106,7 +1106,7 @@
 
                             <!-- Year Badge -->
                             {#if candidate.releaseDate || candidate.firstAirDate}
-                              <div class="absolute bottom-0 left-0 right-0 p-1.5 bg-gradient-to-t from-black/80 to-transparent">
+                              <div class="absolute bottom-0 left-0 right-0 p-1.5 bg-linear-to-t from-black/80 to-transparent">
                                 <div class="text-[10px] text-white font-medium text-center">
                                   {candidate.releaseDate?.slice(0, 4) || candidate.firstAirDate?.slice(0, 4)}
                                 </div>
