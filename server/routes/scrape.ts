@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono';
 import { DEFAULT_LANGUAGE, SUB_EXTS } from '@media-scraper/shared';
-import { searchTV, searchMovie, searchMulti, findBestMatch, findBestMatchMixed, getPosterUrl, type TMDBSearchResult } from '../lib/tmdb';
+import { searchTV, searchMovie, searchMulti, findByImdbId, findBestMatch, findBestMatchMixed, getPosterUrl, type TMDBSearchResult } from '../lib/tmdb';
 import { recognizePath } from '../lib/dify';
 import { processTVShow, processMovie, refreshMetadata, generatePreviewPlan } from '../lib/scraper';
 import { parseFilename } from '../lib/scanner';
@@ -66,6 +66,20 @@ async function handleSearch(c: Context, kind: SearchKind) {
 scrapeRoutes.get('/search/tv', async c => handleSearch(c, 'tv'));
 scrapeRoutes.get('/search/movie', async c => handleSearch(c, 'movie'));
 scrapeRoutes.get('/search/multi', async c => handleSearch(c, 'multi'));
+scrapeRoutes.get('/search/imdb', async (c) => {
+  const imdbId = c.req.query('imdb_id') || c.req.query('id');
+  const language = c.req.query('language') || DEFAULT_LANGUAGE;
+
+  if (!imdbId) {
+    return c.json({ success: false, error: 'Missing imdb_id parameter' }, 400);
+  }
+
+  const matched = await findByImdbId(imdbId, language);
+  return c.json({
+    success: true,
+    data: matched ? [mapSearchResult('multi', matched)] : [],
+  });
+});
 
 // AI 路径识别 - 使用 Dify 完整工作流（解析路径 + TMDB 搜索 + AI 匹配）
 scrapeRoutes.post('/recognize', async (c) => {

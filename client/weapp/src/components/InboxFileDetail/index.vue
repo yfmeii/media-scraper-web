@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import type { MediaFile, PathRecognizeResult, PreviewAction, PreviewItem, PreviewPlan } from '@media-scraper/shared'
+import type { MediaFile, PathRecognizeResult, PreviewAction, PreviewItem, PreviewPlan, SearchResult } from '@media-scraper/shared'
 import { computed, ref, watch } from 'wevu'
-import { previewPlan, recognizePath, searchTMDB } from '@/utils/api'
+import { previewPlan, recognizePath, searchTMDB, searchTMDBByImdb } from '@/utils/api'
 import { getPosterUrl } from '@/utils/request'
 import { useToast } from '@/hooks/useToast'
 import { useMediaMatch } from '@/hooks/useMediaMatch'
@@ -45,6 +45,9 @@ const episode = ref(1)
 const aiResult = ref<PathRecognizeResult | null>(null)
 const aiHint = ref('')
 const autoMatchTried = ref(false)
+const targetPreviewPath = ref('')
+const targetPreviewLoading = ref(false)
+let targetPreviewSeq = 0
 
 interface CandidateCard {
   id: number
@@ -59,6 +62,44 @@ function inferCandidateMediaType(candidate: { mediaType?: 'tv' | 'movie', firstA
   if (candidate.firstAirDate && !candidate.releaseDate) return 'tv'
   if (candidate.releaseDate && !candidate.firstAirDate) return 'movie'
   return 'movie'
+}
+
+function mergeCandidates(...groups: SearchResult[][]): SearchResult[] {
+  const merged: SearchResult[] = []
+  const seen = new Set<number>()
+  for (const group of groups) {
+    for (const item of group) {
+      if (!item || seen.has(item.id)) continue
+      seen.add(item.id)
+      merged.push(item)
+    }
+  }
+  return merged
+}
+
+function moveCandidateToFront(list: SearchResult[], preferredId: number | null | undefined): SearchResult[] {
+  if (!preferredId) return list
+  const idx = list.findIndex(item => item.id === preferredId)
+  if (idx <= 0) return list
+  const copy = list.slice()
+  const [hit] = copy.splice(idx, 1)
+  copy.unshift(hit)
+  return copy
+}
+
+function buildAiFallbackCandidate(result: PathRecognizeResult): SearchResult | null {
+  if (!result.tmdb_id) return null
+  const name = result.tmdb_name || result.title || ''
+  const mediaType: 'tv' | 'movie' = result.media_type === 'tv' ? 'tv' : 'movie'
+  const year = result.year && result.year > 0 ? `${result.year}-01-01` : undefined
+  return {
+    id: result.tmdb_id,
+    mediaType,
+    name,
+    title: name,
+    releaseDate: mediaType === 'movie' ? year : undefined,
+    firstAirDate: mediaType === 'tv' ? year : undefined,
+  }
 }
 
 const candidateCards = computed<CandidateCard[]>(() =>
@@ -80,12 +121,76 @@ const selectedMediaType = computed<'tv' | 'movie'>(() => {
   return 'movie'
 })
 
+function extractTargetPreviewPath(plan: PreviewPlan, sourcePath: string): string {
+  const directMove = plan.actions.find(action => action.type === 'move' && action.source === sourcePath)
+  if (directMove?.destination) return directMove.destination
+
+  const firstMove = plan.actions.find(action => action.type === 'move')
+  if (firstMove?.destination) return firstMove.destination
+
+  const firstDir = plan.actions.find(action => action.type === 'create-dir')
+  return firstDir?.destination || ''
+}
+
+async function refreshTargetPreviewPath() {
+  const item = buildPreviewItem()
+  if (!item || !localVisible.value) {
+    targetPreviewPath.value = ''
+    targetPreviewLoading.value = false
+    return
+  }
+
+  const currentSeq = ++targetPreviewSeq
+  targetPreviewLoading.value = true
+  try {
+    const plan = await previewPlan([item])
+    if (currentSeq !== targetPreviewSeq) return
+    targetPreviewPath.value = extractTargetPreviewPath(plan, item.sourcePath)
+  }
+  catch {
+    if (currentSeq !== targetPreviewSeq) return
+    targetPreviewPath.value = ''
+  }
+  finally {
+    if (currentSeq === targetPreviewSeq) {
+      targetPreviewLoading.value = false
+    }
+  }
+}
+
+function resetPopupState() {
+  processing.value = false
+  aiLoading.value = false
+  previewVisible.value = false
+  previewLoading.value = false
+  previewActions.value = []
+  previewSummary.value = null
+  searchQuery.value = ''
+  season.value = 1
+  episode.value = 1
+  aiResult.value = null
+  aiHint.value = ''
+  autoMatchTried.value = false
+  targetPreviewPath.value = ''
+  targetPreviewLoading.value = false
+  targetPreviewSeq++
+  resetMatch()
+}
+
 watch(() => props.visible, (val) => {
   localVisible.value = val
   if (!val) {
-    previewVisible.value = false
+    resetPopupState()
   }
 }, { immediate: true })
+
+watch(
+  () => `${localVisible.value ? 1 : 0}|${props.file?.path || ''}|${selectedCandidate.value?.id || ''}|${selectedMediaType.value}|${season.value}|${episode.value}`,
+  () => {
+    if (!localVisible.value) return
+    void refreshTargetPreviewPath()
+  },
+)
 
 function getDefaultQuery(file: MediaFile): string {
   return file.parsed.title || file.name.replace(/\.[^.]+$/, '')
@@ -98,19 +203,10 @@ function sanitizeStepperValue(value: unknown, fallback: number, max: number): nu
 }
 
 async function initForFile(file: MediaFile) {
+  resetPopupState()
   searchQuery.value = getDefaultQuery(file)
   season.value = file.parsed.season || 1
   episode.value = file.parsed.episode || 1
-  aiResult.value = null
-  aiHint.value = ''
-  processing.value = false
-  aiLoading.value = false
-  previewVisible.value = false
-  previewLoading.value = false
-  previewActions.value = []
-  previewSummary.value = null
-  autoMatchTried.value = false
-  resetMatch()
   await handleAutoMatch(true)
 }
 
@@ -118,7 +214,8 @@ defineExpose({ initForFile })
 
 function onVisibleChange(e: WechatMiniprogram.CustomEvent) {
   if (!e?.detail?.visible) {
-    previewVisible.value = false
+    localVisible.value = false
+    resetPopupState()
     emit('close')
   }
 }
@@ -140,6 +237,8 @@ function onEpisodeChange(e: WechatMiniprogram.CustomEvent) {
 }
 
 function closePopup() {
+  localVisible.value = false
+  resetPopupState()
   emit('close')
 }
 
@@ -211,7 +310,7 @@ async function handleAIRecognize() {
   try {
     const recognizeInput = props.file.relativePath || props.file.path
     const result = await recognizePath(recognizeInput)
-    if (!result || !result.tmdb_id) {
+    if (!result || (!result.tmdb_id && !result.imdb_id)) {
       showToast('AI 识别失败', 'warning')
       return
     }
@@ -233,12 +332,27 @@ async function handleAIRecognize() {
       aiHint.value = `AI 置信度 ${Math.round(result.confidence * 100)}%，建议手动确认`
     }
 
-    const results = await searchTMDB(result.tmdb_name || result.title)
-    candidates.value = results
-    selectedCandidate.value = results.find(item => item.id === result.tmdb_id) || results[0] || null
+    const imdbResults = result.imdb_id
+      ? await searchTMDBByImdb(result.imdb_id)
+      : []
+    const nameResults = (result.tmdb_name || result.title)
+      ? await searchTMDB(result.tmdb_name || result.title)
+      : []
+
+    const preferredId = imdbResults[0]?.id || result.tmdb_id || null
+    const baseMerged = mergeCandidates(imdbResults, nameResults)
+    const fallbackCandidate = buildAiFallbackCandidate(result)
+    const merged = preferredId && fallbackCandidate && !baseMerged.some(item => item.id === preferredId)
+      ? [fallbackCandidate, ...baseMerged]
+      : baseMerged
+    const ordered = moveCandidateToFront(merged, preferredId)
+    candidates.value = ordered
+    selectedCandidate.value = preferredId
+      ? (ordered.find(item => item.id === preferredId) || null)
+      : null
     autoMatchTried.value = true
 
-    if (!results.length) {
+    if (!ordered.length) {
       showToast('未找到匹配结果', 'warning')
     }
   }
@@ -380,15 +494,16 @@ function closePreview() {
                 :class="selectedCandidate ? 'text-green-600' : 'text-muted-foreground'"
               >{{ selectedCandidate ? '已匹配' : '未匹配' }}</text>
             </view>
-            <view class="mt-2 rounded-lg bg-muted p-2">
-              <text
-                v-if="fmt.getTargetPath(selectedCandidate, selectedMediaType, season)"
+          <view class="mt-2 rounded-lg bg-muted p-2">
+            <text
+                v-if="targetPreviewPath"
                 class="text-xs text-foreground"
                 style="word-break: break-all; font-family: Menlo, Monaco, Consolas, monospace;"
-              >{{ fmt.getTargetPath(selectedCandidate, selectedMediaType, season) }}</text>
+              >{{ targetPreviewPath }}</text>
+              <text v-else-if="targetPreviewLoading" class="text-xs text-muted-foreground">计算中...</text>
               <text v-else class="text-xs text-muted-foreground">请选择匹配结果</text>
-            </view>
           </view>
+        </view>
 
           <!-- AI Result -->
           <view v-if="aiResult" class="mt-3 rounded-xl bg-muted p-3 flex items-center gap-2">
@@ -527,9 +642,6 @@ function closePreview() {
                     {{ c.displayName }}
                   </text>
                   <text class="text-xs text-muted-foreground">{{ c.displayYear }}</text>
-                </view>
-                <view v-if="fmt.isSelectedCandidate(selectedCandidate, c.id)" class="absolute top-1 right-1">
-                  <t-icon name="check-circle-filled" size="30rpx" color="var(--color-primary)" />
                 </view>
               </view>
             </view>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { MediaFile } from '@media-scraper/shared'
 import { computed, nextTick, onShow, ref } from 'wevu'
-import { autoMatch, fetchInbox, recognizePath } from '@/utils/api'
+import { autoMatch, fetchInbox, recognizePath, searchTMDBByImdb } from '@/utils/api'
 import { useTabStore } from '@/stores/tab'
 import { useToast } from '@/hooks/useToast'
 import { useDialog } from '@/hooks/useDialog'
@@ -132,6 +132,7 @@ function openDetail(file: MediaFile) {
 
 function closeDetail() {
   detailVisible.value = false
+  detailFile.value = null
 }
 
 function onOpenDetail(e: WechatMiniprogram.CustomEvent) {
@@ -251,17 +252,22 @@ async function batchAIProcess() {
     async (file, { setProgress }) => {
       setProgress('AI 识别中')
       const aiResult = await recognizePath(file.path)
-      if (!aiResult?.tmdb_id) return false
+      const imdbMatched = aiResult?.imdb_id
+        ? (await searchTMDBByImdb(aiResult.imdb_id))[0] || null
+        : null
+      const tmdbId = aiResult?.tmdb_id ?? imdbMatched?.id ?? null
+      if (!tmdbId) return false
 
       setProgress('入库中')
       const result = await processMedia({
         file,
         candidate: {
-          id: aiResult.tmdb_id,
-          name: aiResult.tmdb_name || aiResult.title,
-          title: aiResult.tmdb_name || aiResult.title,
+          id: tmdbId,
+          name: imdbMatched?.name || imdbMatched?.title || aiResult.tmdb_name || aiResult.title,
+          title: imdbMatched?.name || imdbMatched?.title || aiResult.tmdb_name || aiResult.title,
+          mediaType: imdbMatched?.mediaType,
         },
-        type: aiResult.media_type === 'tv' ? 'tv' : 'movie',
+        type: (imdbMatched?.mediaType || aiResult.media_type) === 'tv' ? 'tv' : 'movie',
         season: aiResult.season || file.parsed.season || 1,
         episode: aiResult.episode || file.parsed.episode || 1,
       })

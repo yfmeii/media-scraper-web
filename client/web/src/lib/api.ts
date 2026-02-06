@@ -95,6 +95,16 @@ export async function searchTMDB(
   return data.data || [];
 }
 
+export async function searchTMDBByImdb(imdbId: string, language = DEFAULT_LANGUAGE): Promise<SearchResult[]> {
+  const normalized = imdbId.trim();
+  if (!normalized) return [];
+
+  const params = new URLSearchParams({ imdb_id: normalized, language });
+  const res = await fetch(`${API_BASE}${CLIENT_API_ENDPOINTS.searchTMDBByImdb}?${params}`);
+  const data = await res.json();
+  return data.data || [];
+}
+
 export async function fetchTasks(limit = 10): Promise<{ tasks: TaskItem[]; stats: TaskStats }> {
   const res = await fetch(`${API_BASE}${CLIENT_API_ENDPOINTS.fetchTasks}?limit=${limit}`);
   const data = await res.json();

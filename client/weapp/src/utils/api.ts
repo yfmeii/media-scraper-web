@@ -72,6 +72,14 @@ export async function searchTMDB(
   return res.data || []
 }
 
+export async function searchTMDBByImdb(imdbId: string, language = DEFAULT_LANGUAGE): Promise<SearchResult[]> {
+  const normalized = imdbId.trim()
+  if (!normalized) return []
+  const params = new URLSearchParams({ imdb_id: normalized, language })
+  const res = await get<SearchResult[]>(`${CLIENT_API_ENDPOINTS.searchTMDBByImdb}?${params}`)
+  return res.data || []
+}
+
 export async function autoMatch(path: string, title?: string, year?: number, language?: string): Promise<MatchResult>
 export async function autoMatch(path: string, kind: 'tv' | 'movie', title?: string, year?: number, language?: string): Promise<MatchResult>
 export async function autoMatch(

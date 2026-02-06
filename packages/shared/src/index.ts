@@ -161,6 +161,7 @@ export const CLIENT_API_ENDPOINTS = {
   fetchTaskStats: '/tasks/stats',
   cancelTask: '/tasks',
   searchTMDBBase: '/scrape/search',
+  searchTMDBByImdb: '/scrape/search/imdb',
   refreshMetadata: '/scrape/refresh',
   recognizePath: '/scrape/recognize',
   autoMatch: '/scrape/match',
@@ -250,6 +251,7 @@ export interface PathRecognizeResult {
   year: number | null;
   season: number | null;
   episode: number | null;
+  imdb_id: string | null;
   tmdb_id: number | null;
   tmdb_name: string | null;
   confidence: number;

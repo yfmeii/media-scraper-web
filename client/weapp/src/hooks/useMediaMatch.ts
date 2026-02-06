@@ -74,7 +74,7 @@ export function useMediaMatch() {
       }))
 
       candidates.value = mappedCandidates
-      selectedCandidate.value = pickMatchedResult(result, mappedCandidates) || mappedCandidates[0] || null
+      selectedCandidate.value = pickMatchedResult(result, mappedCandidates)
       return mappedCandidates.length > 0
     }
     catch {
@@ -93,7 +93,7 @@ export function useMediaMatch() {
     try {
       const results = await searchTMDB(query.trim())
       candidates.value = results
-      selectedCandidate.value = results[0] || null
+      selectedCandidate.value = null
       return true
     }
     catch {

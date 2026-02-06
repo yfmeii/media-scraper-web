@@ -104,14 +104,6 @@ function isSelectedCandidate(selected, id) {
   return !!(selected && selected.id === id)
 }
 
-function getTargetPath(candidate, kind, season) {
-  if (!candidate) return ''
-  var name = candidate.name || candidate.title || ''
-  if (!name) return ''
-  if (kind === 'movie') return 'Library/Movies/' + name
-  return 'Library/Shows/' + name + '/Season ' + padStart(season || 1, 2, '0')
-}
-
 function getPreviewActionLabel(type) {
   if (type === 'move') return '移动文件'
   if (type === 'create-nfo') return '创建 NFO'
@@ -142,7 +134,6 @@ module.exports = {
   isWarningHint: isWarningHint,
   toPercent: toPercent,
   isSelectedCandidate: isSelectedCandidate,
-  getTargetPath: getTargetPath,
   getPreviewActionLabel: getPreviewActionLabel,
   getPreviewActionClass: getPreviewActionClass,
   padStart: padStart,

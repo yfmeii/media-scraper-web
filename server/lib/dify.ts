@@ -1,5 +1,6 @@
+import { DEFAULT_LANGUAGE, type PathRecognizeResult } from '@media-scraper/shared';
 import { DIFY_PATH_RECOGNIZER_KEY, DIFY_BASE_URL } from './config';
-import type { PathRecognizeResult } from '@media-scraper/shared';
+import { findByImdbId } from './tmdb';
 
 function extractStreamingAnswer(text: string): string | null {
   const answerParts: string[] = [];
@@ -76,9 +77,20 @@ export async function recognizePath(filePath: string): Promise<PathRecognizeResu
 
     const mediaTypeRaw = parsed.media_type ?? parsed.mediaType ?? parsed.type;
     const mediaType = mediaTypeRaw === 'movie' ? 'movie' : 'tv';
-    const tmdbId = parsed.tmdb_id ?? parsed.tmdbId ?? parsed.tmdbID ?? null;
-    const tmdbName = parsed.tmdb_name ?? parsed.tmdbName ?? parsed.name ?? null;
+    const imdbRaw = parsed.imdb_id ?? parsed.imdbId ?? parsed.imdbID ?? parsed.imdb ?? null;
+    const imdbId = typeof imdbRaw === 'string' ? imdbRaw.trim() : null;
+    let tmdbId = parsed.tmdb_id ?? parsed.tmdbId ?? parsed.tmdbID ?? null;
+    let tmdbName = parsed.tmdb_name ?? parsed.tmdbName ?? parsed.name ?? null;
     const title = parsed.title ?? tmdbName ?? parsed.name ?? '';
+
+    // Prefer exact TMDB mapping resolved from IMDb ID when available.
+    if (imdbId) {
+      const matched = await findByImdbId(imdbId, DEFAULT_LANGUAGE, mediaType);
+      if (matched) {
+        tmdbId = matched.id;
+        tmdbName = matched.name || matched.title || tmdbName;
+      }
+    }
 
     const normalized: PathRecognizeResult = {
       path: parsed.path || filePath,
@@ -87,6 +99,7 @@ export async function recognizePath(filePath: string): Promise<PathRecognizeResu
       year: parsed.year ?? null,
       season: parsed.season ?? null,
       episode: parsed.episode ?? null,
+      imdb_id: imdbId || null,
       tmdb_id: tmdbId,
       tmdb_name: tmdbName,
       confidence: parsed.confidence ?? 0,

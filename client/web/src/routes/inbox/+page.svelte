@@ -6,6 +6,7 @@
   import { 
     fetchInboxByDirectory, 
     searchTMDB, 
+    searchTMDBByImdb,
     processTV, 
     processMovie, 
     autoMatch, 
@@ -44,6 +45,8 @@
   
   // Target library path
   let targetPath = $state('');
+  let isLoadingTargetPath = $state(false);
+  let targetPathSeq = 0;
   
   // 用户可编辑的季数和集数
   let editSeason = $state(1);
@@ -139,8 +142,7 @@
       files = dir.files;
     }
     selectedFiles = new Set();
-    selectedFile = null;
-    showDetailModal = false;
+    closeDetailModal();
   }
   
   function toggleFile(path: string, event: MouseEvent) {
@@ -182,6 +184,111 @@
     if (candidate?.mediaType === 'tv' || candidate?.mediaType === 'movie') return candidate.mediaType;
     return inferFileMediaType(selectedFile);
   }
+
+  function mergeCandidates(...groups: SearchResult[][]): SearchResult[] {
+    const merged: SearchResult[] = [];
+    const seen = new Set<number>();
+    for (const group of groups) {
+      for (const item of group) {
+        if (!item || seen.has(item.id)) continue;
+        seen.add(item.id);
+        merged.push(item);
+      }
+    }
+    return merged;
+  }
+
+  function moveCandidateToFront(list: SearchResult[], preferredId: number | null | undefined): SearchResult[] {
+    if (!preferredId) return list;
+    const idx = list.findIndex(item => item.id === preferredId);
+    if (idx <= 0) return list;
+    const copy = list.slice();
+    const [hit] = copy.splice(idx, 1);
+    copy.unshift(hit);
+    return copy;
+  }
+
+  function buildAiFallbackCandidate(result: PathRecognizeResult): SearchResult | null {
+    if (!result.tmdb_id) return null;
+    const name = result.tmdb_name || result.title || '';
+    const mediaType: 'tv' | 'movie' = result.media_type === 'tv' ? 'tv' : 'movie';
+    const year = result.year && result.year > 0 ? `${result.year}-01-01` : undefined;
+    return {
+      id: result.tmdb_id,
+      mediaType,
+      name,
+      title: name,
+      releaseDate: mediaType === 'movie' ? year : undefined,
+      firstAirDate: mediaType === 'tv' ? year : undefined,
+    };
+  }
+
+  function closeDetailModal() {
+    showDetailModal = false;
+    selectedFile = null;
+    matchCandidates = [];
+    selectedCandidate = null;
+    manualSearchQuery = '';
+    isAutoMatched = false;
+    matchScore = 0;
+    aiRecognizeResult = null;
+    targetPath = '';
+    isLoadingTargetPath = false;
+    targetPathSeq++;
+  }
+
+  function buildPreviewItemForTargetPath(): PreviewItem | null {
+    if (!selectedFile || !selectedCandidate) return null;
+    const kind = inferCandidateMediaType(selectedCandidate);
+    const showName = selectedCandidate.name || selectedCandidate.title || '';
+    const item: PreviewItem = {
+      sourcePath: selectedFile.path,
+      kind,
+      tmdbId: selectedCandidate.id,
+      showName,
+    };
+    if (kind === 'tv') {
+      item.season = editSeason;
+      item.episodes = [{ source: selectedFile.path, episode: editEpisode }];
+    }
+    return item;
+  }
+
+  function extractTargetPath(plan: PreviewPlan, sourcePath: string): string {
+    const directMove = plan.actions.find(action => action.type === 'move' && action.source === sourcePath);
+    if (directMove?.destination) return directMove.destination;
+
+    const firstMove = plan.actions.find(action => action.type === 'move');
+    if (firstMove?.destination) return firstMove.destination;
+
+    const firstDir = plan.actions.find(action => action.type === 'create-dir');
+    return firstDir?.destination || '';
+  }
+
+  async function refreshTargetPath() {
+    const item = buildPreviewItemForTargetPath();
+    if (!showDetailModal || !item) {
+      targetPath = '';
+      isLoadingTargetPath = false;
+      return;
+    }
+
+    const currentSeq = ++targetPathSeq;
+    isLoadingTargetPath = true;
+    try {
+      const plan = await previewPlan([item]);
+      if (currentSeq !== targetPathSeq) return;
+      targetPath = extractTargetPath(plan, item.sourcePath);
+    } catch (e) {
+      console.error('Refresh target path error:', e);
+      if (currentSeq !== targetPathSeq) return;
+      targetPath = '';
+    } finally {
+      if (currentSeq === targetPathSeq) {
+        isLoadingTargetPath = false;
+      }
+    }
+  }
   
   async function selectFileForDetail(file: MediaFile) {
     selectedFile = file;
@@ -198,13 +305,9 @@
     
     // 自动匹配使用解析出的标题
     const searchKeyword = file.parsed.title || file.name.replace(/\.[^/.]+$/, '');
-    
-    // Set target path
-    if (inferFileMediaType(file) === 'movie') {
-      targetPath = `Library/Movies/${searchKeyword}`;
-    } else {
-      targetPath = `Library/Shows/${searchKeyword}/Season ${String(file.parsed.season || 1).padStart(2, '0')}`;
-    }
+    targetPath = '';
+    isLoadingTargetPath = false;
+    targetPathSeq++;
     
     // Auto match using backend API - 使用解析出的标题进行 TMDB 匹配
     isSearchingTMDB = true;
@@ -232,14 +335,12 @@
           selectedCandidate = matched;
           isAutoMatched = true;
           matchScore = matchResult.result.score;
-        } else if (matchCandidates.length > 0) {
-          selectedCandidate = matchCandidates[0];
         }
-      } else if (matchCandidates.length > 0) {
-        selectedCandidate = matchCandidates[0];
+      } else {
+        selectedCandidate = null;
       }
       // 更新预计路径
-      updateTargetPath();
+      await refreshTargetPath();
     } catch (e) {
       console.error(e);
     } finally {
@@ -262,11 +363,9 @@
     isSearchingTMDB = true;
     try {
       matchCandidates = await searchTMDB(manualSearchQuery);
-      if (matchCandidates.length > 0) {
-        selectedCandidate = matchCandidates[0];
-        // 更新预计路径
-        updateTargetPath();
-      }
+      selectedCandidate = null;
+      // 更新预计路径（无结果时会清空）
+      await refreshTargetPath();
     } catch (e) {
       console.error(e);
     } finally {
@@ -277,18 +376,7 @@
   function selectCandidate(candidate: SearchResult) {
     selectedCandidate = candidate;
     // 更新预计路径 - 使用选中的候选名称
-    updateTargetPath();
-  }
-  
-  function updateTargetPath() {
-    if (!selectedFile || !selectedCandidate) return;
-    const name = selectedCandidate.name || selectedCandidate.title || '';
-    if (inferCandidateMediaType(selectedCandidate) === 'movie') {
-      targetPath = `Library/Movies/${name}`;
-    } else {
-      // 使用用户编辑的季数
-      targetPath = `Library/Shows/${name}/Season ${String(editSeason).padStart(2, '0')}`;
-    }
+    refreshTargetPath();
   }
   
   // AI 智能识别路径
@@ -320,17 +408,26 @@
           editEpisode = result.episode;
         }
         
-        // 如果有 TMDB 结果，更新匹配
-        if (result.tmdb_id && result.tmdb_name) {
-          const searchResults = await searchTMDB(result.tmdb_name);
-          if (searchResults.length > 0) {
-            // 找到匹配的结果
-            const matched = searchResults.find(r => r.id === result.tmdb_id) || searchResults[0];
-            matchCandidates = searchResults;
-            selectedCandidate = matched;
-            updateTargetPath();
-          }
-        }
+        // 先使用 IMDb ID 精确查，再合并名称搜索结果
+        const imdbResults = result.imdb_id
+          ? await searchTMDBByImdb(result.imdb_id)
+          : [];
+        const nameResults = (result.tmdb_name || result.title)
+          ? await searchTMDB(result.tmdb_name || result.title)
+          : [];
+
+        const preferredId = imdbResults[0]?.id || result.tmdb_id || null;
+        const baseMerged = mergeCandidates(imdbResults, nameResults);
+        const fallbackCandidate = buildAiFallbackCandidate(result);
+        const merged = preferredId && fallbackCandidate && !baseMerged.some(item => item.id === preferredId)
+          ? [fallbackCandidate, ...baseMerged]
+          : baseMerged;
+        const ordered = moveCandidateToFront(merged, preferredId);
+        matchCandidates = ordered;
+        selectedCandidate = preferredId
+          ? (ordered.find(item => item.id === preferredId) || null)
+          : null;
+        await refreshTargetPath();
       } else {
         operationMessage = '❌ AI 识别失败，请手动搜索';
       }
@@ -467,8 +564,15 @@
         // 1. 调用 AI 识别（不传 kind，让 AI 自动判断）
         const recognizeInput = file.relativePath || file.path;
         const result = await recognizePath(recognizeInput);
-        
-        const tmdbId = result?.tmdb_id ?? (result as any)?.tmdbId ?? (result as any)?.tmdbID ?? null;
+
+        const imdbMatched = result?.imdb_id
+          ? (await searchTMDBByImdb(result.imdb_id))[0] || null
+          : null;
+        const tmdbId = result?.tmdb_id
+          ?? imdbMatched?.id
+          ?? (result as any)?.tmdbId
+          ?? (result as any)?.tmdbID
+          ?? null;
         if (!result || !tmdbId) {
           failCount++;
           setFileStatus(file.path, 'failed');
@@ -478,9 +582,9 @@
         }
         
         // 使用 AI 判断的媒体类型
-        const mediaType = (result.media_type || (result as any)?.mediaType || 'tv') as 'tv' | 'movie';  // 兼容旧版本
+        const mediaType = (imdbMatched?.mediaType || result.media_type || (result as any)?.mediaType || 'tv') as 'tv' | 'movie';  // 兼容旧版本
         const fallbackName = file.parsed.title || file.name.replace(/\.[^/.]+$/, '');
-        const showName = result.tmdb_name || (result as any)?.tmdbName || result.title || fallbackName;
+        const showName = imdbMatched?.name || imdbMatched?.title || result.tmdb_name || (result as any)?.tmdbName || result.title || fallbackName;
         operationMessage = `入库中 (${batchProgress.current + 1}/${batchProgress.total}): ${file.relativePath} [${mediaType === 'movie' ? '电影' : '剧集'}]`;
         
         // 2. 根据 AI 判断的媒体类型入库
@@ -852,7 +956,7 @@
       type="button"
       class="absolute inset-0 bg-black/50 backdrop-blur-sm"
       aria-label="关闭详情"
-      onclick={() => { showDetailModal = false; }}
+      onclick={closeDetailModal}
     ></button>
     <div 
       class="relative bg-card w-full max-w-4xl max-h-[85vh] rounded-xl shadow-2xl overflow-hidden flex flex-col border border-border ring-1 ring-white/10"
@@ -870,7 +974,7 @@
             type="button"
             class="h-8 w-8 rounded-full hover:bg-accent flex items-center justify-center transition-colors text-muted-foreground hover:text-foreground"
             aria-label="关闭详情"
-            onclick={() => showDetailModal = false}
+            onclick={closeDetailModal}
           >
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 15-6-6-6 6"/></svg>
           </button>
@@ -926,6 +1030,10 @@
                  <div class="p-3 rounded-lg bg-muted/30 border border-border text-xs font-mono break-all flex-1 relative group">
                     {#if targetPath}
                       <div class="text-foreground leading-relaxed">{targetPath}</div>
+                    {:else if isLoadingTargetPath}
+                      <div class="absolute inset-0 flex items-center justify-center text-muted-foreground/60 italic text-center px-4">
+                        计算中...
+                      </div>
                     {:else}
                       <div class="absolute inset-0 flex items-center justify-center text-muted-foreground/50 italic text-center px-4">
                         请在右侧选择匹配结果
@@ -1012,7 +1120,7 @@
                               type="number" min="1"
                               class="w-10 h-6 rounded border border-input bg-background text-center focus:ring-1 focus:ring-primary text-xs"
                               bind:value={editSeason}
-                              onchange={updateTargetPath}
+                              onchange={refreshTargetPath}
                             />
                             <span>季</span>
                           </label>
@@ -1060,16 +1168,9 @@
                   <div class="grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-4 content-start">
                     {#each matchCandidates as candidate}
                       <button 
-                        class="group relative flex flex-col gap-2 p-2 rounded-xl border text-left transition-all hover:shadow-md active:scale-[0.98] {selectedCandidate?.id === candidate.id ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-border hover:border-primary/50 hover:bg-accent/30'}"
+                        class="group relative flex flex-col gap-2 p-2 rounded-xl border-2 text-left transition-all hover:shadow-md active:scale-[0.98] {selectedCandidate?.id === candidate.id ? 'border-primary' : 'border-transparent hover:border-primary/50 hover:bg-accent/30'}"
                         onclick={() => selectCandidate(candidate)}
                       >
-                         <!-- Selection Indicator -->
-                         {#if selectedCandidate?.id === candidate.id}
-                           <div class="absolute -top-1.5 -right-1.5 z-10 w-5 h-5 bg-primary text-primary-foreground rounded-full flex items-center justify-center shadow-sm">
-                             <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>
-                           </div>
-                         {/if}
-
                          <div class="aspect-2/3 w-full bg-muted rounded-lg overflow-hidden relative shadow-sm">
                             {#if candidate.posterPath}
                               <img src={candidate.posterPath} alt={candidate.name} class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />

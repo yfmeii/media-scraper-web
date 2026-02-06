@@ -67,6 +67,11 @@ export interface TMDBSeasonDetails {
   episodes?: TMDBEpisodeDetails[];
 }
 
+interface TMDBFindResponse {
+  movie_results?: TMDBSearchResult[];
+  tv_results?: TMDBSearchResult[];
+}
+
 // Search TV shows
 export async function searchTV(query: string, year?: number, language: string = DEFAULT_LANGUAGE): Promise<TMDBSearchResult[]> {
   const params = new URLSearchParams({
@@ -122,6 +127,41 @@ export async function searchMulti(query: string, year?: number, language: string
       ...item,
       media_type: item.media_type as 'tv' | 'movie',
     }));
+}
+
+// Find a TMDB item by IMDb ID
+export async function findByImdbId(
+  imdbId: string,
+  language: string = DEFAULT_LANGUAGE,
+  preferredType?: 'tv' | 'movie',
+): Promise<TMDBSearchResult | null> {
+  const normalized = imdbId.trim();
+  if (!normalized) return null;
+
+  const params = new URLSearchParams({
+    api_key: TMDB_API_KEY,
+    language,
+    external_source: 'imdb_id',
+  });
+
+  const res = await fetch(`${TMDB_BASE}/find/${encodeURIComponent(normalized)}?${params}`);
+  if (!res.ok) return null;
+
+  const data = await res.json() as TMDBFindResponse;
+  const tvResults = (data.tv_results || []).map(item => ({ ...item, media_type: 'tv' as const }));
+  const movieResults = (data.movie_results || []).map(item => ({ ...item, media_type: 'movie' as const }));
+
+  const merged = preferredType === 'tv'
+    ? [...tvResults, ...movieResults]
+    : preferredType === 'movie'
+      ? [...movieResults, ...tvResults]
+      : [...tvResults, ...movieResults];
+
+  if (merged.length === 0) return null;
+
+  // Prefer TMDB ordering, but make sure obviously better-rated items win when tied category exists
+  merged.sort((a, b) => (b.vote_average || 0) - (a.vote_average || 0));
+  return merged[0];
 }
 
 // Get TV show details
