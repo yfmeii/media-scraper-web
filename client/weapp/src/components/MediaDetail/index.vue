@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import type { MovieInfo, SeasonInfo, SeasonMissingInfo, ShowInfo } from '@media-scraper/shared'
+import type { MediaFile, MovieInfo, SeasonInfo, SeasonMissingInfo, ShowInfo } from '@media-scraper/shared'
 import { getSeasonMissingEpisodes, getShowMissingEpisodes } from '@media-scraper/shared'
 import { computed, ref, watch } from 'wevu'
 import { moveToInbox, refreshMetadata } from '@/utils/api'
 import { getPosterUrl } from '@/utils/request'
 import { useToast } from '@/hooks/useToast'
 import { useDialog } from '@/hooks/useDialog'
-import MsImage from '@/components/MsImage/index.vue'
+import MediaPoster from '@/components/MediaPoster/index.vue'
 
 defineComponentJson({ styleIsolation: 'apply-shared' })
 
@@ -29,6 +29,8 @@ const expandedSeasons = ref<number[]>([])
 const operationLoading = ref(false)
 /** 本地可见状态，同步 prop 但可立即操作 */
 const localVisible = ref(false)
+/** 滚动距离，用于浮动顶栏效果 */
+const scrollTop = ref(0)
 
 /** 用于模板绑定：将展开的季号转为 Record 方便 v-if 使用 */
 const expandedMap = computed<Record<number, boolean>>(() => {
@@ -39,12 +41,22 @@ const expandedMap = computed<Record<number, boolean>>(() => {
   return map
 })
 
+/** 浮动顶栏透明度：滚动 120rpx 后完全不透明 */
+const topBarOpacity = computed(() => Math.min(scrollTop.value / 60, 1))
+/** 标题透明度：滚动 30px 后开始出现，80px 后完全显示 */
+const titleOpacity = computed(() => Math.max(0, Math.min((scrollTop.value - 30) / 50, 1)))
+
+function onScroll(e: { detail: { scrollTop: number } }) {
+  scrollTop.value = e.detail.scrollTop
+}
+
 // Sync local visible with prop
 watch(() => props.visible, (val) => {
   localVisible.value = val
   if (val) {
     expandedSeasons.value = []
     operationLoading.value = false
+    scrollTop.value = 0
   }
 })
 
@@ -157,6 +169,60 @@ async function handleRefreshSeason(season: SeasonInfo) {
   }
 }
 
+async function handleRefreshEpisode(season: number, episode: number) {
+  const showTmdbId = props.show?.tmdbId
+  if (!showTmdbId) {
+    showToast('无 TMDB ID，请先匹配', 'warning')
+    return
+  }
+  operationLoading.value = true
+  try {
+    const result = await refreshMetadata('tv', path.value, showTmdbId, { season, episode })
+    if (result.success) {
+      showToast(`S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')} 刷新成功`)
+      emit('refresh')
+    }
+    else {
+      showToast(result.message || '刷新失败', 'error')
+    }
+  }
+  catch {
+    showToast('刷新失败', 'error')
+  }
+  finally {
+    operationLoading.value = false
+  }
+}
+
+async function handleMoveMovieToInbox() {
+  if (!props.movie) return
+  const confirmed = await confirm({
+    title: '移回收件箱',
+    content: '将该电影及关联字幕移回收件箱，并删除对应的 NFO 文件。确定继续？',
+    confirmBtn: '移回',
+  })
+  if (!confirmed) return
+
+  operationLoading.value = true
+  try {
+    const result = await moveToInbox(props.movie.file.path)
+    if (result.success) {
+      showToast('已移回收件箱')
+      emit('close')
+      emit('refresh')
+    }
+    else {
+      showToast(result.message || '操作失败', 'error')
+    }
+  }
+  catch {
+    showToast('操作失败', 'error')
+  }
+  finally {
+    operationLoading.value = false
+  }
+}
+
 async function handleMoveEpisodeToInbox(episodePath: string) {
   const confirmed = await confirm({
     title: '移回收件箱',
@@ -184,6 +250,30 @@ async function handleMoveEpisodeToInbox(episodePath: string) {
   }
 }
 
+async function onEpisodeTap(ep: MediaFile) {
+  const hasTmdbId = !!props.show?.tmdbId
+  const items: string[] = []
+  const actions: (() => void)[] = []
+
+  if (hasTmdbId && ep.parsed) {
+    items.push('刷新元数据')
+    actions.push(() => handleRefreshEpisode(ep.parsed.season || 0, ep.parsed.episode || 0))
+  }
+
+  items.push('移回收件箱')
+  actions.push(() => handleMoveEpisodeToInbox(ep.path))
+
+  try {
+    const res = await new Promise<WechatMiniprogram.ShowActionSheetSuccessCallbackResult>((resolve, reject) => {
+      wx.showActionSheet({ itemList: items, success: resolve, fail: reject })
+    })
+    actions[res.tapIndex]?.()
+  }
+  catch {
+    // user cancelled
+  }
+}
+
 function onVisibleChange(e: WechatMiniprogram.CustomEvent) {
   if (e && e.detail && !e.detail.visible) {
     localVisible.value = false
@@ -207,29 +297,46 @@ function onClose() {
     @visible-change="onVisibleChange"
     style="--td-popup-bg-color: var(--color-background);"
   >
-    <view class="bg-background" style="border-top-left-radius: 24rpx; border-top-right-radius: 24rpx;">
-      <!-- Top bar with close button -->
-      <view class="flex items-center justify-end px-3 pt-2 pb-1">
+    <view class="bg-background relative" style="border-top-left-radius: 24rpx; border-top-right-radius: 24rpx;">
+      <!-- Floating top bar: fades in on scroll -->
+      <view
+        class="absolute top-0 left-0 right-0"
+        style="z-index: 10; height: 88rpx; border-top-left-radius: 24rpx; border-top-right-radius: 24rpx;"
+      >
+        <!-- Background layer with dynamic opacity -->
         <view
-          class="flex items-center justify-center rounded-full bg-muted"
-          style="min-width: 64rpx; min-height: 64rpx;"
-          hover-class="opacity-60"
-          @tap="onClose"
-        >
-          <t-icon name="close" size="36rpx" color="var(--color-muted-foreground)" />
+          class="absolute inset-0 bg-background"
+          style="border-top-left-radius: 24rpx; border-top-right-radius: 24rpx;"
+          :style="{ opacity: topBarOpacity }"
+        />
+        <!-- Content layer -->
+        <view class="relative flex items-center justify-between px-3" style="height: 88rpx;">
+          <text
+            class="text-sm font-semibold text-foreground truncate flex-1 pl-1"
+            :style="{ opacity: titleOpacity }"
+          >{{ name }}</text>
+          <view
+            class="flex items-center justify-center rounded-full bg-card shrink-0"
+            style="min-width: 60rpx; min-height: 60rpx;"
+            hover-class="opacity-60"
+            @tap="onClose"
+          >
+            <t-icon name="close" size="32rpx" color="var(--color-foreground)" />
+          </view>
         </view>
       </view>
 
-      <!-- max-height = 85vh - handle bar (~100rpx) - action buttons (~120rpx) - safe area -->
-      <scroll-view scroll-y style="max-height: calc(85vh - 220rpx - env(safe-area-inset-bottom));">
+      <!-- Scrollable content -->
+      <scroll-view scroll-y style="max-height: calc(85vh - 120rpx - env(safe-area-inset-bottom));" @scroll="onScroll">
+        <!-- Spacer for floating top bar -->
+        <view style="height: 88rpx;" />
         <!-- Header: Poster + Info -->
         <view class="px-4 pb-3 flex gap-3">
-          <MsImage
+          <MediaPoster
             :src="posterUrl"
-            mode="aspectFill"
             width="200rpx"
             height="280rpx"
-            class="shrink-0 rounded-xl bg-muted"
+            class="shrink-0"
           />
           <view class="flex-1 py-1">
             <view class="text-base font-semibold text-foreground">{{ name }}</view>
@@ -353,7 +460,11 @@ function onClose() {
               <view v-if="expandedMap[season.season]">
                 <view v-for="ep in season.episodes" :key="ep.path">
                   <view class="h-px bg-border mx-3" />
-                  <view class="flex items-center justify-between px-3 py-2">
+                  <view
+                    class="flex items-center justify-between px-3 py-2"
+                    hover-class="bg-muted/50"
+                    @tap.stop="() => onEpisodeTap(ep)"
+                  >
                     <view class="flex-1 min-w-0">
                       <view class="flex items-center gap-1.5">
                         <text class="text-xs font-medium text-foreground">{{ fmt.getEpisodeLabel(ep) }}</text>
@@ -369,15 +480,7 @@ function onClose() {
                         <text v-if="ep.size" class="text-xs text-muted-foreground/60">{{ fmt.formatFileSize(ep.size) }}</text>
                       </view>
                     </view>
-                    <view class="flex items-center gap-1 ml-2 shrink-0">
-                      <view
-                        hover-class="opacity-50"
-                        class="p-1"
-                        @tap.stop="() => handleMoveEpisodeToInbox(ep.path)"
-                      >
-                        <t-icon name="inbox" size="32rpx" color="var(--color-muted-foreground)" />
-                      </view>
-                    </view>
+                    <t-icon name="chevron-right" size="28rpx" color="var(--color-muted-foreground)" class="ml-2 shrink-0" />
                   </view>
                 </view>
               </view>
@@ -390,23 +493,35 @@ function onClose() {
       </scroll-view>
 
       <!-- Action Buttons (always visible below scroll-view) -->
-      <view class="bg-background px-4 pt-2 pb-2 flex gap-2">
-        <view
-          v-if="tmdbId"
-          class="flex-1 flex items-center justify-center gap-1 py-2.5 rounded-xl bg-primary"
-          hover-class="opacity-80"
-          @tap="handleRefreshMetadata"
-        >
-          <t-icon name="refresh" size="32rpx" color="#fff" />
-          <text class="text-sm font-medium text-primary-foreground">刷新元数据</text>
+      <view class="bg-background px-4 pt-2 pb-2">
+        <view class="flex gap-2">
+          <view
+            v-if="tmdbId"
+            class="flex-1 flex items-center justify-center gap-1 py-2.5 rounded-xl bg-primary"
+            hover-class="opacity-80"
+            @tap="handleRefreshMetadata"
+          >
+            <t-icon name="refresh" size="32rpx" color="#fff" />
+            <text class="text-sm font-medium text-primary-foreground">刷新元数据</text>
+          </view>
+          <view
+            class="flex-1 flex items-center justify-center gap-1 py-2.5 rounded-xl bg-card"
+            hover-class="opacity-70"
+            @tap="handleRematch"
+          >
+            <t-icon name="search" size="32rpx" color="var(--color-foreground)" />
+            <text class="text-sm font-medium text-foreground">{{ tmdbId ? '重新匹配' : '匹配' }}</text>
+          </view>
         </view>
+        <!-- Movie: move to inbox -->
         <view
-          class="flex-1 flex items-center justify-center gap-1 py-2.5 rounded-xl bg-card"
-          hover-class="opacity-70"
-          @tap="handleRematch"
+          v-if="movie"
+          class="mt-2 flex items-center justify-center gap-1 py-2.5 rounded-xl border border-destructive/30"
+          hover-class="bg-destructive/5"
+          @tap="handleMoveMovieToInbox"
         >
-          <t-icon name="search" size="32rpx" color="var(--color-foreground)" />
-          <text class="text-sm font-medium text-foreground">{{ tmdbId ? '重新匹配' : '匹配' }}</text>
+          <t-icon name="inbox" size="32rpx" color="var(--color-destructive)" />
+          <text class="text-sm font-medium text-destructive">移回收件箱</text>
         </view>
       </view>
 
