@@ -34,18 +34,11 @@ export default defineConfig({
     generate: {
       extensions: {
         js: 'ts',
-        wxss: 'scss',
+        wxss: 'css',
       },
       dirs: {
         component: 'src/components',
         page: 'src/pages',
-      },
-    },
-  },
-  css: {
-    preprocessorOptions: {
-      scss: {
-        silenceDeprecations: ['legacy-js-api', 'import'],
       },
     },
   },

@@ -19,7 +19,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'close'): void
   (e: 'refresh'): void
-  (e: 'rematch', path: string, kind: 'movie' | 'tv', name: string): void
+  (e: 'rematch', payload: { path: string, kind: 'movie' | 'tv', name: string }): void
 }>()
 
 const { showToast } = useToast()
@@ -141,7 +141,11 @@ async function handleRefreshMetadata() {
 
 function handleRematch() {
   emit('close')
-  emit('rematch', path.value, kind.value, name.value)
+  emit('rematch', {
+    path: path.value,
+    kind: kind.value,
+    name: name.value,
+  })
 }
 
 async function handleRefreshSeason(season: SeasonInfo) {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onShow } from 'wevu'
+import { computed, onShow, storeToRefs } from 'wevu'
 import { useTabStore } from '@/stores/tab'
 import { useServerStore } from '@/stores/server'
 import { useToast } from '@/hooks/useToast'
@@ -9,19 +9,20 @@ definePageJson({ disableScroll: true })
 
 const tabStore = useTabStore()
 const serverStore = useServerStore()
+const { isConfigured, serverUrl, hasApiKey, connectionStatus, latency } = storeToRefs(serverStore)
 const { showToast } = useToast()
 
 onShow(() => {
   tabStore.setActive(3)
-  if (serverStore.isConfigured) {
+  if (isConfigured.value) {
     serverStore.checkConnection()
   }
 })
 
-const displayUrl = computed(() => serverStore.isConfigured ? serverStore.serverUrl : '未配置')
+const displayUrl = computed(() => isConfigured.value ? serverUrl.value : '未配置')
 
 function onTestConnection() {
-  if (serverStore.isConfigured) {
+  if (isConfigured.value) {
     serverStore.checkConnection()
     showToast('正在测试...', 'loading')
   }
@@ -50,15 +51,15 @@ function onChangeServer() {
 }
 
 const statusText = computed(() => {
-  const status = serverStore.connectionStatus.value
-  if (status === 'online') return '\u5728\u7EBF (' + serverStore.latency.value + 'ms)'
+  const status = connectionStatus.value
+  if (status === 'online') return '\u5728\u7EBF (' + latency.value + 'ms)'
   if (status === 'offline') return '离线'
   if (status === 'checking') return '检测中...'
   return '未知'
 })
 
 const statusColor = computed(() => {
-  const status = serverStore.connectionStatus.value
+  const status = connectionStatus.value
   if (status === 'online') return 'var(--color-success)'
   if (status === 'offline') return 'var(--color-destructive)'
   return 'var(--color-muted-foreground)'
@@ -81,7 +82,7 @@ const statusColor = computed(() => {
           <view class="h-px bg-border my-3"></view>
           <view class="flex items-center">
             <view class="text-sm text-foreground">API Key</view>
-            <view class="flex-1 text-right text-xs text-muted-foreground">{{ serverStore.hasApiKey ? '已配置' : '未配置' }}</view>
+            <view class="flex-1 text-right text-xs text-muted-foreground">{{ hasApiKey ? '已配置' : '未配置' }}</view>
           </view>
           <view class="h-px bg-border my-3"></view>
           <view class="flex items-center">

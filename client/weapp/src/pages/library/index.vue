@@ -127,9 +127,11 @@ async function onDetailRefresh() {
   }
 }
 
-function onRematch(path: string, kind: 'movie' | 'tv', name: string) {
+function onRematch(e: WechatMiniprogram.CustomEvent<{ path: string, kind: 'movie' | 'tv', name: string }>) {
+  const detail = e.detail
+  if (!detail || !detail.path || !detail.kind) return
   wx.navigateTo({
-    url: `/pages/match/index?path=${encodeURIComponent(path)}&kind=${kind}&name=${encodeURIComponent(name)}&mode=rematch`,
+    url: `/pages/match/index?path=${encodeURIComponent(detail.path)}&kind=${detail.kind}&name=${encodeURIComponent(detail.name || '')}&mode=rematch`,
   })
 }
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { MediaFile } from '@media-scraper/shared'
-import { computed, onShow, ref } from 'wevu'
+import { computed, nextTick, onShow, ref } from 'wevu'
 import { autoMatch, fetchInbox, processMovie, processTV, recognizePath } from '@/utils/api'
 import { useTabStore } from '@/stores/tab'
 import { useToast } from '@/hooks/useToast'
@@ -20,6 +20,13 @@ const loading = ref(true)
 const searchKeyword = ref('')
 const filterKind = ref<string>('all')
 const selectedPaths = ref<string[]>([])
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+
+function encodePathKey(path: string): string {
+  // wevu/setData 的 diff 路径会按 "." 分层，文件后缀会导致 key 被拆开
+  // 这里把 "." 也编码掉，确保 key 在模板里是稳定的扁平字段
+  return encodeURIComponent(path).replaceAll('.', '%2E')
+}
 
 const filteredFiles = computed(() => {
   let list = files.value
@@ -33,17 +40,19 @@ const filteredFiles = computed(() => {
   return list
 })
 
-const selectedCount = computed(() => selectedPaths.value.length)
-const hasSelection = computed(() => selectedCount.value > 0)
-
-/** Map for template: path -> boolean */
 const selectedMap = computed(() => {
   const map: Record<string, boolean> = {}
-  for (const p of selectedPaths.value) {
-    map[p] = true
+  for (const path of selectedPaths.value) {
+    map[encodePathKey(path)] = true
   }
   return map
 })
+const filteredSelectKeys = computed(() => filteredFiles.value.map(file => encodePathKey(file.path)))
+const selectedCount = computed(() => selectedPaths.value.length)
+const hasSelection = computed(() => selectedCount.value > 0)
+const allFilteredSelected = computed(() =>
+  filteredFiles.value.length > 0 && filteredFiles.value.every(file => !!selectedMap.value[encodePathKey(file.path)]),
+)
 
 function toggleSelect(path: string) {
   const idx = selectedPaths.value.indexOf(path)
@@ -55,20 +64,31 @@ function toggleSelect(path: string) {
   }
 }
 
+function onToggleSelect(e: WechatMiniprogram.CustomEvent) {
+  const path = (e.currentTarget as { dataset?: { path?: string } })?.dataset?.path
+  if (!path) return
+  toggleSelect(path)
+}
+
 function selectAll() {
-  if (selectedPaths.value.length === filteredFiles.value.length) {
+  if (allFilteredSelected.value) {
     selectedPaths.value = []
   }
   else {
-    selectedPaths.value = filteredFiles.value.map(f => f.path)
+    selectedPaths.value = filteredFiles.value.map(file => file.path)
   }
+}
+
+function clearSelection() {
+  selectedPaths.value = []
 }
 
 async function loadInbox() {
   loading.value = true
   try {
     files.value = await fetchInbox()
-    selectedPaths.value = selectedPaths.value.filter(p => files.value.some(f => f.path === p))
+    const filePathSet = new Set(files.value.map(f => f.path))
+    selectedPaths.value = selectedPaths.value.filter(path => filePathSet.has(path))
   }
   catch {
     showToast('加载失败', 'error')
@@ -90,7 +110,20 @@ async function onRefresh() {
 }
 
 function onSearch(e: WechatMiniprogram.CustomEvent) {
-  searchKeyword.value = e.detail.value || ''
+  const value = e.detail.value || ''
+  if (searchTimer) {
+    clearTimeout(searchTimer)
+  }
+  searchTimer = setTimeout(() => {
+    searchKeyword.value = value
+  }, 120)
+}
+
+function onFilterTap(e: WechatMiniprogram.CustomEvent) {
+  const kind = (e.currentTarget as { dataset?: { kind?: string } })?.dataset?.kind
+  if (kind === 'all' || kind === 'movie' || kind === 'tv' || kind === 'unknown') {
+    filterKind.value = kind
+  }
 }
 
 // ── Detail Popup ──
@@ -101,14 +134,19 @@ const detailRef = ref<InstanceType<typeof InboxFileDetail> | null>(null)
 function openDetail(file: MediaFile) {
   detailFile.value = file
   detailVisible.value = true
-  // Wait next tick for component to mount, then init
-  setTimeout(() => {
+  nextTick(() => {
     detailRef.value?.initForFile(file)
-  }, 50)
+  })
 }
 
 function closeDetail() {
   detailVisible.value = false
+}
+
+function onOpenDetail(e: WechatMiniprogram.CustomEvent) {
+  const index = Number((e.currentTarget as { dataset?: { index?: number | string } })?.dataset?.index)
+  if (!Number.isInteger(index) || index < 0 || index >= filteredFiles.value.length) return
+  openDetail(filteredFiles.value[index])
 }
 
 async function onProcessed() {
@@ -121,7 +159,8 @@ const batchProgress = ref('')
 const fileStatus = ref<Record<string, 'processing' | 'success' | 'failed'>>({})
 
 async function batchAutoProcess() {
-  const selected = files.value.filter(f => selectedPaths.value.includes(f.path))
+  const selectedSet = new Set(selectedPaths.value)
+  const selected = files.value.filter(f => selectedSet.has(f.path))
   if (!selected.length) return
 
   const confirmed = await new Promise<boolean>((resolve) => {
@@ -202,7 +241,8 @@ async function batchAutoProcess() {
 }
 
 async function batchAIProcess() {
-  const selected = files.value.filter(f => selectedPaths.value.includes(f.path))
+  const selectedSet = new Set(selectedPaths.value)
+  const selected = files.value.filter(f => selectedSet.has(f.path))
   if (!selected.length) return
 
   const confirmed = await new Promise<boolean>((resolve) => {
@@ -290,22 +330,26 @@ async function batchAIProcess() {
         <view
           class="px-2.5 py-1 text-xs rounded-lg"
           :class="filterKind === 'all' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'"
-          @tap="() => { filterKind = 'all' }"
+          data-kind="all"
+          @tap="onFilterTap"
         >全部</view>
         <view
           class="px-2.5 py-1 text-xs rounded-lg"
           :class="filterKind === 'movie' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'"
-          @tap="() => { filterKind = 'movie' }"
+          data-kind="movie"
+          @tap="onFilterTap"
         >电影</view>
         <view
           class="px-2.5 py-1 text-xs rounded-lg"
           :class="filterKind === 'tv' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'"
-          @tap="() => { filterKind = 'tv' }"
+          data-kind="tv"
+          @tap="onFilterTap"
         >剧集</view>
         <view
           class="px-2.5 py-1 text-xs rounded-lg"
           :class="filterKind === 'unknown' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'"
-          @tap="() => { filterKind = 'unknown' }"
+          data-kind="unknown"
+          @tap="onFilterTap"
         >未知</view>
       </view>
     </view>
@@ -345,7 +389,7 @@ async function batchAIProcess() {
         <block v-else>
           <view class="pl-1 text-xs font-medium text-muted-foreground mt-3 mb-1 flex items-center justify-between pr-1">
             <text>📥 待处理文件 ({{ filteredFiles.length }})</text>
-            <text class="text-primary" @tap="selectAll">{{ selectedPaths.length === filteredFiles.length ? '取消全选' : '全选' }}</text>
+            <text class="text-primary" @tap="selectAll">{{ allFilteredSelected ? '取消全选' : '全选' }}</text>
           </view>
           <view class="mt-2 rounded-xl bg-card">
             <view
@@ -354,14 +398,20 @@ async function batchAIProcess() {
             >
               <view class="flex items-center">
                 <!-- Checkbox -->
-                <view class="pl-3 py-3 pr-2 shrink-0" @tap="() => toggleSelect(file.path)">
-                  <t-checkbox :checked="selectedMap[file.path]" style="--td-checkbox-icon-size: 36rpx;" />
+                <view class="pl-3 py-3 pr-2 shrink-0" :data-path="file.path" @tap="onToggleSelect">
+                  <view
+                    class="h-5 w-5 rounded-full border flex items-center justify-center"
+                    :class="selectedMap[filteredSelectKeys[idx]] ? 'bg-primary border-primary' : 'bg-card border-border'"
+                  >
+                    <t-icon v-if="selectedMap[filteredSelectKeys[idx]]" name="check" size="20rpx" color="#fff" />
+                  </view>
                 </view>
                 <!-- Content -->
                 <view
                   class="flex-1 min-w-0 py-3 pr-3 flex items-center"
                   hover-class="opacity-70"
-                  @tap="() => openDetail(file)"
+                  :data-index="idx"
+                  @tap="onOpenDetail"
                 >
                   <view class="flex-1 min-w-0">
                     <view class="text-sm font-medium text-foreground" style="overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">
@@ -369,9 +419,10 @@ async function batchAIProcess() {
                     </view>
                     <view class="mt-1 flex items-center gap-1">
                       <text class="text-xs text-muted-foreground">{{ fmt.formatFileSize(file.size) }}</text>
-                      <text class="text-xs px-1 rounded"
+                      <text
+                        class="text-xs px-1 rounded"
                         :class="file.kind === 'tv' ? 'bg-muted text-blue-600' : file.kind === 'movie' ? 'bg-muted text-purple-600' : 'bg-muted text-muted-foreground'"
-                      >{{ fmt.getMediaKindLabel(file.kind) }}</text>
+                      >{{ file.kind === 'tv' ? (file.isProcessed || file.hasNfo ? '剧集' : '疑似剧集') : file.kind === 'movie' ? (file.isProcessed || file.hasNfo ? '电影' : '疑似电影') : '未知' }}</text>
                     </view>
                   </view>
                   <!-- Status indicators -->
@@ -394,7 +445,7 @@ async function batchAIProcess() {
     <view v-if="hasSelection" class="bg-card border-t border-border px-4 pt-3">
       <view class="flex items-center justify-between">
         <text class="text-sm font-medium text-foreground">已选 {{ selectedCount }} 项</text>
-        <text class="text-xs text-muted-foreground" @tap="() => { selectedPaths = [] }">清除选择</text>
+        <text class="text-xs text-muted-foreground" @tap="clearSelection">清除选择</text>
       </view>
       <view class="mt-2 flex gap-2">
         <view

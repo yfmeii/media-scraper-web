@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { storeToRefs } from 'wevu'
 import { useTabStore } from '@/stores/tab'
 
 defineComponentJson({
@@ -6,6 +7,7 @@ defineComponentJson({
 })
 
 const tabStore = useTabStore()
+const { activeIndex } = storeToRefs(tabStore)
 
 interface TabItem {
   key: string
@@ -22,7 +24,7 @@ const tabs: TabItem[] = [
 ]
 
 function onTap(index: number) {
-  if (tabStore.activeIndex === index) return
+  if (activeIndex.value === index) return
   tabStore.setActive(index)
   wx.switchTab({ url: tabs[index].pagePath })
 }
@@ -41,11 +43,11 @@ function onTap(index: number) {
         <t-icon
           :name="tab.icon"
           size="40rpx"
-          :color="tabStore.activeIndex === index ? 'var(--color-primary)' : 'var(--color-muted-foreground)'"
+          :color="activeIndex === index ? 'var(--color-primary)' : 'var(--color-muted-foreground)'"
         />
         <view
           class="tab-label"
-          :class="tabStore.activeIndex === index ? 'tab-label-active' : ''"
+          :class="activeIndex === index ? 'tab-label-active' : ''"
         >{{ tab.label }}</view>
       </view>
     </view>
@@ -53,7 +55,7 @@ function onTap(index: number) {
   </view>
 </template>
 
-<style lang="scss">
+<style>
 .tab-bar-root {
   background-color: var(--color-card, #ffffff);
   flex-shrink: 0;

@@ -1,4 +1,5 @@
-@import "tailwindcss";
+@import "weapp-tailwindcss/theme.css";
+@import "weapp-tailwindcss/utilities.css";
 
 /* ── Global skeleton pulse animation ── */
 @keyframes skeleton-pulse {

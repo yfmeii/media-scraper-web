@@ -62,6 +62,26 @@ function onEpisodeChange(e: WechatMiniprogram.CustomEvent) {
   episode.value = e.detail.value
 }
 
+function closePopup() {
+  emit('close')
+}
+
+function setSearchTypeMovie() {
+  searchType.value = 'movie'
+}
+
+function setSearchTypeTV() {
+  searchType.value = 'tv'
+}
+
+function onSelectCandidate(e: WechatMiniprogram.CustomEvent) {
+  const id = Number((e.currentTarget as { dataset?: { id?: number | string } })?.dataset?.id)
+  if (!Number.isInteger(id)) return
+  const candidate = candidates.value.find(c => c.id === id)
+  if (!candidate) return
+  selectCandidate(candidate)
+}
+
 // ── Actions ──
 async function handleAutoMatch() {
   if (!props.file) return
@@ -163,7 +183,7 @@ function goToMatchPage() {
           class="flex items-center justify-center rounded-full bg-card"
           style="min-width: 60rpx; min-height: 60rpx;"
           hover-class="opacity-60"
-          @tap="() => emit('close')"
+          @tap="closePopup"
         >
           <t-icon name="close" size="32rpx" color="var(--color-foreground)" />
         </view>
@@ -177,9 +197,10 @@ function goToMatchPage() {
             <text class="text-sm font-medium text-foreground" style="word-break: break-all;">{{ file.name }}</text>
             <view class="mt-2 flex items-center gap-1.5 flex-wrap">
               <text class="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{{ fmt.formatFileSize(file.size) }}</text>
-              <text class="text-xs px-1.5 py-0.5 rounded"
+              <text
+                class="text-xs px-1.5 py-0.5 rounded"
                 :class="file.kind === 'tv' ? 'bg-muted text-blue-600' : file.kind === 'movie' ? 'bg-muted text-purple-600' : 'bg-muted text-muted-foreground'"
-              >{{ fmt.getMediaKindLabel(file.kind) }}</text>
+              >{{ file.kind === 'tv' ? (file.isProcessed || file.hasNfo ? '剧集' : '疑似剧集') : file.kind === 'movie' ? (file.isProcessed || file.hasNfo ? '电影' : '疑似电影') : '未知' }}</text>
               <text v-if="file.parsed.resolution" class="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{{ file.parsed.resolution }}</text>
               <text v-if="file.parsed.codec" class="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{{ file.parsed.codec }}</text>
             </view>
@@ -229,12 +250,12 @@ function goToMatchPage() {
                 <view
                   class="px-2.5 py-1 text-xs rounded-md"
                   :class="searchType === 'movie' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'"
-                  @tap="() => { searchType = 'movie' }"
+                  @tap="setSearchTypeMovie"
                 >电影</view>
                 <view
                   class="px-2.5 py-1 text-xs rounded-md"
                   :class="searchType === 'tv' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'"
-                  @tap="() => { searchType = 'tv' }"
+                  @tap="setSearchTypeTV"
                 >剧集</view>
               </view>
               <view v-if="searchType === 'tv'" class="flex items-center gap-2 ml-auto">
@@ -297,7 +318,8 @@ function goToMatchPage() {
                 class="rounded-xl overflow-hidden border-2"
                 style="width: calc(33.33% - 8rpx);"
                 :class="selectedCandidate && selectedCandidate.id === c.id ? 'border-primary' : 'border-transparent'"
-                @tap="() => selectCandidate(c)"
+                :data-id="c.id"
+                @tap="onSelectCandidate"
               >
                 <MediaPoster
                   :src="c.posterPath ? 'https://image.tmdb.org/t/p/w185' + c.posterPath : ''"

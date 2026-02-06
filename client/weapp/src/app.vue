@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onLaunch, onShow } from 'wevu'
+import { onLaunch, onShow, storeToRefs } from 'wevu'
 import { useServerStore } from '@/stores/server'
 
 defineAppJson({
@@ -57,7 +57,8 @@ defineAppJson({
 
 onLaunch(() => {
   const serverStore = useServerStore()
-  if (!serverStore.isConfigured) {
+  const { isConfigured } = storeToRefs(serverStore)
+  if (!isConfigured.value) {
     wx.redirectTo({ url: '/pages/setup/index' })
   }
 })
