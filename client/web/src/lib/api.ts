@@ -75,7 +75,19 @@ export async function fetchInboxByDirectory(): Promise<DirectoryGroup[]> {
   return data.data || [];
 }
 
-export async function searchTMDB(type: 'tv' | 'movie', query: string, year?: number): Promise<SearchResult[]> {
+export async function searchTMDB(query: string, year?: number): Promise<SearchResult[]>;
+export async function searchTMDB(type: 'tv' | 'movie' | 'multi', query: string, year?: number): Promise<SearchResult[]>;
+export async function searchTMDB(
+  typeOrQuery: 'tv' | 'movie' | 'multi' | string,
+  queryOrYear?: string | number,
+  maybeYear?: number
+): Promise<SearchResult[]> {
+  const hasType = typeOrQuery === 'tv' || typeOrQuery === 'movie' || typeOrQuery === 'multi';
+  const type = hasType ? typeOrQuery : 'multi';
+  const query = hasType ? String(queryOrYear || '') : String(typeOrQuery || '');
+  const year = hasType ? maybeYear : (typeof queryOrYear === 'number' ? queryOrYear : undefined);
+  if (!query.trim()) return [];
+
   const params = new URLSearchParams({ q: query });
   if (year) params.set('year', year.toString());
   const res = await fetch(`${API_BASE}${CLIENT_API_ENDPOINTS.searchTMDBBase}/${type}?${params}`);
@@ -116,17 +128,37 @@ export async function refreshMetadata(
 }
 
 // AI 路径识别
-export async function recognizePath(path: string, kind: 'tv' | 'movie'): Promise<PathRecognizeResult | null> {
+export async function recognizePath(path: string, kind?: 'tv' | 'movie'): Promise<PathRecognizeResult | null> {
   const res = await fetch(`${API_BASE}${CLIENT_API_ENDPOINTS.recognizePath}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path, kind }),
+    body: JSON.stringify(kind ? { path, kind } : { path }),
   });
   const data = await res.json();
   return data.success ? data.data : null;
 }
 
-export async function autoMatch(path: string, kind: 'tv' | 'movie', title?: string, year?: number, language = DEFAULT_LANGUAGE): Promise<MatchResult> {
+export async function autoMatch(path: string, title?: string, year?: number, language?: string): Promise<MatchResult>;
+export async function autoMatch(path: string, kind: 'tv' | 'movie', title?: string, year?: number, language?: string): Promise<MatchResult>;
+export async function autoMatch(
+  path: string,
+  kindOrTitle?: 'tv' | 'movie' | string,
+  titleOrYear?: string | number,
+  yearOrLanguage?: number | string,
+  maybeLanguage?: string
+): Promise<MatchResult> {
+  const hasKind = kindOrTitle === 'tv' || kindOrTitle === 'movie';
+  const kind = hasKind ? kindOrTitle : undefined;
+  const title = hasKind
+    ? (typeof titleOrYear === 'string' ? titleOrYear : undefined)
+    : (typeof kindOrTitle === 'string' ? kindOrTitle : undefined);
+  const year = hasKind
+    ? (typeof yearOrLanguage === 'number' ? yearOrLanguage : (typeof titleOrYear === 'number' ? titleOrYear : undefined))
+    : (typeof titleOrYear === 'number' ? titleOrYear : undefined);
+  const language = hasKind
+    ? (typeof maybeLanguage === 'string' ? maybeLanguage : (typeof yearOrLanguage === 'string' ? yearOrLanguage : DEFAULT_LANGUAGE))
+    : (typeof yearOrLanguage === 'string' ? yearOrLanguage : DEFAULT_LANGUAGE);
+
   const res = await fetch(`${API_BASE}${CLIENT_API_ENDPOINTS.autoMatch}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

@@ -334,6 +334,5 @@ function onRematch(e: WechatMiniprogram.CustomEvent<{ path: string, kind: 'movie
     />
 
     <TabBar />
-    <t-toast id="t-toast" />
   </view>
 </template>

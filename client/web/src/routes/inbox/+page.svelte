@@ -172,6 +172,16 @@
     }
     selectedFiles = nextSelected;
   }
+
+  function inferFileMediaType(file: MediaFile | null): 'tv' | 'movie' {
+    if (!file) return 'movie';
+    return file.parsed.season !== undefined || file.parsed.episode !== undefined ? 'tv' : 'movie';
+  }
+
+  function inferCandidateMediaType(candidate: SearchResult | null): 'tv' | 'movie' {
+    if (candidate?.mediaType === 'tv' || candidate?.mediaType === 'movie') return candidate.mediaType;
+    return inferFileMediaType(selectedFile);
+  }
   
   async function selectFileForDetail(file: MediaFile) {
     selectedFile = file;
@@ -181,10 +191,6 @@
     matchScore = 0;
     fileStatus = new Map();
     showDetailModal = true;
-
-    if (file.kind !== 'unknown') {
-      manualSearchType = file.kind;
-    }
     
     // 初始化可编辑的季数和集数
     editSeason = file.parsed.season || 1;
@@ -194,7 +200,7 @@
     const searchKeyword = file.parsed.title || file.name.replace(/\.[^/.]+$/, '');
     
     // Set target path
-    if (file.kind === 'movie') {
+    if (inferFileMediaType(file) === 'movie') {
       targetPath = `Library/Movies/${searchKeyword}`;
     } else {
       targetPath = `Library/Shows/${searchKeyword}/Season ${String(file.parsed.season || 1).padStart(2, '0')}`;
@@ -203,14 +209,13 @@
     // Auto match using backend API - 使用解析出的标题进行 TMDB 匹配
     isSearchingTMDB = true;
     try {
-      // 默认按剧集搜索，使用 manualSearchType 作为搜索类型
-      const kind = manualSearchType;
-      // 使用解析出的标题（非 AI 模式）
-      const matchResult = await autoMatch(file.path, kind, searchKeyword, file.parsed.year);
+      // 使用解析出的标题（无手动类型，后端自动混合匹配）
+      const matchResult = await autoMatch(file.path, searchKeyword, file.parsed.year);
       
       // Convert candidates to SearchResult format
       matchCandidates = matchResult.candidates.map(c => ({
         id: c.id,
+        mediaType: c.mediaType,
         name: c.name,
         title: c.name,
         posterPath: c.posterPath,
@@ -252,15 +257,11 @@
     selectedFiles = toggleAllSelection(selectedFiles, filteredFiles, f => f.path);
   }
   
-  // 手动选择的搜索类型（tv 或 movie）
-  let manualSearchType = $state<'tv' | 'movie'>('tv');
-  
   async function handleManualSearch() {
     if (!manualSearchQuery.trim() || !selectedFile) return;
     isSearchingTMDB = true;
     try {
-      // 使用用户手动选择的搜索类型
-      matchCandidates = await searchTMDB(manualSearchType, manualSearchQuery);
+      matchCandidates = await searchTMDB(manualSearchQuery);
       if (matchCandidates.length > 0) {
         selectedCandidate = matchCandidates[0];
         // 更新预计路径
@@ -282,7 +283,7 @@
   function updateTargetPath() {
     if (!selectedFile || !selectedCandidate) return;
     const name = selectedCandidate.name || selectedCandidate.title || '';
-    if (manualSearchType === 'movie') {
+    if (inferCandidateMediaType(selectedCandidate) === 'movie') {
       targetPath = `Library/Movies/${name}`;
     } else {
       // 使用用户编辑的季数
@@ -298,19 +299,13 @@
     aiRecognizeResult = null;
     
     try {
-      const result = await recognizePath(selectedFile.relativePath, manualSearchType);
+      const result = await recognizePath(selectedFile.relativePath);
       
       if (result) {
         aiRecognizeResult = result;
         
-        // AI 判断的媒体类型
         const aiMediaType = result.media_type || 'tv';
-        
-        // 如果 AI 判断的类型和当前不同，自动切换
-        if (aiMediaType !== manualSearchType) {
-          manualSearchType = aiMediaType;
-          operationMessage = `🤖 AI 判断为${aiMediaType === 'movie' ? '电影' : '剧集'}，已自动切换`;
-        }
+        operationMessage = `🤖 AI 识别为${aiMediaType === 'movie' ? '电影' : '剧集'}，请选择候选确认`;
         
         // 置信度警告
         if (result.confidence < 0.7) {
@@ -327,8 +322,7 @@
         
         // 如果有 TMDB 结果，更新匹配
         if (result.tmdb_id && result.tmdb_name) {
-          // 使用 AI 判断的媒体类型进行搜索
-          const searchResults = await searchTMDB(aiMediaType, result.tmdb_name);
+          const searchResults = await searchTMDB(result.tmdb_name);
           if (searchResults.length > 0) {
             // 找到匹配的结果
             const matched = searchResults.find(r => r.id === result.tmdb_id) || searchResults[0];
@@ -370,18 +364,15 @@
     let movieCount = 0;
     
     for (const file of selectedFilesList) {
-      // 根据解析结果自动判断类型：有 season 或 episode 则为剧集，否则为电影
-      const hasEpisodeInfo = file.parsed.season !== undefined || file.parsed.episode !== undefined;
-      const detectedType: 'tv' | 'movie' = hasEpisodeInfo ? 'tv' : 'movie';
-      const typeLabel = detectedType === 'movie' ? '电影' : '剧集';
+      const inferredType = inferFileMediaType(file);
       
-      operationMessage = `匹配中 (${batchProgress.current + 1}/${batchProgress.total}): ${file.name} [${typeLabel}]`;
+      operationMessage = `匹配中 (${batchProgress.current + 1}/${batchProgress.total}): ${file.name}`;
       setFileStatus(file.path, 'processing');
       
       try {
         // 使用解析出的标题进行 TMDB 匹配
         const searchKeyword = file.parsed.title || file.name.replace(/\.[^/.]+$/, '');
-        const matchResult = await autoMatch(file.path, detectedType, searchKeyword, file.parsed.year);
+        const matchResult = await autoMatch(file.path, searchKeyword, file.parsed.year);
         
         if (!matchResult.result) {
           failCount++;
@@ -390,11 +381,16 @@
           batchProgress = { ...batchProgress };
           continue;
         }
+
+        const mediaType = matchResult.result.mediaType === 'tv' || matchResult.result.mediaType === 'movie'
+          ? matchResult.result.mediaType
+          : inferredType;
+        const typeLabel = mediaType === 'movie' ? '电影' : '剧集';
         
         operationMessage = `入库中 (${batchProgress.current + 1}/${batchProgress.total}): ${file.name} [${typeLabel}]`;
         
-        // 根据检测的类型入库
-        if (detectedType === 'movie') {
+        // 根据候选类型入库
+        if (mediaType === 'movie') {
           await processMovie({
             sourcePath: file.path,
             tmdbId: matchResult.result.id,
@@ -470,7 +466,7 @@
       try {
         // 1. 调用 AI 识别（不传 kind，让 AI 自动判断）
         const recognizeInput = file.relativePath || file.path;
-        const result = await recognizePath(recognizeInput, 'tv');  // 参数被忽略，AI 会自动判断
+        const result = await recognizePath(recognizeInput);
         
         const tmdbId = result?.tmdb_id ?? (result as any)?.tmdbId ?? (result as any)?.tmdbID ?? null;
         if (!result || !tmdbId) {
@@ -543,10 +539,11 @@
     setFileStatus(selectedFile.path, 'processing');
     
     try {
-      // 使用用户选择的类型和名称
+      // 根据选中候选自动决定媒体类型
       const showName = selectedCandidate.name || selectedCandidate.title || '';
+      const kind = inferCandidateMediaType(selectedCandidate);
       
-        if (manualSearchType === 'movie') {
+      if (kind === 'movie') {
         const result = await processMovie({
           sourcePath: selectedFile.path,
           tmdbId: selectedCandidate.id,
@@ -596,8 +593,8 @@
     showPreviewModal = true;
     
     try {
-      // 使用用户选择的类型
-      const kind: 'tv' | 'movie' = manualSearchType;
+      // 根据选中候选自动决定媒体类型
+      const kind = inferCandidateMediaType(selectedCandidate);
       // 使用用户选择的 TMDB 结果的名称
       const showName = selectedCandidate.name || selectedCandidate.title || '';
       
@@ -626,13 +623,6 @@
       isLoadingPreview = false;
     }
   }
-  
-  // 当类型选择器改变时，更新预计路径
-  $effect(() => {
-    if (manualSearchType && selectedCandidate) {
-      updateTargetPath();
-    }
-  });
   
   const filteredFiles = $derived.by(() => (
     files.filter(f => {
@@ -981,20 +971,11 @@
                        </div>
                        <input 
                          type="text" 
-                         class="w-full h-10 rounded-lg border border-input bg-background pl-9 pr-24 text-sm focus:ring-2 focus:ring-primary/20 transition-all" 
+                         class="w-full h-10 rounded-lg border border-input bg-background pl-9 pr-3 text-sm focus:ring-2 focus:ring-primary/20 transition-all" 
                          bind:value={manualSearchQuery}
                          placeholder="搜索电影或剧集..."
                          onkeydown={(e) => e.key === 'Enter' && handleManualSearch()}
                        />
-                       <div class="absolute inset-y-0 right-0 flex items-center pr-1">
-                          <select 
-                           class="h-8 bg-muted/50 border-none rounded text-xs text-muted-foreground focus:ring-0 cursor-pointer px-2 hover:bg-muted hover:text-foreground transition-colors outline-none"
-                           bind:value={manualSearchType}
-                         >
-                           <option value="tv">剧集</option>
-                           <option value="movie">电影</option>
-                         </select>
-                       </div>
                     </div>
                     
                     <button 
@@ -1021,7 +1002,7 @@
                       AI 智能识别
                     </button>
 
-                    {#if manualSearchType === 'tv'}
+                    {#if inferCandidateMediaType(selectedCandidate) === 'tv'}
                       <div class="flex items-center gap-3 text-xs bg-muted/30 px-3 py-1.5 rounded-md border border-border/50">
                         <span class="text-muted-foreground font-medium">手动修正:</span>
                         <div class="flex items-center gap-2">
@@ -1101,7 +1082,7 @@
                             
                             <!-- Type Badge -->
                             <div class="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/60 text-[8px] text-white font-medium backdrop-blur-sm shadow-sm">
-                              {manualSearchType === 'movie' ? '电影' : '剧集'}
+                              {inferCandidateMediaType(candidate) === 'movie' ? '电影' : '剧集'}
                             </div>
 
                             <!-- Year Badge -->

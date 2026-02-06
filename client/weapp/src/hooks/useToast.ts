@@ -1,29 +1,28 @@
-import Toast from 'tdesign-miniprogram/toast/index'
-import { getCurrentInstance } from 'wevu'
-
 export type ToastTheme = 'success' | 'warning' | 'error' | 'default' | 'loading'
 
 export interface ToastOptions {
-  selector?: string
   duration?: number
   theme?: ToastTheme
 }
 
 export function useToast(options: ToastOptions = {}) {
-  const mpContext = getCurrentInstance()
-  const selector = options.selector ?? '#t-toast'
   const duration = options.duration ?? 1200
   const defaultTheme = options.theme ?? 'success'
 
+  function resolveIcon(theme: ToastTheme): WechatMiniprogram.ShowToastOption['icon'] {
+    if (theme === 'success') return 'success'
+    if (theme === 'loading') return 'loading'
+    if (theme === 'error') return 'error'
+    return 'none'
+  }
+
   function showToast(message: string, theme: ToastTheme = defaultTheme) {
-    if (!mpContext) {
-      return
-    }
-    Toast({
-      selector,
-      context: mpContext as any,
-      message,
-      theme,
+    const title = (message || '').trim()
+    if (!title) return
+
+    wx.showToast({
+      title,
+      icon: resolveIcon(theme),
       duration,
     })
   }

@@ -193,7 +193,7 @@
       operationMessage = '正在自动匹配...';
       
       try {
-        const matchResult = await autoMatch(show.path, 'tv', show.name);
+        const matchResult = await autoMatch(show.path, show.name);
         
         if (matchResult.matched && matchResult.result) {
           // 自动匹配成功，执行刮削

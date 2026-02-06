@@ -14,6 +14,7 @@ export function useMediaMatch() {
   function mapToSearchResult(
     item: {
       id: number
+      mediaType?: 'tv' | 'movie'
       name?: string
       title?: string
       date?: string
@@ -27,6 +28,7 @@ export function useMediaMatch() {
     const date = item.releaseDate || item.firstAirDate || item.date
     return {
       id: item.id,
+      mediaType: item.mediaType,
       name,
       title: name,
       posterPath: item.posterPath,
@@ -42,6 +44,7 @@ export function useMediaMatch() {
     if (matched) return matched
     return mapToSearchResult({
       id: result.result.id,
+      mediaType: result.result.mediaType,
       name: result.result.name,
       date: result.result.date,
       posterPath: result.result.posterPath,
@@ -50,7 +53,6 @@ export function useMediaMatch() {
 
   async function doAutoMatch(
     file: MediaFile,
-    kind: 'tv' | 'movie',
     title?: string,
     year?: number,
   ): Promise<boolean> {
@@ -58,13 +60,13 @@ export function useMediaMatch() {
     try {
       const result = await autoMatch(
         file.path,
-        kind,
         title || file.parsed.title,
         year || file.parsed.year,
       )
 
       const mappedCandidates = (result?.candidates || []).map(item => mapToSearchResult({
         id: item.id,
+        mediaType: item.mediaType,
         name: item.name,
         date: item.date,
         posterPath: item.posterPath,
@@ -85,11 +87,11 @@ export function useMediaMatch() {
     }
   }
 
-  async function doSearch(query: string, type: 'tv' | 'movie'): Promise<boolean> {
+  async function doSearch(query: string): Promise<boolean> {
     if (!query.trim()) return false
     searching.value = true
     try {
-      const results = await searchTMDB(type, query.trim())
+      const results = await searchTMDB(query.trim())
       candidates.value = results
       selectedCandidate.value = results[0] || null
       return true

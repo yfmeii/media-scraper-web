@@ -14,6 +14,8 @@ const props = defineProps({
   width: String,
   /** 高度，默认 300rpx */
   height: String,
+  /** 图片模式，默认 aspectFill */
+  mode: String,
   /** 圆角 class，默认 rounded-xl */
   rounded: String,
   /** 右上角徽章文字 */
@@ -37,7 +39,7 @@ const safeSrc = computed(() => {
   <view class="relative overflow-hidden" :class="props.rounded || 'rounded-xl'">
     <MsImage
       :src="safeSrc"
-      mode="aspectFill"
+      :mode="props.mode || 'aspectFill'"
       :width="props.width || '100%'"
       :height="props.height || '300rpx'"
       class="bg-muted"

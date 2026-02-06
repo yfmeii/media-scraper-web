@@ -76,6 +76,13 @@ page {
   background-color: var(--color-background);
   color: var(--color-foreground);
   --td-brand-color: #7C3AED;
+  --td-bg-color-container: var(--color-card);
+  --td-bg-color-secondarycontainer: var(--color-muted);
+  --td-bg-color-component-disabled: var(--color-muted);
+  --td-text-color-primary: var(--color-foreground);
+  --td-text-color-placeholder: var(--color-muted-foreground);
+  --td-component-border: var(--color-border);
+  --td-component-stroke: var(--color-border);
   --td-navbar-bg-color: var(--color-background);
   --td-navbar-title-font-color: var(--color-foreground);
   --td-navbar-left-arrow-color: var(--color-foreground);
@@ -83,6 +90,23 @@ page {
   --td-search-text-color: var(--color-foreground);
   --td-search-placeholder-color: var(--color-muted-foreground);
   --td-search-icon-color: var(--color-muted-foreground);
+  --td-input-bg-color: var(--color-card);
+  --td-input-default-text-color: var(--color-foreground);
+  --td-input-placeholder-text-color: var(--color-muted-foreground);
+  --td-input-border-color: var(--color-border);
+  --td-input-label-text-color: var(--color-foreground);
+  --td-input-prefix-icon-color: var(--color-muted-foreground);
+  --td-input-suffix-icon-color: var(--color-muted-foreground);
+  --td-input-default-tips-color: var(--color-muted-foreground);
+  --td-textarea-background-color: var(--color-card);
+  --td-textarea-text-color: var(--color-foreground);
+  --td-textarea-placeholder-color: var(--color-muted-foreground);
+  --td-textarea-border-color: var(--color-border);
+  --td-textarea-label-color: var(--color-foreground);
+  --td-textarea-indicator-text-color: var(--color-muted-foreground);
+  --td-stepper-input-color: var(--color-foreground);
+  --td-stepper-border-color: var(--color-border);
+  --td-stepper-input-disabled-bg: var(--color-muted);
 }
 
 @media (prefers-color-scheme: dark) {

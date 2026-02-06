@@ -202,6 +202,7 @@ export interface Stats {
 
 export interface SearchResult {
   id: number;
+  mediaType?: 'tv' | 'movie';
   name?: string;
   title?: string;
   originalName?: string;
@@ -224,6 +225,7 @@ export interface MatchResult {
   result?: {
     id: number;
     name: string;
+    mediaType?: 'tv' | 'movie';
     originalName?: string;
     date?: string;
     posterPath?: string;
@@ -232,6 +234,7 @@ export interface MatchResult {
   candidates: Array<{
     id: number;
     name: string;
+    mediaType?: 'tv' | 'movie';
     originalName?: string;
     date?: string;
     posterPath?: string;

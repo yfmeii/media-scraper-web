@@ -89,6 +89,5 @@ function onKeyInput(e: WechatMiniprogram.CustomEvent) {
       </view>
     </scroll-view>
 
-    <t-toast id="t-toast" />
   </view>
 </template>

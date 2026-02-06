@@ -40,7 +40,6 @@ const previewLoading = ref(false)
 const previewActions = ref<PreviewAction[]>([])
 const previewSummary = ref<PreviewPlan['impactSummary'] | null>(null)
 const searchQuery = ref('')
-const searchType = ref<'tv' | 'movie'>('movie')
 const season = ref(1)
 const episode = ref(1)
 const aiResult = ref<PathRecognizeResult | null>(null)
@@ -52,6 +51,14 @@ interface CandidateCard {
   displayName: string
   displayYear: string
   posterUrl: string
+  mediaType: 'tv' | 'movie'
+}
+
+function inferCandidateMediaType(candidate: { mediaType?: 'tv' | 'movie', firstAirDate?: string, releaseDate?: string }): 'tv' | 'movie' {
+  if (candidate.mediaType === 'tv' || candidate.mediaType === 'movie') return candidate.mediaType
+  if (candidate.firstAirDate && !candidate.releaseDate) return 'tv'
+  if (candidate.releaseDate && !candidate.firstAirDate) return 'movie'
+  return 'movie'
 }
 
 const candidateCards = computed<CandidateCard[]>(() =>
@@ -60,8 +67,18 @@ const candidateCards = computed<CandidateCard[]>(() =>
     displayName: candidate.name || candidate.title || '未知',
     displayYear: (candidate.releaseDate || candidate.firstAirDate || '').slice(0, 4),
     posterUrl: getPosterUrl(candidate.posterPath),
+    mediaType: inferCandidateMediaType(candidate),
   })),
 )
+
+const selectedMediaType = computed<'tv' | 'movie'>(() => {
+  const mediaType = selectedCandidate.value?.mediaType
+  if (mediaType === 'tv' || mediaType === 'movie') return mediaType
+  const aiType = aiResult.value?.media_type
+  if (aiType === 'tv' || aiType === 'movie') return aiType
+  if (props.file?.parsed.season || props.file?.parsed.episode) return 'tv'
+  return 'movie'
+})
 
 watch(() => props.visible, (val) => {
   localVisible.value = val
@@ -74,12 +91,6 @@ function getDefaultQuery(file: MediaFile): string {
   return file.parsed.title || file.name.replace(/\.[^.]+$/, '')
 }
 
-function inferKind(file: MediaFile): 'tv' | 'movie' {
-  if (file.kind === 'tv') return 'tv'
-  if (file.kind === 'movie') return 'movie'
-  return file.parsed.season || file.parsed.episode ? 'tv' : 'movie'
-}
-
 function sanitizeStepperValue(value: unknown, fallback: number, max: number): number {
   const parsed = Number(value)
   if (!Number.isFinite(parsed) || parsed < 1) return fallback
@@ -88,7 +99,6 @@ function sanitizeStepperValue(value: unknown, fallback: number, max: number): nu
 
 async function initForFile(file: MediaFile) {
   searchQuery.value = getDefaultQuery(file)
-  searchType.value = inferKind(file)
   season.value = file.parsed.season || 1
   episode.value = file.parsed.episode || 1
   aiResult.value = null
@@ -133,14 +143,6 @@ function closePopup() {
   emit('close')
 }
 
-function setSearchTypeMovie() {
-  searchType.value = 'movie'
-}
-
-function setSearchTypeTV() {
-  searchType.value = 'tv'
-}
-
 function onSelectCandidate(e: WechatMiniprogram.CustomEvent) {
   const id = Number((e.currentTarget as { dataset?: { id?: number | string } })?.dataset?.id)
   if (!Number.isInteger(id)) return
@@ -155,11 +157,11 @@ function buildPreviewItem(): PreviewItem | null {
   const candidate = selectedCandidate.value
   const item: PreviewItem = {
     sourcePath: file.path,
-    kind: searchType.value,
+    kind: selectedMediaType.value,
     tmdbId: candidate.id,
     showName: candidate.name || candidate.title || '未知',
   }
-  if (searchType.value === 'tv') {
+  if (selectedMediaType.value === 'tv') {
     item.season = season.value
     item.episodes = [{
       source: file.path,
@@ -175,7 +177,6 @@ async function handleAutoMatch(silent = false) {
   if (!props.file) return
   const ok = await doAutoMatch(
     props.file,
-    searchType.value,
     searchQuery.value.trim() || undefined,
     props.file.parsed.year,
   )
@@ -191,7 +192,7 @@ async function handleManualSearch() {
     showToast('请输入搜索关键词', 'warning')
     return
   }
-  const ok = await doSearch(query, searchType.value)
+  const ok = await doSearch(query)
   if (!ok) {
     showToast('搜索失败', 'error')
     return
@@ -209,7 +210,7 @@ async function handleAIRecognize() {
   aiHint.value = ''
   try {
     const recognizeInput = props.file.relativePath || props.file.path
-    const result = await recognizePath(recognizeInput, searchType.value)
+    const result = await recognizePath(recognizeInput)
     if (!result || !result.tmdb_id) {
       showToast('AI 识别失败', 'warning')
       return
@@ -219,10 +220,7 @@ async function handleAIRecognize() {
     searchQuery.value = result.tmdb_name || result.title || searchQuery.value
 
     const aiType = result.media_type === 'tv' ? 'tv' : 'movie'
-    if (searchType.value !== aiType) {
-      searchType.value = aiType
-      aiHint.value = `AI 判断为${aiType === 'movie' ? '电影' : '剧集'}，已自动切换`
-    }
+    aiHint.value = `AI 识别为${aiType === 'movie' ? '电影' : '剧集'}，请选择匹配结果确认`
 
     if (result.season !== null && result.season > 0) {
       season.value = result.season
@@ -235,7 +233,7 @@ async function handleAIRecognize() {
       aiHint.value = `AI 置信度 ${Math.round(result.confidence * 100)}%，建议手动确认`
     }
 
-    const results = await searchTMDB(aiType, result.tmdb_name || result.title)
+    const results = await searchTMDB(result.tmdb_name || result.title)
     candidates.value = results
     selectedCandidate.value = results.find(item => item.id === result.tmdb_id) || results[0] || null
     autoMatchTried.value = true
@@ -282,7 +280,7 @@ async function handleProcess() {
     const result = await processMedia({
       file: props.file,
       candidate: selectedCandidate.value,
-      type: searchType.value,
+      type: selectedMediaType.value,
       season: season.value,
       episode: episode.value,
     })
@@ -313,15 +311,6 @@ async function executeFromPreview() {
 function closePreview() {
   previewVisible.value = false
 }
-
-function goToMatchPage() {
-  if (!props.file) return
-  const file = props.file
-  emit('close')
-  wx.navigateTo({
-    url: `/pages/match/index?path=${encodeURIComponent(file.path)}&kind=${searchType.value}&name=${encodeURIComponent(file.name)}`,
-  })
-}
 </script>
 
 <template>
@@ -336,32 +325,42 @@ function goToMatchPage() {
   >
     <view
       v-if="file"
-      style="height: 88vh; display: flex; flex-direction: column; border-top-left-radius: 24rpx; border-top-right-radius: 24rpx;"
+      class="relative bg-background"
+      style="border-top-left-radius: 24rpx; border-top-right-radius: 24rpx;"
     >
-      <!-- Header -->
-      <view class="flex items-center justify-between px-4" style="height: 88rpx; border-bottom: 1rpx solid var(--color-border);">
-        <text class="text-base font-semibold text-foreground">文件入库详情</text>
+      <!-- Floating top bar -->
+      <view
+        class="absolute top-0 left-0 right-0"
+        style="z-index: 10; height: 88rpx; border-top-left-radius: 24rpx; border-top-right-radius: 24rpx;"
+      >
         <view
-          class="flex items-center justify-center rounded-full bg-card"
-          style="min-width: 60rpx; min-height: 60rpx;"
-          hover-class="opacity-60"
-          @tap="closePopup"
-        >
-          <t-icon name="close" size="32rpx" color="var(--color-foreground)" />
+          class="absolute inset-0 bg-background"
+          style="border-top-left-radius: 24rpx; border-top-right-radius: 24rpx;"
+        />
+        <view class="relative flex items-center justify-between px-3" style="height: 88rpx;">
+          <text class="text-sm font-semibold text-foreground truncate flex-1 pl-1">文件入库详情</text>
+          <view
+            class="flex items-center justify-center rounded-full bg-card shrink-0"
+            style="min-width: 60rpx; min-height: 60rpx;"
+            hover-class="opacity-60"
+            @tap="closePopup"
+          >
+            <t-icon name="close" size="32rpx" color="var(--color-foreground)" />
+          </view>
         </view>
       </view>
 
-      <scroll-view scroll-y style="flex: 1; min-height: 0;">
+      <scroll-view
+        scroll-y
+        style="max-height: calc(85vh - 120rpx - env(safe-area-inset-bottom));"
+      >
+        <view style="height: 88rpx;" />
         <view class="px-4 pt-3 pb-4">
           <!-- File Info -->
           <view class="rounded-xl bg-card p-3">
             <text class="text-sm font-medium text-foreground" style="word-break: break-all;">{{ file.name }}</text>
             <view class="mt-2 flex items-center gap-1.5 flex-wrap">
               <text class="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{{ fmt.formatFileSize(file.size) }}</text>
-              <text
-                class="text-xs px-1.5 py-0.5 rounded"
-                :class="fmt.getFileKindClass(file.kind)"
-              >{{ fmt.getFileKindLabel(file.kind, file.isProcessed, file.hasNfo) }}</text>
               <text v-if="file.parsed.resolution" class="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{{ file.parsed.resolution }}</text>
               <text v-if="file.parsed.codec" class="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{{ file.parsed.codec }}</text>
             </view>
@@ -383,10 +382,10 @@ function goToMatchPage() {
             </view>
             <view class="mt-2 rounded-lg bg-muted p-2">
               <text
-                v-if="fmt.getTargetPath(selectedCandidate, searchType, season)"
+                v-if="fmt.getTargetPath(selectedCandidate, selectedMediaType, season)"
                 class="text-xs text-foreground"
                 style="word-break: break-all; font-family: Menlo, Monaco, Consolas, monospace;"
-              >{{ fmt.getTargetPath(selectedCandidate, searchType, season) }}</text>
+              >{{ fmt.getTargetPath(selectedCandidate, selectedMediaType, season) }}</text>
               <text v-else class="text-xs text-muted-foreground">请选择匹配结果</text>
             </view>
           </view>
@@ -411,8 +410,10 @@ function goToMatchPage() {
                 <t-icon name="search" size="32rpx" color="var(--color-muted-foreground)" />
                 <input
                   :value="searchQuery"
-                  class="flex-1 text-sm text-foreground"
+                  class="flex-1 text-sm"
+                  style="color: var(--color-foreground);"
                   placeholder="搜索 TMDB..."
+                  placeholder-style="color: var(--color-muted-foreground);"
                   @input="onSearchInput"
                   @confirm="handleManualSearch"
                 />
@@ -429,20 +430,11 @@ function goToMatchPage() {
             </view>
 
             <view class="mt-2 flex items-center gap-2">
-              <view class="flex items-center gap-1 rounded-lg bg-muted p-0.5">
-                <view
-                  class="px-2.5 py-1 text-xs rounded-md"
-                  :class="fmt.getSearchTypeClass(searchType, 'movie')"
-                  @tap="setSearchTypeMovie"
-                >电影</view>
-                <view
-                  class="px-2.5 py-1 text-xs rounded-md"
-                  :class="fmt.getSearchTypeClass(searchType, 'tv')"
-                  @tap="setSearchTypeTV"
-                >剧集</view>
+              <view class="text-xs text-muted-foreground">
+                类型由候选结果自动判断
               </view>
 
-              <view v-if="searchType === 'tv'" class="flex items-center gap-2 ml-auto">
+              <view v-if="selectedMediaType === 'tv'" class="flex items-center gap-2 ml-auto">
                 <view class="flex items-center gap-1">
                   <text class="text-xs text-muted-foreground">S</text>
                   <t-stepper
@@ -509,29 +501,35 @@ function goToMatchPage() {
               <text class="text-sm text-muted-foreground">{{ autoMatchTried ? '没有找到候选结果，请尝试修改关键词' : '点击「自动匹配」或「AI 识别」开始' }}</text>
             </view>
 
-            <view v-else class="mt-2 flex flex-wrap gap-2">
+            <view v-else class="mt-2 grid grid-cols-3 gap-1.5">
               <view
                 v-for="c in candidateCards"
                 :key="c.id"
-                class="relative rounded-xl overflow-hidden border-2"
-                style="width: calc(50% - 8rpx);"
+                class="relative rounded-xl overflow-hidden border-2 bg-card"
                 :class="fmt.isSelectedCandidate(selectedCandidate, c.id) ? 'border-primary' : 'border-transparent'"
                 :data-id="c.id"
                 @tap="onSelectCandidate"
               >
                 <MediaPoster
                   :src="c.posterUrl"
-                  height="280rpx"
+                  width="100%"
+                  mode="widthFix"
                   rounded="rounded-none"
                 />
-                <view class="p-2 bg-card">
+                <view
+                  class="absolute top-1 left-1 rounded px-1.5 py-0.5 text-[20rpx] text-white"
+                  :class="c.mediaType === 'movie' ? 'bg-purple-500/90' : 'bg-blue-500/90'"
+                >
+                  {{ c.mediaType === 'movie' ? '电影' : '剧集' }}
+                </view>
+                <view class="p-1.5 bg-card">
                   <text class="text-xs text-foreground" style="overflow: hidden; white-space: nowrap; text-overflow: ellipsis; display: block;">
                     {{ c.displayName }}
                   </text>
                   <text class="text-xs text-muted-foreground">{{ c.displayYear }}</text>
                 </view>
                 <view v-if="fmt.isSelectedCandidate(selectedCandidate, c.id)" class="absolute top-1 right-1">
-                  <t-icon name="check-circle-filled" size="36rpx" color="var(--color-primary)" />
+                  <t-icon name="check-circle-filled" size="30rpx" color="var(--color-primary)" />
                 </view>
               </view>
             </view>
@@ -540,7 +538,7 @@ function goToMatchPage() {
       </scroll-view>
 
       <!-- Bottom Action -->
-      <view class="px-4 pt-2 border-t border-border bg-background">
+      <view class="bg-background px-4 pt-2 pb-2">
         <view class="flex gap-2">
           <view
             class="w-1/3 flex items-center justify-center gap-1 py-3 rounded-xl bg-muted"
@@ -571,11 +569,6 @@ function goToMatchPage() {
             </text>
           </view>
         </view>
-
-        <view class="mt-2 text-center" hover-class="opacity-60" @tap="goToMatchPage">
-          <text class="text-xs text-primary">前往完整匹配页面 →</text>
-        </view>
-        <view class="h-[calc(12rpx+env(safe-area-inset-bottom))]"></view>
       </view>
     </view>
   </t-popup>

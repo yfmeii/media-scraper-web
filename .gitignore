@@ -6,6 +6,7 @@ dist/
 frontend/build/
 frontend/.svelte-kit/
 client/web/.svelte-kit/
+client/web/build/
 public/
 *.tsbuildinfo
 

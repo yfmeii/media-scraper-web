@@ -148,6 +148,5 @@ function goLibrary() {
     </scroll-view>
 
     <TabBar />
-    <t-toast id="t-toast" />
   </view>
 </template>

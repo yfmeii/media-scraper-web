@@ -6,7 +6,6 @@ import { useTabStore } from '@/stores/tab'
 import { useToast } from '@/hooks/useToast'
 import { useDialog } from '@/hooks/useDialog'
 import { processMedia } from '@/hooks/useMediaProcess'
-import { normalizeMediaKind } from '@/utils/format'
 import EmptyState from '@/components/EmptyState/index.vue'
 import TabBar from '@/components/TabBar/index.vue'
 import InboxFileDetail from '@/components/InboxFileDetail/index.vue'
@@ -21,7 +20,6 @@ const refreshing = ref(false)
 const files = ref<MediaFile[]>([])
 const loading = ref(true)
 const searchKeyword = ref('')
-const filterKind = ref<string>('all')
 const selectedPaths = ref<string[]>([])
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -36,9 +34,6 @@ const filteredFiles = computed(() => {
   if (searchKeyword.value) {
     const kw = searchKeyword.value.toLowerCase()
     list = list.filter(f => f.name.toLowerCase().includes(kw))
-  }
-  if (filterKind.value !== 'all') {
-    list = list.filter(f => f.kind === filterKind.value)
   }
   return list
 })
@@ -120,13 +115,6 @@ function onSearch(e: WechatMiniprogram.CustomEvent) {
   searchTimer = setTimeout(() => {
     searchKeyword.value = value
   }, 120)
-}
-
-function onFilterTap(e: WechatMiniprogram.CustomEvent) {
-  const kind = (e.currentTarget as { dataset?: { kind?: string } })?.dataset?.kind
-  if (kind === 'all' || kind === 'movie' || kind === 'tv' || kind === 'unknown') {
-    filterKind.value = kind
-  }
 }
 
 // ── Detail Popup ──
@@ -229,7 +217,6 @@ async function batchAutoProcess() {
       setProgress('匹配中')
       const matchResult = await autoMatch(
         file.path,
-        normalizeMediaKind(file.kind),
         file.parsed.title,
         file.parsed.year,
       )
@@ -237,14 +224,18 @@ async function batchAutoProcess() {
 
       setProgress('入库中')
       const match = matchResult.result
+      const matchType = match.mediaType === 'tv' || match.mediaType === 'movie'
+        ? match.mediaType
+        : (file.parsed.season || file.parsed.episode ? 'tv' : 'movie')
       const result = await processMedia({
         file,
         candidate: {
           id: match.id,
           name: match.name,
           title: match.name,
+          mediaType: match.mediaType,
         },
-        type: file.kind === 'tv' ? 'tv' : 'movie',
+        type: matchType,
         season: file.parsed.season || 1,
         episode: file.parsed.episode || 1,
       })
@@ -259,7 +250,7 @@ async function batchAIProcess() {
     count => `将对选中的 ${count} 个文件使用 AI 自动识别并入库，是否继续？`,
     async (file, { setProgress }) => {
       setProgress('AI 识别中')
-      const aiResult = await recognizePath(file.path, normalizeMediaKind(file.kind))
+      const aiResult = await recognizePath(file.path)
       if (!aiResult?.tmdb_id) return false
 
       setProgress('入库中')
@@ -286,35 +277,9 @@ async function batchAIProcess() {
   <view style="height: 100vh; display: flex; flex-direction: column; overflow: hidden;">
     <t-navbar title="收件箱" :fixed="false" />
 
-    <!-- Search & Filter -->
+    <!-- Search -->
     <view class="bg-background px-4 pt-2 pb-2">
       <t-search :value="searchKeyword" placeholder="搜索文件名..." shape="round" @change="onSearch" />
-      <view class="mt-2 flex gap-2">
-        <view
-          class="px-2.5 py-1 text-xs rounded-lg"
-          :class="fmt.getFilterTabClass(filterKind, 'all')"
-          data-kind="all"
-          @tap="onFilterTap"
-        >全部</view>
-        <view
-          class="px-2.5 py-1 text-xs rounded-lg"
-          :class="fmt.getFilterTabClass(filterKind, 'movie')"
-          data-kind="movie"
-          @tap="onFilterTap"
-        >电影</view>
-        <view
-          class="px-2.5 py-1 text-xs rounded-lg"
-          :class="fmt.getFilterTabClass(filterKind, 'tv')"
-          data-kind="tv"
-          @tap="onFilterTap"
-        >剧集</view>
-        <view
-          class="px-2.5 py-1 text-xs rounded-lg"
-          :class="fmt.getFilterTabClass(filterKind, 'unknown')"
-          data-kind="unknown"
-          @tap="onFilterTap"
-        >未知</view>
-      </view>
     </view>
 
     <!-- File List -->
@@ -382,10 +347,6 @@ async function batchAIProcess() {
                     </view>
                     <view class="mt-1 flex items-center gap-1">
                       <text class="text-xs text-muted-foreground">{{ fmt.formatFileSize(file.size) }}</text>
-                      <text
-                        class="text-xs px-1 rounded"
-                        :class="fmt.getFileKindClass(file.kind)"
-                      >{{ fmt.getFileKindLabel(file.kind, file.isProcessed, file.hasNfo) }}</text>
                     </view>
                   </view>
                   <!-- Status indicators -->
@@ -451,6 +412,5 @@ async function batchAIProcess() {
     </view>
 
     <TabBar v-if="!hasSelection" />
-    <t-toast id="t-toast" />
   </view>
 </template>

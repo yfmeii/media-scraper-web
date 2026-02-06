@@ -229,6 +229,5 @@ const statusColor = computed(() => {
     </scroll-view>
 
     <TabBar />
-    <t-toast id="t-toast" />
   </view>
 </template>

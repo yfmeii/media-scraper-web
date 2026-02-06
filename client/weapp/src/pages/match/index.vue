@@ -77,7 +77,7 @@ async function doAutoMatch() {
   if (!filePath.value) return
   matchLoading.value = true
   try {
-    const result = await autoMatch(filePath.value, searchType.value)
+    const result = await autoMatch(filePath.value, fileName.value || undefined)
     matchResult.value = result
     if (result.matched && result.result) {
       selectedResult.value = {
@@ -340,7 +340,6 @@ async function onProcess() {
       <view class="h-[calc(20rpx+env(safe-area-inset-bottom))]"></view>
     </view>
 
-    <t-toast id="t-toast" />
     <t-dialog id="t-dialog" />
   </view>
 </template>

@@ -5,6 +5,7 @@ const TMDB_BASE = 'https://api.themoviedb.org/3';
 
 export interface TMDBSearchResult {
   id: number;
+  media_type?: 'tv' | 'movie';
   name?: string;
   title?: string;
   original_name?: string;
@@ -77,7 +78,7 @@ export async function searchTV(query: string, year?: number, language: string = 
   
   const res = await fetch(`${TMDB_BASE}/search/tv?${params}`);
   const data = await res.json();
-  return data.results || [];
+  return (data.results || []).map((item: TMDBSearchResult) => ({ ...item, media_type: 'tv' as const }));
 }
 
 // Search movies
@@ -91,7 +92,36 @@ export async function searchMovie(query: string, year?: number, language: string
   
   const res = await fetch(`${TMDB_BASE}/search/movie?${params}`);
   const data = await res.json();
-  return data.results || [];
+  return (data.results || []).map((item: TMDBSearchResult) => ({ ...item, media_type: 'movie' as const }));
+}
+
+// Search mixed media (movie + tv)
+export async function searchMulti(query: string, year?: number, language: string = DEFAULT_LANGUAGE): Promise<TMDBSearchResult[]> {
+  const params = new URLSearchParams({
+    api_key: TMDB_API_KEY,
+    query,
+    language,
+    include_adult: 'false',
+  });
+
+  const res = await fetch(`${TMDB_BASE}/search/multi?${params}`);
+  const data = await res.json();
+  const results = (data.results || []) as Array<TMDBSearchResult & { media_type?: string }>;
+
+  return results
+    .filter(item => item.media_type === 'tv' || item.media_type === 'movie')
+    .filter((item) => {
+      if (!year) return true;
+      const date = item.first_air_date || item.release_date || '';
+      if (!date) return true;
+      const resultYear = Number.parseInt(date.split('-')[0] || '', 10);
+      if (!Number.isInteger(resultYear)) return true;
+      return Math.abs(resultYear - year) <= 1;
+    })
+    .map(item => ({
+      ...item,
+      media_type: item.media_type as 'tv' | 'movie',
+    }));
 }
 
 // Get TV show details
@@ -196,6 +226,25 @@ export async function findBestMatch(
     result: scored[0].result,
     score: scored[0].score,
     candidates: results.slice(0, 5),
+  };
+}
+
+// Get best match from mixed search results (movie + tv)
+export async function findBestMatchMixed(
+  title: string,
+  year?: number,
+  language: string = DEFAULT_LANGUAGE
+): Promise<{ result: TMDBSearchResult; score: number; candidates: TMDBSearchResult[] } | null> {
+  const results = await searchMulti(title, year, language);
+  if (results.length === 0) return null;
+
+  const scored = results.map(result => ({ result, score: calculateScore(title, year, result) }));
+  scored.sort((a, b) => b.score - a.score);
+
+  return {
+    result: scored[0].result,
+    score: scored[0].score,
+    candidates: scored.slice(0, 10).map(item => item.result),
   };
 }
 

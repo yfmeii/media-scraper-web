@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono';
 import { DEFAULT_LANGUAGE, SUB_EXTS } from '@media-scraper/shared';
-import { searchTV, searchMovie, findBestMatch, getPosterUrl, type TMDBSearchResult } from '../lib/tmdb';
+import { searchTV, searchMovie, searchMulti, findBestMatch, findBestMatchMixed, getPosterUrl, type TMDBSearchResult } from '../lib/tmdb';
 import { recognizePath } from '../lib/dify';
 import { processTVShow, processMovie, refreshMetadata, generatePreviewPlan } from '../lib/scraper';
 import { parseFilename } from '../lib/scanner';
@@ -8,12 +8,17 @@ import { MEDIA_PATHS } from '../lib/config';
 
 export const scrapeRoutes = new Hono();
 
-type SearchKind = 'tv' | 'movie';
+type SearchKind = 'tv' | 'movie' | 'multi';
 
 function mapSearchResult(kind: SearchKind, result: TMDBSearchResult) {
-  if (kind === 'tv') {
+  const mediaType = result.media_type === 'tv' || result.media_type === 'movie'
+    ? result.media_type
+    : (kind === 'tv' ? 'tv' : 'movie');
+
+  if (mediaType === 'tv') {
     return {
       id: result.id,
+      mediaType: 'tv' as const,
       name: result.name,
       originalName: result.original_name,
       overview: result.overview?.slice(0, 200),
@@ -25,6 +30,7 @@ function mapSearchResult(kind: SearchKind, result: TMDBSearchResult) {
 
   return {
     id: result.id,
+    mediaType: 'movie' as const,
     title: result.title,
     originalTitle: result.original_title,
     overview: result.overview?.slice(0, 200),
@@ -46,7 +52,9 @@ async function handleSearch(c: Context, kind: SearchKind) {
   const parsedYear = year ? parseInt(year, 10) : undefined;
   const results = kind === 'tv'
     ? await searchTV(query, parsedYear, language)
-    : await searchMovie(query, parsedYear, language);
+    : kind === 'movie'
+      ? await searchMovie(query, parsedYear, language)
+      : await searchMulti(query, parsedYear, language);
 
   return c.json({
     success: true,
@@ -57,6 +65,7 @@ async function handleSearch(c: Context, kind: SearchKind) {
 // Search TMDB
 scrapeRoutes.get('/search/tv', async c => handleSearch(c, 'tv'));
 scrapeRoutes.get('/search/movie', async c => handleSearch(c, 'movie'));
+scrapeRoutes.get('/search/multi', async c => handleSearch(c, 'multi'));
 
 // AI 路径识别 - 使用 Dify 完整工作流（解析路径 + TMDB 搜索 + AI 匹配）
 scrapeRoutes.post('/recognize', async (c) => {
@@ -90,10 +99,11 @@ scrapeRoutes.post('/recognize', async (c) => {
 // Auto-match a file
 scrapeRoutes.post('/match', async (c) => {
   const body = await c.req.json();
-  const { path, kind, title, year, language = DEFAULT_LANGUAGE } = body;
+  const { path, kind: inputKind, title, year, language = DEFAULT_LANGUAGE } = body;
+  const kind: 'tv' | 'movie' | undefined = inputKind === 'tv' || inputKind === 'movie' ? inputKind : undefined;
   
-  if (!path || !kind) {
-    return c.json({ success: false, error: 'Missing path or kind' }, 400);
+  if (!path) {
+    return c.json({ success: false, error: 'Missing path' }, 400);
   }
   
   // Parse filename if title not provided
@@ -105,7 +115,9 @@ scrapeRoutes.post('/match', async (c) => {
     return c.json({ success: false, error: 'Could not determine title' }, 400);
   }
   
-  const match = await findBestMatch(kind, searchTitle, searchYear, language);
+  const match = kind
+    ? await findBestMatch(kind, searchTitle, searchYear, language)
+    : await findBestMatchMixed(searchTitle, searchYear, language);
   
   if (!match) {
     return c.json({
@@ -129,6 +141,7 @@ scrapeRoutes.post('/match', async (c) => {
       result: {
         id: match.result.id,
         name: match.result.name || match.result.title,
+        mediaType: match.result.media_type || kind || 'movie',
         originalName: match.result.original_name || match.result.original_title,
         date: match.result.first_air_date || match.result.release_date,
         posterPath: getPosterUrl(match.result.poster_path, 'w185'),
@@ -137,6 +150,7 @@ scrapeRoutes.post('/match', async (c) => {
       candidates: match.candidates.slice(0, 5).map(r => ({
         id: r.id,
         name: r.name || r.title,
+        mediaType: r.media_type || kind || 'movie',
         originalName: r.original_name || r.original_title,
         date: r.first_air_date || r.release_date,
         posterPath: getPosterUrl(r.poster_path, 'w185'),
