@@ -1,8 +1,24 @@
 /**
  * 格式化工具函数
+ *
+ * Common formatting utilities are re-exported from @media-scraper/shared.
+ * Only web-specific helpers (task UI styles, etc.) are defined here.
  */
 import { TASK_STATUS_LABELS, TASK_TYPE_LABELS } from '@media-scraper/shared';
 import type { TaskStatus, TaskType } from '@media-scraper/shared';
+
+// Re-export shared formatting utilities so existing import paths continue to work
+export {
+  formatFileSize,
+  formatDate,
+  formatSeason,
+  formatEpisode,
+  formatSeasonEpisode,
+  formatRating,
+  formatRuntime,
+  getMediaKindLabel,
+  normalizeMediaKind,
+} from '@media-scraper/shared';
 
 const TASK_STATUS_STYLES: Record<TaskStatus, { icon: string; class: string }> = {
   success: { icon: '✅', class: 'text-green-500' },
@@ -17,58 +33,11 @@ const TASK_STATUS_ALIASES: Record<string, TaskStatus> = {
 };
 
 /**
- * 格式化文件大小
- */
-export function formatFileSize(bytes: number | undefined): string {
-  if (!bytes) return '?';
-  
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let unitIndex = 0;
-  let size = bytes;
-  
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024;
-    unitIndex++;
-  }
-  
-  return `${size.toFixed(unitIndex > 0 ? 1 : 0)} ${units[unitIndex]}`;
-}
-
-/**
- * 格式化时间戳
+ * 格式化时间（仅时分）- Web 专用
  */
 export function formatTime(dateValue: string | number | Date): string {
   const date = new Date(dateValue);
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-}
-
-/**
- * 格式化日期
- */
-export function formatDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
-
-/**
- * 格式化季数
- */
-export function formatSeason(season: number): string {
-  return `Season ${String(season).padStart(2, '0')}`;
-}
-
-/**
- * 格式化集数
- */
-export function formatEpisode(episode: number): string {
-  return `E${String(episode).padStart(2, '0')}`;
-}
-
-/**
- * 格式化季集号
- */
-export function formatSeasonEpisode(season: number, episode: number): string {
-  return `S${String(season).padStart(2, '0')}${formatEpisode(episode)}`;
 }
 
 /**

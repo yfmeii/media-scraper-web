@@ -1,38 +1,17 @@
 /**
  * Server configuration store using wevu's built-in Pinia-like Store.
  * Provides reactive shared state across all pages with localStorage persistence.
+ *
+ * Uses `utils/config.ts` as the raw storage layer to avoid duplication.
  */
 import { computed, defineStore, ref } from 'wevu'
+import type { ServerConfig } from '@/utils/config'
+import { clearServerConfig, getServerConfig, saveServerConfig } from '@/utils/config'
 import { testConnection } from '@/utils/request'
-
-const STORAGE_KEY = 'server_config'
-
-interface ServerConfig {
-  url: string
-  apiKey?: string
-}
-
-function readConfig(): ServerConfig | null {
-  try {
-    const raw = wx.getStorageSync(STORAGE_KEY)
-    if (raw) return JSON.parse(raw) as ServerConfig
-  }
-  catch { /* empty */ }
-  return null
-}
-
-function writeConfig(config: ServerConfig | null): void {
-  if (config) {
-    wx.setStorageSync(STORAGE_KEY, JSON.stringify(config))
-  }
-  else {
-    wx.removeStorageSync(STORAGE_KEY)
-  }
-}
 
 export const useServerStore = defineStore('server', () => {
   // ── State ──
-  const config = ref<ServerConfig | null>(readConfig())
+  const config = ref<ServerConfig | null>(getServerConfig())
   const connectionStatus = ref<'idle' | 'checking' | 'online' | 'offline'>('idle')
   const latency = ref(0)
 
@@ -51,14 +30,14 @@ export const useServerStore = defineStore('server', () => {
   function save(url: string, apiKey?: string): void {
     const newConfig: ServerConfig = { url, apiKey }
     config.value = newConfig
-    writeConfig(newConfig)
+    saveServerConfig(newConfig)
   }
 
   function clear(): void {
     config.value = null
     connectionStatus.value = 'idle'
     latency.value = 0
-    writeConfig(null)
+    clearServerConfig()
   }
 
   async function checkConnection(): Promise<boolean> {

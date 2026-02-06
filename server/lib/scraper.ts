@@ -1,6 +1,7 @@
 import { mkdir, rename, writeFile, rm, stat, readdir } from 'fs/promises';
 import { join, dirname, extname, basename } from 'path';
 import { DEFAULT_LANGUAGE } from '@media-scraper/shared';
+import { SUB_EXTS } from '@media-scraper/shared';
 import { NFO_GENERATOR, MEDIA_PATHS } from './config';
 import { getTVDetails, getMovieDetails, getSeasonDetails, getPosterUrl, getBackdropUrl, type TMDBShowDetails, type TMDBMovieDetails, type TMDBSeasonDetails } from './tmdb';
 import { extractTmdbIdFromNfo, parseFilename } from './scanner';
@@ -167,7 +168,7 @@ export async function processTVShow(
       // Move related subtitle files
       const srcDir = dirname(ep.source);
       const srcName = basename(ep.source, ext);
-      for (const subExt of ['.srt', '.ass', '.ssa', '.sub']) {
+      for (const subExt of SUB_EXTS) {
         const subPath = join(srcDir, srcName + subExt);
         try {
           await rename(subPath, join(seasonDir, destName.replace(ext, subExt)));
@@ -256,7 +257,7 @@ export async function processMovie(
     // Move related subtitle files
     const srcDir = dirname(sourcePath);
     const srcName = basename(sourcePath, ext);
-    for (const subExt of ['.srt', '.ass', '.ssa', '.sub']) {
+    for (const subExt of SUB_EXTS) {
       const subPath = join(srcDir, srcName + subExt);
       try {
         await rename(subPath, join(movieDir, `${folderName}${subExt}`));

@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { DEFAULT_LANGUAGE } from '@media-scraper/shared';
+import { DEFAULT_LANGUAGE, SUB_EXTS } from '@media-scraper/shared';
 import { searchTV, searchMovie, findBestMatch, getPosterUrl } from '../lib/tmdb';
 import { recognizePath } from '../lib/dify';
 import { processTVShow, processMovie, refreshMetadata, generatePreviewPlan } from '../lib/scraper';
@@ -201,7 +201,7 @@ scrapeRoutes.post('/move-to-inbox', async (c) => {
     const srcName = basename(sourcePath, basename(sourcePath).match(/\.[^.]+$/)?.[0] || '');
     
     // Move subtitle files
-    for (const subExt of ['.srt', '.ass', '.ssa', '.sub']) {
+    for (const subExt of SUB_EXTS) {
       try {
         const subSrc = pathJoin(srcDir, srcName + subExt);
         const subDest = pathJoin(MEDIA_PATHS.inbox, srcName + subExt);

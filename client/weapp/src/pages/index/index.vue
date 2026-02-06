@@ -1,22 +1,23 @@
 <script setup lang="ts">
 import type { Stats } from '@media-scraper/shared'
 import { onShow, ref } from 'wevu'
-import { isServerConfigured } from '@/utils/config'
 import { fetchStats } from '@/utils/api'
 import { useTabStore } from '@/stores/tab'
+import { useServerStore } from '@/stores/server'
 import { useToast } from '@/hooks/useToast'
 import TabBar from '@/components/TabBar/index.vue'
 
 definePageJson({ disableScroll: true })
 
 const tabStore = useTabStore()
+const serverStore = useServerStore()
 const { showToast } = useToast()
 const stats = ref<Stats | null>(null)
 const loading = ref(true)
 const refreshing = ref(false)
 
 async function loadStats() {
-  if (!isServerConfigured()) {
+  if (!serverStore.isConfigured) {
     wx.redirectTo({ url: '/pages/setup/index' })
     return
   }

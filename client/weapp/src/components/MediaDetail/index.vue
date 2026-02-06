@@ -194,48 +194,21 @@ async function handleRefreshEpisode(season: number, episode: number) {
   }
 }
 
-async function handleMoveMovieToInbox() {
-  if (!props.movie) return
+async function handleMoveToInbox(sourcePath: string, isMovie = false) {
+  const label = isMovie ? '电影' : '集'
   const confirmed = await confirm({
     title: '移回收件箱',
-    content: '将该电影及关联字幕移回收件箱，并删除对应的 NFO 文件。确定继续？',
+    content: `将该${label}及关联字幕移回收件箱，并删除对应的 NFO 文件。确定继续？`,
     confirmBtn: '移回',
   })
   if (!confirmed) return
 
   operationLoading.value = true
   try {
-    const result = await moveToInbox(props.movie.file.path)
+    const result = await moveToInbox(sourcePath)
     if (result.success) {
       showToast('已移回收件箱')
-      emit('close')
-      emit('refresh')
-    }
-    else {
-      showToast(result.message || '操作失败', 'error')
-    }
-  }
-  catch {
-    showToast('操作失败', 'error')
-  }
-  finally {
-    operationLoading.value = false
-  }
-}
-
-async function handleMoveEpisodeToInbox(episodePath: string) {
-  const confirmed = await confirm({
-    title: '移回收件箱',
-    content: '将该集及关联字幕移回收件箱，并删除对应的 NFO 文件。确定继续？',
-    confirmBtn: '移回',
-  })
-  if (!confirmed) return
-
-  operationLoading.value = true
-  try {
-    const result = await moveToInbox(episodePath)
-    if (result.success) {
-      showToast('已移回收件箱')
+      if (isMovie) emit('close')
       emit('refresh')
     }
     else {
@@ -261,7 +234,7 @@ async function onEpisodeTap(ep: MediaFile) {
   }
 
   items.push('移回收件箱')
-  actions.push(() => handleMoveEpisodeToInbox(ep.path))
+  actions.push(() => handleMoveToInbox(ep.path))
 
   try {
     const res = await new Promise<WechatMiniprogram.ShowActionSheetSuccessCallbackResult>((resolve, reject) => {
@@ -518,7 +491,7 @@ function onClose() {
           v-if="movie"
           class="mt-2 flex items-center justify-center gap-1 py-2.5 rounded-xl border border-destructive/30"
           hover-class="bg-destructive/5"
-          @tap="handleMoveMovieToInbox"
+          @tap="() => { if (movie) handleMoveToInbox(movie.file.path, true) }"
         >
           <t-icon name="inbox" size="32rpx" color="var(--color-destructive)" />
           <text class="text-sm font-medium text-destructive">移回收件箱</text>

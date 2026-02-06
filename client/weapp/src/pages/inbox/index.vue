@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import type { MediaFile } from '@media-scraper/shared'
 import { computed, onShow, ref } from 'wevu'
-import { fetchInbox } from '@/utils/api'
+import { autoMatch, fetchInbox, processMovie, processTV, recognizePath } from '@/utils/api'
 import { useTabStore } from '@/stores/tab'
 import { useToast } from '@/hooks/useToast'
+import { normalizeMediaKind } from '@/utils/format'
 import EmptyState from '@/components/EmptyState/index.vue'
 import TabBar from '@/components/TabBar/index.vue'
+import InboxFileDetail from '@/components/InboxFileDetail/index.vue'
 
 definePageJson({ disableScroll: true })
 
@@ -17,7 +19,6 @@ const files = ref<MediaFile[]>([])
 const loading = ref(true)
 const searchKeyword = ref('')
 const filterKind = ref<string>('all')
-const selectMode = ref(false)
 const selectedPaths = ref<string[]>([])
 
 const filteredFiles = computed(() => {
@@ -33,15 +34,41 @@ const filteredFiles = computed(() => {
 })
 
 const selectedCount = computed(() => selectedPaths.value.length)
+const hasSelection = computed(() => selectedCount.value > 0)
 
-function isSelected(path: string): boolean {
-  return selectedPaths.value.indexOf(path) >= 0
+/** Map for template: path -> boolean */
+const selectedMap = computed(() => {
+  const map: Record<string, boolean> = {}
+  for (const p of selectedPaths.value) {
+    map[p] = true
+  }
+  return map
+})
+
+function toggleSelect(path: string) {
+  const idx = selectedPaths.value.indexOf(path)
+  if (idx >= 0) {
+    selectedPaths.value.splice(idx, 1)
+  }
+  else {
+    selectedPaths.value.push(path)
+  }
+}
+
+function selectAll() {
+  if (selectedPaths.value.length === filteredFiles.value.length) {
+    selectedPaths.value = []
+  }
+  else {
+    selectedPaths.value = filteredFiles.value.map(f => f.path)
+  }
 }
 
 async function loadInbox() {
   loading.value = true
   try {
     files.value = await fetchInbox()
+    selectedPaths.value = selectedPaths.value.filter(p => files.value.some(f => f.path === p))
   }
   catch {
     showToast('加载失败', 'error')
@@ -66,35 +93,187 @@ function onSearch(e: WechatMiniprogram.CustomEvent) {
   searchKeyword.value = e.detail.value || ''
 }
 
-function onFileClick(file: MediaFile) {
-  if (selectMode.value) {
-    toggleSelect(file.path)
-    return
-  }
-  wx.navigateTo({
-    url: `/pages/match/index?path=${encodeURIComponent(file.path)}&kind=${file.kind}&name=${encodeURIComponent(file.name)}`,
+// ── Detail Popup ──
+const detailVisible = ref(false)
+const detailFile = ref<MediaFile | null>(null)
+const detailRef = ref<InstanceType<typeof InboxFileDetail> | null>(null)
+
+function openDetail(file: MediaFile) {
+  detailFile.value = file
+  detailVisible.value = true
+  // Wait next tick for component to mount, then init
+  setTimeout(() => {
+    detailRef.value?.initForFile(file)
+  }, 50)
+}
+
+function closeDetail() {
+  detailVisible.value = false
+}
+
+async function onProcessed() {
+  await loadInbox()
+}
+
+// ── Batch Operations ──
+const batchProcessing = ref(false)
+const batchProgress = ref('')
+const fileStatus = ref<Record<string, 'processing' | 'success' | 'failed'>>({})
+
+async function batchAutoProcess() {
+  const selected = files.value.filter(f => selectedPaths.value.includes(f.path))
+  if (!selected.length) return
+
+  const confirmed = await new Promise<boolean>((resolve) => {
+    wx.showModal({
+      title: '一键匹配入库',
+      content: `将对选中的 ${selected.length} 个文件自动匹配 TMDB 并入库，是否继续？`,
+      confirmText: '开始',
+      success: (res) => resolve(res.confirm),
+    })
   })
-}
+  if (!confirmed) return
 
-function onFileLongPress(file: MediaFile) {
-  selectMode.value = true
-  selectedPaths.value = [file.path]
-  wx.vibrateShort({ type: 'medium' })
-}
+  batchProcessing.value = true
+  let successCount = 0
+  let failCount = 0
+  fileStatus.value = {}
 
-function toggleSelect(path: string) {
-  const idx = selectedPaths.value.indexOf(path)
-  if (idx >= 0) {
-    selectedPaths.value.splice(idx, 1)
+  for (let i = 0; i < selected.length; i++) {
+    const file = selected[i]
+    batchProgress.value = `匹配中 ${i + 1}/${selected.length}...`
+    fileStatus.value[file.path] = 'processing'
+
+    try {
+      const matchResult = await autoMatch(
+        file.path,
+        normalizeMediaKind(file.kind),
+        file.parsed.title,
+        file.parsed.year,
+      )
+
+      if (!matchResult || !matchResult.matched || !matchResult.result) {
+        failCount++
+        fileStatus.value[file.path] = 'failed'
+        continue
+      }
+
+      const match = matchResult.result
+      batchProgress.value = `入库中 ${i + 1}/${selected.length}...`
+
+      if (file.kind === 'tv') {
+        const result = await processTV({
+          sourcePath: file.path,
+          tmdbId: match.id,
+          showName: match.name || file.parsed.title || file.name,
+          season: file.parsed.season || 1,
+          episodes: [{
+            source: file.path,
+            episode: file.parsed.episode || 1,
+            episodeEnd: file.parsed.episodeEnd,
+          }],
+        })
+        fileStatus.value[file.path] = result.success ? 'success' : 'failed'
+        if (result.success) successCount++
+        else failCount++
+      }
+      else {
+        const result = await processMovie({
+          sourcePath: file.path,
+          tmdbId: match.id,
+        })
+        fileStatus.value[file.path] = result.success ? 'success' : 'failed'
+        if (result.success) successCount++
+        else failCount++
+      }
+    }
+    catch {
+      failCount++
+      fileStatus.value[file.path] = 'failed'
+    }
   }
-  else {
-    selectedPaths.value.push(path)
-  }
-}
 
-function exitSelectMode() {
-  selectMode.value = false
+  batchProcessing.value = false
+  batchProgress.value = ''
+  fileStatus.value = {}
   selectedPaths.value = []
+  showToast(`完成：${successCount} 成功，${failCount} 失败`)
+  await loadInbox()
+}
+
+async function batchAIProcess() {
+  const selected = files.value.filter(f => selectedPaths.value.includes(f.path))
+  if (!selected.length) return
+
+  const confirmed = await new Promise<boolean>((resolve) => {
+    wx.showModal({
+      title: '一键 AI 识别入库',
+      content: `将对选中的 ${selected.length} 个文件使用 AI 自动识别并入库，是否继续？`,
+      confirmText: '开始',
+      success: (res) => resolve(res.confirm),
+    })
+  })
+  if (!confirmed) return
+
+  batchProcessing.value = true
+  let successCount = 0
+  let failCount = 0
+  fileStatus.value = {}
+
+  for (let i = 0; i < selected.length; i++) {
+    const file = selected[i]
+    batchProgress.value = `AI 识别中 ${i + 1}/${selected.length}...`
+    fileStatus.value[file.path] = 'processing'
+
+    try {
+      const kind = normalizeMediaKind(file.kind)
+      const aiResult = await recognizePath(file.path, kind)
+
+      if (!aiResult || !aiResult.tmdb_id) {
+        failCount++
+        fileStatus.value[file.path] = 'failed'
+        continue
+      }
+
+      batchProgress.value = `入库中 ${i + 1}/${selected.length}...`
+
+      if (aiResult.media_type === 'tv') {
+        const result = await processTV({
+          sourcePath: file.path,
+          tmdbId: aiResult.tmdb_id,
+          showName: aiResult.tmdb_name || aiResult.title || file.name,
+          season: aiResult.season || 1,
+          episodes: [{
+            source: file.path,
+            episode: aiResult.episode || 1,
+          }],
+        })
+        fileStatus.value[file.path] = result.success ? 'success' : 'failed'
+        if (result.success) successCount++
+        else failCount++
+      }
+      else {
+        const result = await processMovie({
+          sourcePath: file.path,
+          tmdbId: aiResult.tmdb_id,
+        })
+        fileStatus.value[file.path] = result.success ? 'success' : 'failed'
+        if (result.success) successCount++
+        else failCount++
+      }
+    }
+    catch {
+      failCount++
+      fileStatus.value[file.path] = 'failed'
+    }
+  }
+
+  batchProcessing.value = false
+  batchProgress.value = ''
+  fileStatus.value = {}
+  selectedPaths.value = []
+  showToast(`完成：${successCount} 成功，${failCount} 失败`)
+  await loadInbox()
 }
 
 </script>
@@ -104,7 +283,7 @@ function exitSelectMode() {
   <view style="height: 100vh; display: flex; flex-direction: column; overflow: hidden;">
     <t-navbar title="收件箱" :fixed="false" />
 
-    <!-- Search & Filter (always visible header) -->
+    <!-- Search & Filter -->
     <view class="bg-background px-4 pt-2 pb-2">
       <t-search :value="searchKeyword" placeholder="搜索文件名..." shape="round" @change="onSearch" />
       <view class="mt-2 flex gap-2">
@@ -131,7 +310,7 @@ function exitSelectMode() {
       </view>
     </view>
 
-    <!-- File List (scrollable content) -->
+    <!-- File List -->
     <scroll-view
       scroll-y
       style="flex: 1; min-height: 0;"
@@ -145,13 +324,12 @@ function exitSelectMode() {
           <view class="pl-1 text-xs font-medium text-muted-foreground mt-3 mb-1">📥 待处理文件</view>
           <view class="mt-2 rounded-xl bg-card">
             <view v-for="i in 5" :key="i">
-              <view class="p-3 flex items-start">
+              <view class="p-3 flex items-center">
+                <view class="mr-3 h-5 w-5 rounded bg-muted skeleton-pulse shrink-0" />
                 <view class="flex-1 min-w-0">
                   <view class="h-3.5 w-4/5 rounded bg-muted skeleton-pulse" />
                   <view class="mt-2 h-2.5 w-3/5 rounded bg-muted skeleton-pulse" />
-                  <view class="mt-1.5 h-2.5 w-2/5 rounded bg-muted skeleton-pulse" />
                 </view>
-                <view class="ml-2 mt-0.5 h-4 w-4 rounded bg-muted skeleton-pulse shrink-0" />
               </view>
               <view v-if="i < 5" class="h-px bg-border mx-3" />
             </view>
@@ -165,36 +343,45 @@ function exitSelectMode() {
 
         <!-- File List -->
         <block v-else>
-          <view class="pl-1 text-xs font-medium text-muted-foreground mt-3 mb-1">
-            📥 待处理文件 ({{ filteredFiles.length }})
+          <view class="pl-1 text-xs font-medium text-muted-foreground mt-3 mb-1 flex items-center justify-between pr-1">
+            <text>📥 待处理文件 ({{ filteredFiles.length }})</text>
+            <text class="text-primary" @tap="selectAll">{{ selectedPaths.length === filteredFiles.length ? '取消全选' : '全选' }}</text>
           </view>
           <view class="mt-2 rounded-xl bg-card">
             <view
               v-for="(file, idx) in filteredFiles"
               :key="file.path"
-              hover-class="opacity-70"
-              @tap="() => onFileClick(file)"
-              @longpress="() => onFileLongPress(file)"
             >
-              <view
-                class="p-3 flex items-start"
-                :class="{ 'bg-accent rounded-xl': isSelected(file.path) }"
-              >
-                <view v-if="selectMode" class="mr-2 mt-0.5">
-                  <t-checkbox :checked="isSelected(file.path)" />
+              <view class="flex items-center">
+                <!-- Checkbox -->
+                <view class="pl-3 py-3 pr-2 shrink-0" @tap="() => toggleSelect(file.path)">
+                  <t-checkbox :checked="selectedMap[file.path]" style="--td-checkbox-icon-size: 36rpx;" />
                 </view>
-                <view class="flex-1 min-w-0">
-                  <view class="text-sm font-medium text-foreground" style="overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">
-                    {{ fmt.truncateFilename(file.name, 36) }}
+                <!-- Content -->
+                <view
+                  class="flex-1 min-w-0 py-3 pr-3 flex items-center"
+                  hover-class="opacity-70"
+                  @tap="() => openDetail(file)"
+                >
+                  <view class="flex-1 min-w-0">
+                    <view class="text-sm font-medium text-foreground" style="overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">
+                      {{ fmt.truncateFilename(file.name, 32) }}
+                    </view>
+                    <view class="mt-1 flex items-center gap-1">
+                      <text class="text-xs text-muted-foreground">{{ fmt.formatFileSize(file.size) }}</text>
+                      <text class="text-xs px-1 rounded"
+                        :class="file.kind === 'tv' ? 'bg-muted text-blue-600' : file.kind === 'movie' ? 'bg-muted text-purple-600' : 'bg-muted text-muted-foreground'"
+                      >{{ fmt.getMediaKindLabel(file.kind) }}</text>
+                    </view>
                   </view>
-                  <view class="mt-1 text-xs text-muted-foreground">
-                    {{ fmt.formatFileSize(file.size) }} · {{ fmt.getMediaKindLabel(file.kind) }} · {{ fmt.getStatusLabel(file) }}
+                  <!-- Status indicators -->
+                  <view v-if="fileStatus[file.path] === 'processing'" class="ml-2 shrink-0">
+                    <t-loading theme="circular" size="32rpx" />
                   </view>
-                  <view v-if="file.parsed.title" class="mt-0.5 text-xs text-muted-foreground">
-                    解析: {{ file.parsed.title }}{{ file.parsed.year ? ` (${file.parsed.year})` : '' }}
-                  </view>
+                  <t-icon v-else-if="fileStatus[file.path] === 'success'" name="check-circle" size="32rpx" color="var(--color-primary)" class="ml-2 shrink-0" />
+                  <t-icon v-else-if="fileStatus[file.path] === 'failed'" name="close-circle" size="32rpx" color="var(--color-destructive)" class="ml-2 shrink-0" />
+                  <t-icon v-else name="chevron-right" size="32rpx" color="var(--color-muted-foreground)" class="ml-2 shrink-0" />
                 </view>
-                <t-icon v-if="!selectMode" name="chevron-right" size="32rpx" color="var(--color-muted-foreground)" class="ml-2 mt-0.5 shrink-0" />
               </view>
               <view v-if="idx < filteredFiles.length - 1" class="h-px bg-border mx-3"></view>
             </view>
@@ -203,16 +390,53 @@ function exitSelectMode() {
       </view>
     </scroll-view>
 
-    <!-- Bottom Action Bar (Multi-Select, part of flex) -->
-    <view v-if="selectMode" class="bg-card px-4 pt-3">
+    <!-- Bottom Batch Action Bar -->
+    <view v-if="hasSelection" class="bg-card border-t border-border px-4 pt-3">
       <view class="flex items-center justify-between">
-        <view class="text-sm text-foreground">已选 {{ selectedCount }} 项</view>
-        <view class="px-3 py-1.5 rounded-lg bg-muted text-sm text-foreground" @tap="exitSelectMode">取消</view>
+        <text class="text-sm font-medium text-foreground">已选 {{ selectedCount }} 项</text>
+        <text class="text-xs text-muted-foreground" @tap="() => { selectedPaths = [] }">清除选择</text>
+      </view>
+      <view class="mt-2 flex gap-2">
+        <view
+          class="flex-1 flex items-center justify-center gap-1 py-2.5 rounded-xl bg-primary"
+          :class="{ 'opacity-50': batchProcessing }"
+          hover-class="opacity-80"
+          @tap="batchAutoProcess"
+        >
+          <t-icon name="play-circle" size="32rpx" color="#fff" />
+          <text class="text-sm font-medium text-primary-foreground">匹配入库</text>
+        </view>
+        <view
+          class="flex-1 flex items-center justify-center gap-1 py-2.5 rounded-xl bg-accent"
+          :class="{ 'opacity-50': batchProcessing }"
+          hover-class="opacity-80"
+          @tap="batchAIProcess"
+        >
+          <t-icon name="root-list" size="32rpx" color="var(--color-accent-foreground)" />
+          <text class="text-sm font-medium text-accent-foreground">AI 识别入库</text>
+        </view>
       </view>
       <view class="h-[calc(12rpx+env(safe-area-inset-bottom))]"></view>
     </view>
 
-    <TabBar v-if="!selectMode" />
+    <!-- File Detail Popup -->
+    <InboxFileDetail
+      ref="detailRef"
+      :visible="detailVisible"
+      :file="detailFile"
+      @close="closeDetail"
+      @processed="onProcessed"
+    />
+
+    <!-- Batch Processing Overlay -->
+    <view v-if="batchProcessing" class="fixed inset-0 flex items-center justify-center" style="z-index: 9999; background: rgba(0,0,0,0.4);">
+      <view class="rounded-2xl bg-card px-6 py-5 flex flex-col items-center gap-3 shadow-lg">
+        <t-loading theme="circular" size="48rpx" />
+        <text class="text-sm text-foreground">{{ batchProgress }}</text>
+      </view>
+    </view>
+
+    <TabBar v-if="!hasSelection" />
     <t-toast id="t-toast" />
   </view>
 </template>

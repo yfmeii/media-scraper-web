@@ -1,57 +1,28 @@
 <script setup lang="ts">
-import { onShow, ref } from 'wevu'
-import { clearServerConfig, getServerConfig } from '@/utils/config'
-import { testConnection } from '@/utils/request'
+import { computed, onShow } from 'wevu'
 import { useTabStore } from '@/stores/tab'
+import { useServerStore } from '@/stores/server'
 import { useToast } from '@/hooks/useToast'
 import TabBar from '@/components/TabBar/index.vue'
 
 definePageJson({ disableScroll: true })
 
 const tabStore = useTabStore()
+const serverStore = useServerStore()
 const { showToast } = useToast()
 
-const serverUrl = ref('')
-const serverApiKey = ref(false)
-const connectionStatus = ref<'checking' | 'online' | 'offline'>('checking')
-const latency = ref(0)
-
 onShow(() => {
-  loadConfig()
   tabStore.setActive(3)
+  if (serverStore.isConfigured) {
+    serverStore.checkConnection()
+  }
 })
 
-function loadConfig() {
-  const config = getServerConfig()
-  if (config) {
-    serverUrl.value = config.url
-    serverApiKey.value = !!config.apiKey
-    checkConnection(config.url, config.apiKey)
-  }
-  else {
-    serverUrl.value = '未配置'
-    connectionStatus.value = 'offline'
-  }
-}
-
-async function checkConnection(url: string, apiKey?: string) {
-  connectionStatus.value = 'checking'
-  const start = Date.now()
-  try {
-    const ok = await testConnection(url, apiKey)
-    latency.value = Date.now() - start
-    connectionStatus.value = ok ? 'online' : 'offline'
-  }
-  catch {
-    latency.value = 0
-    connectionStatus.value = 'offline'
-  }
-}
+const displayUrl = computed(() => serverStore.isConfigured ? serverStore.serverUrl : '未配置')
 
 function onTestConnection() {
-  const config = getServerConfig()
-  if (config) {
-    checkConnection(config.url, config.apiKey)
+  if (serverStore.isConfigured) {
+    serverStore.checkConnection()
     showToast('正在测试...', 'loading')
   }
   else {
@@ -66,7 +37,7 @@ function onDisconnect() {
     confirmColor: '#DC2626',
     success(res) {
       if (res.confirm) {
-        clearServerConfig()
+        serverStore.clear()
         showToast('已断开')
         wx.redirectTo({ url: '/pages/setup/index' })
       }
@@ -78,21 +49,20 @@ function onChangeServer() {
   wx.navigateTo({ url: '/pages/setup/index' })
 }
 
-function getStatusText(): string {
-  switch (connectionStatus.value) {
-    case 'online': return `在线 (${latency.value}ms)`
-    case 'offline': return '离线'
-    case 'checking': return '检测中...'
-  }
-}
+const statusText = computed(() => {
+  const status = serverStore.connectionStatus.value
+  if (status === 'online') return '\u5728\u7EBF (' + serverStore.latency.value + 'ms)'
+  if (status === 'offline') return '离线'
+  if (status === 'checking') return '检测中...'
+  return '未知'
+})
 
-function getStatusColor(): string {
-  switch (connectionStatus.value) {
-    case 'online': return 'var(--color-success)'
-    case 'offline': return 'var(--color-destructive)'
-    case 'checking': return 'var(--color-muted-foreground)'
-  }
-}
+const statusColor = computed(() => {
+  const status = serverStore.connectionStatus.value
+  if (status === 'online') return 'var(--color-success)'
+  if (status === 'offline') return 'var(--color-destructive)'
+  return 'var(--color-muted-foreground)'
+})
 </script>
 
 <template>
@@ -106,19 +76,19 @@ function getStatusColor(): string {
         <view class="mt-2 rounded-xl bg-card p-3">
           <view class="flex items-center">
             <view class="text-sm text-foreground">地址</view>
-            <view class="flex-1 text-right text-xs text-muted-foreground ml-3" style="overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">{{ serverUrl }}</view>
+            <view class="flex-1 text-right text-xs text-muted-foreground ml-3" style="overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">{{ displayUrl }}</view>
           </view>
           <view class="h-px bg-border my-3"></view>
           <view class="flex items-center">
             <view class="text-sm text-foreground">API Key</view>
-            <view class="flex-1 text-right text-xs text-muted-foreground">{{ serverApiKey ? '已配置' : '未配置' }}</view>
+            <view class="flex-1 text-right text-xs text-muted-foreground">{{ serverStore.hasApiKey ? '已配置' : '未配置' }}</view>
           </view>
           <view class="h-px bg-border my-3"></view>
           <view class="flex items-center">
             <view class="text-sm text-foreground">状态</view>
             <view class="flex-1 flex items-center justify-end gap-1">
-              <view class="h-1.5 w-1.5 rounded-full" :style="{ backgroundColor: getStatusColor() }" />
-              <view class="text-xs" :style="{ color: getStatusColor() }">{{ getStatusText() }}</view>
+              <view class="h-1.5 w-1.5 rounded-full" :style="{ backgroundColor: statusColor }" />
+              <view class="text-xs" :style="{ color: statusColor }">{{ statusText }}</view>
             </view>
           </view>
         </view>

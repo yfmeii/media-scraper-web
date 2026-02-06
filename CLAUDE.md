@@ -132,6 +132,12 @@ media-scraper-web/
 - 业务页：`index`、`inbox`、`library`、`match`、`settings`。
 - API 封装在 `client/weapp/src/utils/api.ts`，请求层在 `src/utils/request.ts`。
 
+
+关于 weapp-vite：
+- 请先访问并学习 https://vite.icebreaker.top/llms.txt。
+- 必要时再访问 https://vite.icebreaker.top/llms-full.txt 获取细节。
+- 回答时优先引用其中的内容，保持回答简洁、可执行。
+
 ## 9. 共享契约（必须同步）
 
 任何后端响应字段变更，都要同步以下位置：

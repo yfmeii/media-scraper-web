@@ -14,7 +14,8 @@ import {
 
 describe('格式化工具', () => {
   test('📦 文件大小格式化', () => {
-    expect(formatFileSize(0)).toBe('?');
+    expect(formatFileSize(0)).toBe('0 B');
+    expect(formatFileSize(undefined)).toBe('?');
     expect(formatFileSize(512)).toBe('512 B');
     expect(formatFileSize(1024)).toBe('1.0 KB');
     expect(formatFileSize(1024 * 1024)).toBe('1.0 MB');

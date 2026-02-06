@@ -62,6 +62,11 @@ function formatEpisodeCode(season, episode) {
   return 'S' + padStart(season, 2, '0') + 'E' + padStart(episode, 2, '0')
 }
 
+function getYear(dateStr) {
+  if (!dateStr) return ''
+  return dateStr.substring(0, 4)
+}
+
 module.exports = {
   formatRating: formatRating,
   formatFileSize: formatFileSize,
@@ -70,4 +75,6 @@ module.exports = {
   getStatusLabel: getStatusLabel,
   getEpisodeLabel: getEpisodeLabel,
   formatEpisodeCode: formatEpisodeCode,
+  getYear: getYear,
+  padStart: padStart,
 }

@@ -1,7 +1,13 @@
-// Media file extensions
-export const VIDEO_EXTS = new Set(['.mkv', '.mp4', '.m4v', '.avi', '.mov']);
-export const SUB_EXTS = new Set(['.srt', '.ass', '.ssa', '.sub']);
-export const NFO_EXTS = new Set(['.nfo']);
+import {
+  VIDEO_EXTS as VIDEO_EXTS_LIST,
+  SUB_EXTS as SUB_EXTS_LIST,
+  NFO_EXTS as NFO_EXTS_LIST,
+} from '@media-scraper/shared';
+
+// Media file extensions (Sets for fast lookup)
+export const VIDEO_EXTS = new Set(VIDEO_EXTS_LIST);
+export const SUB_EXTS = new Set(SUB_EXTS_LIST);
+export const NFO_EXTS = new Set(NFO_EXTS_LIST);
 
 // Directory paths (can be overridden by environment variables)
 // Use getters so tests can override env vars safely at runtime.

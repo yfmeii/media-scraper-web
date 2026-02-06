@@ -235,6 +235,78 @@ export interface PreviewItem {
   episodes?: Array<{ source: string; episode: number; episodeEnd?: number }>;
 }
 
+// ── Media File Extensions ──
+
+export const VIDEO_EXTS = ['.mkv', '.mp4', '.m4v', '.avi', '.mov'] as const;
+export const SUB_EXTS = ['.srt', '.ass', '.ssa', '.sub'] as const;
+export const NFO_EXTS = ['.nfo'] as const;
+
+// ── Formatting Utilities ──
+
+/** Format file size in human-readable units (B/KB/MB/GB/TB) */
+export function formatFileSize(bytes: number | undefined): string {
+  if (bytes == null || bytes === 0) return bytes === 0 ? '0 B' : '?';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let unitIndex = 0;
+  let size = bytes;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex++;
+  }
+  return `${size.toFixed(unitIndex > 0 ? 1 : 0)} ${units[unitIndex]}`;
+}
+
+/** Format date value (timestamp, string, or Date) to YYYY-MM-DD */
+export function formatDate(value: number | string | Date | undefined): string {
+  if (!value) return '--';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '--';
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Format a season number as "Season XX" */
+export function formatSeason(season: number): string {
+  return `Season ${String(season).padStart(2, '0')}`;
+}
+
+/** Format an episode number as "EXX" */
+export function formatEpisode(episode: number): string {
+  return `E${String(episode).padStart(2, '0')}`;
+}
+
+/** Format season+episode as "SXXEXX" */
+export function formatSeasonEpisode(season: number, episode: number): string {
+  return `S${String(season).padStart(2, '0')}${formatEpisode(episode)}`;
+}
+
+/** Format a rating number to one decimal place */
+export function formatRating(rating: number | undefined): string {
+  if (!rating) return '--';
+  return rating.toFixed(1);
+}
+
+/** Format runtime in minutes to "Xh Xm" or "Xm" */
+export function formatRuntime(minutes: number | undefined): string {
+  if (!minutes) return '--';
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+/** Get human-readable label for a media kind */
+export function getMediaKindLabel(kind: MediaKind | string): string {
+  switch (kind) {
+    case 'tv': return '剧集';
+    case 'movie': return '电影';
+    default: return '未知';
+  }
+}
+
+/** Normalize 'unknown' media kind to 'movie' (default fallback) */
+export function normalizeMediaKind(kind: string): 'tv' | 'movie' {
+  return kind === 'tv' ? 'tv' : 'movie';
+}
+
 // ── Missing Episodes Detection ──
 
 export interface SeasonMissingInfo {

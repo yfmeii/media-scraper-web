@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref } from 'wevu'
-import { saveServerConfig } from '@/utils/config'
 import { testConnection } from '@/utils/request'
+import { useServerStore } from '@/stores/server'
 import { useToast } from '@/hooks/useToast'
 
 definePageJson({ disableScroll: true })
 
+const serverStore = useServerStore()
 const { showToast } = useToast()
 
 const serverUrl = ref('')
@@ -25,10 +26,7 @@ async function onConnect() {
   try {
     const ok = await testConnection(url, apiKey.value.trim() || undefined)
     if (ok) {
-      saveServerConfig({
-        url,
-        apiKey: apiKey.value.trim() || undefined,
-      })
+      serverStore.save(url, apiKey.value.trim() || undefined)
       showToast('连接成功')
       wx.vibrateShort({ type: 'medium' })
       setTimeout(() => {
