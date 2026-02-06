@@ -88,6 +88,35 @@ function moveCandidateToFront(list: SearchResult[], preferredId: number | null |
   return copy
 }
 
+function toPositiveInt(value: unknown): number | null {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 1) return null
+  return Math.floor(parsed)
+}
+
+function syncTvEpisodeByCandidate(
+  candidate: { mediaType?: 'tv' | 'movie', firstAirDate?: string, releaseDate?: string } | null,
+  preferAI = false,
+) {
+  if (!candidate) return
+  if (inferCandidateMediaType(candidate) !== 'tv') return
+
+  const aiSeason = toPositiveInt(aiResult.value?.season)
+  const aiEpisode = toPositiveInt(aiResult.value?.episode)
+  const parsedSeason = toPositiveInt(props.file?.parsed.season)
+  const parsedEpisode = toPositiveInt(props.file?.parsed.episode)
+
+  const nextSeason = preferAI
+    ? (aiSeason || parsedSeason || season.value || 1)
+    : (parsedSeason || aiSeason || season.value || 1)
+  const nextEpisode = preferAI
+    ? (aiEpisode || parsedEpisode || episode.value || 1)
+    : (parsedEpisode || aiEpisode || episode.value || 1)
+
+  season.value = nextSeason
+  episode.value = nextEpisode
+}
+
 function buildAiFallbackCandidate(result: PathRecognizeResult): SearchResult | null {
   if (!result.tmdb_id) return null
   const name = result.tmdb_name || result.title || ''
@@ -249,6 +278,7 @@ function onSelectCandidate(e: WechatMiniprogram.CustomEvent) {
   const candidate = candidates.value.find(c => c.id === id)
   if (!candidate) return
   selectCandidate(candidate)
+  syncTvEpisodeByCandidate(candidate, true)
 }
 
 function buildPreviewItem(): PreviewItem | null {
@@ -281,7 +311,12 @@ async function handleAutoMatch(silent = false) {
     props.file.parsed.year,
   )
   if (ok) {
-    selectedCandidate.value = null
+    const currentId = selectedCandidate.value?.id
+    const resolved = (currentId
+      ? candidates.value.find(item => item.id === currentId)
+      : null) || candidates.value[0] || null
+    selectedCandidate.value = resolved
+    syncTvEpisodeByCandidate(resolved, false)
   }
   autoMatchTried.value = true
   if (!ok && !silent) {
@@ -300,6 +335,9 @@ async function handleManualSearch() {
     showToast('搜索失败', 'error')
     return
   }
+  const first = candidates.value[0] || null
+  selectedCandidate.value = first
+  syncTvEpisodeByCandidate(first, true)
   autoMatchTried.value = true
   if (!candidates.value.length) {
     showToast('未找到匹配结果', 'warning')
@@ -359,7 +397,11 @@ async function handleAIRecognize() {
       : baseMerged
     const ordered = moveCandidateToFront(merged, preferredId)
     candidates.value = ordered
-    selectedCandidate.value = null
+    const resolved = (preferredId
+      ? ordered.find(item => item.id === preferredId)
+      : null) || ordered[0] || null
+    selectedCandidate.value = resolved
+    syncTvEpisodeByCandidate(resolved, true)
     autoMatchTried.value = true
 
     if (!ordered.length) {
