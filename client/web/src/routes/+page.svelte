@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { fetchStats, fetchTasks, fetchTaskStats, cancelTaskApi, type Stats, type TaskItem, type TaskStats } from '$lib/api';
+  import { fetchStats, fetchTasks, cancelTaskApi, type Stats, type TaskItem, type TaskStats } from '$lib/api';
   import { formatTime, getStatusDisplay, getTypeDisplay } from '$lib/format';
   
   let stats = $state<Stats | null>(null);

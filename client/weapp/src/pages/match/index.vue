@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { MatchResult, SearchResult } from '@media-scraper/shared'
-import { onLoad, ref } from 'wevu'
+import { computed, onLoad, ref } from 'wevu'
 import { autoMatch, processMovie, processTV, refreshMetadata, searchTMDB } from '@/utils/api'
 import { getPosterUrl } from '@/utils/request'
 import { useToast } from '@/hooks/useToast'
@@ -32,6 +32,35 @@ const season = ref(1)
 const episode = ref(1)
 
 const processing = ref(false)
+const selectedResultPoster = computed(() => getPosterUrl(selectedResult.value?.posterPath))
+const selectedResultName = computed(() => selectedResult.value?.title || selectedResult.value?.name || '未知')
+const selectedResultDate = computed(() => selectedResult.value?.releaseDate || selectedResult.value?.firstAirDate || '')
+const processButtonText = computed(() =>
+  processing.value
+    ? (pageMode.value === 'rematch' ? '匹配中...' : '入库中...')
+    : (pageMode.value === 'rematch' ? '确认匹配' : '确认入库'),
+)
+
+interface SearchResultCard extends SearchResult {
+  posterUrl: string
+  displayName: string
+  displayDate: string
+  selected: boolean
+  index: number
+  isLast: boolean
+}
+
+const searchResultCards = computed<SearchResultCard[]>(() =>
+  searchResults.value.map((result, index) => ({
+    ...result,
+    posterUrl: getPosterUrl(result.posterPath),
+    displayName: result.title || result.name || '未知',
+    displayDate: result.releaseDate || result.firstAirDate || '',
+    selected: selectedResult.value?.id === result.id,
+    index,
+    isLast: index === searchResults.value.length - 1,
+  })),
+)
 
 onLoad((query: Record<string, string | undefined>) => {
   filePath.value = decodeURIComponent(query.path || '')
@@ -87,6 +116,20 @@ async function onSearch() {
 function onSelectResult(result: SearchResult) {
   selectedResult.value = result
   showToast('已选择')
+}
+
+function onSelectResultTap(e: WechatMiniprogram.CustomEvent) {
+  const index = Number((e.currentTarget as { dataset?: { index?: number | string } })?.dataset?.index)
+  if (!Number.isInteger(index) || index < 0 || index >= searchResults.value.length) return
+  onSelectResult(searchResults.value[index])
+}
+
+function setSearchTypeMovie() {
+  searchType.value = 'movie'
+}
+
+function setSearchTypeTV() {
+  searchType.value = 'tv'
 }
 
 function onSearchInput(e: WechatMiniprogram.CustomEvent) {
@@ -151,17 +194,6 @@ async function onProcess() {
   }
 }
 
-function getResultPoster(result: SearchResult): string {
-  return getPosterUrl(result.posterPath)
-}
-
-function getResultName(result: SearchResult): string {
-  return result.title || result.name || '未知'
-}
-
-function getResultDate(result: SearchResult): string {
-  return result.releaseDate || result.firstAirDate || ''
-}
 </script>
 
 <template>
@@ -187,16 +219,16 @@ function getResultDate(result: SearchResult): string {
         <view v-else-if="selectedResult" class="mt-2 rounded-xl bg-card p-3">
           <view class="flex gap-3">
             <MediaPoster
-              v-if="getResultPoster(selectedResult)"
-              :src="getResultPoster(selectedResult)"
+              v-if="selectedResultPoster"
+              :src="selectedResultPoster"
               width="140rpx"
               height="200rpx"
               rounded="rounded-lg"
               class="shrink-0"
             />
             <view class="flex-1">
-              <view class="text-sm font-semibold text-foreground">{{ getResultName(selectedResult) }}</view>
-              <view v-if="getResultDate(selectedResult)" class="mt-0.5 text-xs text-muted-foreground">{{ getResultDate(selectedResult) }}</view>
+              <view class="text-sm font-semibold text-foreground">{{ selectedResultName }}</view>
+              <view v-if="selectedResultDate" class="mt-0.5 text-xs text-muted-foreground">{{ selectedResultDate }}</view>
               <view class="mt-0.5 text-xs text-muted-foreground">TMDB ID: {{ selectedResult.id }}</view>
               <view v-if="matchResult && matchResult.candidates && matchResult.candidates.length" class="mt-1">
                 <view class="inline-block text-xs px-1.5 py-0.5 rounded bg-muted text-warning">
@@ -224,12 +256,12 @@ function getResultDate(result: SearchResult): string {
           <view
             class="px-2.5 py-1 text-xs rounded-lg"
             :class="searchType === 'movie' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'"
-            @tap="() => { searchType = 'movie' }"
+            @tap="setSearchTypeMovie"
           >电影</view>
           <view
             class="px-2.5 py-1 text-xs rounded-lg"
             :class="searchType === 'tv' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'"
-            @tap="() => { searchType = 'tv' }"
+            @tap="setSearchTypeTV"
           >剧集</view>
         </view>
       </view>
@@ -239,33 +271,34 @@ function getResultDate(result: SearchResult): string {
         <view class="pl-1 text-xs font-medium text-muted-foreground mt-4 mb-1">搜索结果</view>
         <view class="mt-2 rounded-xl bg-card">
           <view
-            v-for="(result, idx) in searchResults"
+            v-for="result in searchResultCards"
             :key="result.id"
             hover-class="opacity-70"
-            @tap="() => onSelectResult(result)"
+            :data-index="result.index"
+            @tap="onSelectResultTap"
           >
             <view
               class="p-3 flex gap-2"
-              :class="{ 'bg-accent rounded-xl': selectedResult && selectedResult.id === result.id }"
+              :class="{ 'bg-accent rounded-xl': result.selected }"
             >
               <MediaPoster
-                v-if="getResultPoster(result)"
-                :src="getResultPoster(result)"
+                v-if="result.posterUrl"
+                :src="result.posterUrl"
                 width="84rpx"
                 height="120rpx"
                 rounded="rounded-lg"
                 class="shrink-0"
               />
               <view class="flex-1 min-w-0">
-                <view class="text-sm font-medium text-foreground">{{ getResultName(result) }}</view>
-                <view class="mt-0.5 text-xs text-muted-foreground">{{ getResultDate(result) }}</view>
+                <view class="text-sm font-medium text-foreground">{{ result.displayName }}</view>
+                <view class="mt-0.5 text-xs text-muted-foreground">{{ result.displayDate }}</view>
                 <view
                   v-if="result.overview"
                   class="mt-0.5 text-xs text-muted-foreground line-clamp-2"
                 >{{ result.overview }}</view>
               </view>
             </view>
-            <view v-if="idx < searchResults.length - 1" class="h-px bg-border mx-3"></view>
+            <view v-if="!result.isLast" class="h-px bg-border mx-3"></view>
           </view>
         </view>
       </view>
@@ -301,7 +334,7 @@ function getResultDate(result: SearchResult): string {
           @tap="onProcess"
         >
           <t-icon name="check-circle" size="36rpx" :color="selectedResult && !processing ? 'var(--color-primary)' : 'var(--color-muted-foreground)'" />
-          <text>{{ processing ? (pageMode === 'rematch' ? '匹配中...' : '入库中...') : (pageMode === 'rematch' ? '确认匹配' : '确认入库') }}</text>
+          <text>{{ processButtonText }}</text>
         </view>
       </view>
       <view class="h-[calc(20rpx+env(safe-area-inset-bottom))]"></view>

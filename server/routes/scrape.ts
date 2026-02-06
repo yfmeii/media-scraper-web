@@ -1,6 +1,6 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { DEFAULT_LANGUAGE, SUB_EXTS } from '@media-scraper/shared';
-import { searchTV, searchMovie, findBestMatch, getPosterUrl } from '../lib/tmdb';
+import { searchTV, searchMovie, findBestMatch, getPosterUrl, type TMDBSearchResult } from '../lib/tmdb';
 import { recognizePath } from '../lib/dify';
 import { processTVShow, processMovie, refreshMetadata, generatePreviewPlan } from '../lib/scraper';
 import { parseFilename } from '../lib/scanner';
@@ -8,55 +8,55 @@ import { MEDIA_PATHS } from '../lib/config';
 
 export const scrapeRoutes = new Hono();
 
-// Search TMDB for TV shows
-scrapeRoutes.get('/search/tv', async (c) => {
-  const query = c.req.query('q');
-  const year = c.req.query('year');
-  const language = c.req.query('language') || DEFAULT_LANGUAGE;
-  
-  if (!query) {
-    return c.json({ success: false, error: 'Missing query parameter' }, 400);
-  }
-  
-  const results = await searchTV(query, year ? parseInt(year) : undefined, language);
-  return c.json({
-    success: true,
-    data: results.slice(0, 10).map(r => ({
-      id: r.id,
-      name: r.name,
-      originalName: r.original_name,
-      overview: r.overview?.slice(0, 200),
-      firstAirDate: r.first_air_date,
-      voteAverage: r.vote_average,
-      posterPath: getPosterUrl(r.poster_path, 'w185'),
-    })),
-  });
-});
+type SearchKind = 'tv' | 'movie';
 
-// Search TMDB for movies
-scrapeRoutes.get('/search/movie', async (c) => {
+function mapSearchResult(kind: SearchKind, result: TMDBSearchResult) {
+  if (kind === 'tv') {
+    return {
+      id: result.id,
+      name: result.name,
+      originalName: result.original_name,
+      overview: result.overview?.slice(0, 200),
+      firstAirDate: result.first_air_date,
+      voteAverage: result.vote_average,
+      posterPath: getPosterUrl(result.poster_path, 'w185'),
+    };
+  }
+
+  return {
+    id: result.id,
+    title: result.title,
+    originalTitle: result.original_title,
+    overview: result.overview?.slice(0, 200),
+    releaseDate: result.release_date,
+    voteAverage: result.vote_average,
+    posterPath: getPosterUrl(result.poster_path, 'w185'),
+  };
+}
+
+async function handleSearch(c: Context, kind: SearchKind) {
   const query = c.req.query('q');
   const year = c.req.query('year');
   const language = c.req.query('language') || DEFAULT_LANGUAGE;
-  
+
   if (!query) {
     return c.json({ success: false, error: 'Missing query parameter' }, 400);
   }
-  
-  const results = await searchMovie(query, year ? parseInt(year) : undefined, language);
+
+  const parsedYear = year ? parseInt(year, 10) : undefined;
+  const results = kind === 'tv'
+    ? await searchTV(query, parsedYear, language)
+    : await searchMovie(query, parsedYear, language);
+
   return c.json({
     success: true,
-    data: results.slice(0, 10).map(r => ({
-      id: r.id,
-      title: r.title,
-      originalTitle: r.original_title,
-      overview: r.overview?.slice(0, 200),
-      releaseDate: r.release_date,
-      voteAverage: r.vote_average,
-      posterPath: getPosterUrl(r.poster_path, 'w185'),
-    })),
+    data: results.slice(0, 10).map(result => mapSearchResult(kind, result)),
   });
-});
+}
+
+// Search TMDB
+scrapeRoutes.get('/search/tv', async c => handleSearch(c, 'tv'));
+scrapeRoutes.get('/search/movie', async c => handleSearch(c, 'movie'));
 
 // AI 路径识别 - 使用 Dify 完整工作流（解析路径 + TMDB 搜索 + AI 匹配）
 scrapeRoutes.post('/recognize', async (c) => {

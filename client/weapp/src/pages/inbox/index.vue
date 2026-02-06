@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import type { MediaFile } from '@media-scraper/shared'
 import { computed, nextTick, onShow, ref } from 'wevu'
-import { autoMatch, fetchInbox, processMovie, processTV, recognizePath } from '@/utils/api'
+import { autoMatch, fetchInbox, recognizePath } from '@/utils/api'
 import { useTabStore } from '@/stores/tab'
 import { useToast } from '@/hooks/useToast'
+import { useDialog } from '@/hooks/useDialog'
+import { processMedia } from '@/hooks/useMediaProcess'
 import { normalizeMediaKind } from '@/utils/format'
 import EmptyState from '@/components/EmptyState/index.vue'
 import TabBar from '@/components/TabBar/index.vue'
@@ -13,6 +15,7 @@ definePageJson({ disableScroll: true })
 
 const tabStore = useTabStore()
 const { showToast } = useToast()
+const { confirm } = useDialog()
 const refreshing = ref(false)
 
 const files = ref<MediaFile[]>([])
@@ -158,73 +161,51 @@ const batchProcessing = ref(false)
 const batchProgress = ref('')
 const fileStatus = ref<Record<string, 'processing' | 'success' | 'failed'>>({})
 
-async function batchAutoProcess() {
+type BatchProcessor = (
+  file: MediaFile,
+  helpers: { index: number, total: number, setProgress: (prefix: string) => void },
+) => Promise<boolean>
+
+function getSelectedFiles(): MediaFile[] {
   const selectedSet = new Set(selectedPaths.value)
-  const selected = files.value.filter(f => selectedSet.has(f.path))
+  return files.value.filter(file => selectedSet.has(file.path))
+}
+
+async function runBatchProcess(
+  title: string,
+  buildContent: (count: number) => string,
+  processor: BatchProcessor,
+) {
+  const selected = getSelectedFiles()
   if (!selected.length) return
 
-  const confirmed = await new Promise<boolean>((resolve) => {
-    wx.showModal({
-      title: '一键匹配入库',
-      content: `将对选中的 ${selected.length} 个文件自动匹配 TMDB 并入库，是否继续？`,
-      confirmText: '开始',
-      success: (res) => resolve(res.confirm),
-    })
+  const confirmed = await confirm({
+    title,
+    content: buildContent(selected.length),
+    confirmBtn: '开始',
+    cancelBtn: '取消',
   })
   if (!confirmed) return
 
   batchProcessing.value = true
+  fileStatus.value = {}
+
   let successCount = 0
   let failCount = 0
-  fileStatus.value = {}
 
   for (let i = 0; i < selected.length; i++) {
     const file = selected[i]
-    batchProgress.value = `匹配中 ${i + 1}/${selected.length}...`
     fileStatus.value[file.path] = 'processing'
 
+    const setProgress = (prefix: string) => {
+      batchProgress.value = `${prefix} ${i + 1}/${selected.length}...`
+    }
+
     try {
-      const matchResult = await autoMatch(
-        file.path,
-        normalizeMediaKind(file.kind),
-        file.parsed.title,
-        file.parsed.year,
-      )
-
-      if (!matchResult || !matchResult.matched || !matchResult.result) {
-        failCount++
-        fileStatus.value[file.path] = 'failed'
-        continue
-      }
-
-      const match = matchResult.result
-      batchProgress.value = `入库中 ${i + 1}/${selected.length}...`
-
-      if (file.kind === 'tv') {
-        const result = await processTV({
-          sourcePath: file.path,
-          tmdbId: match.id,
-          showName: match.name || file.parsed.title || file.name,
-          season: file.parsed.season || 1,
-          episodes: [{
-            source: file.path,
-            episode: file.parsed.episode || 1,
-            episodeEnd: file.parsed.episodeEnd,
-          }],
-        })
-        fileStatus.value[file.path] = result.success ? 'success' : 'failed'
-        if (result.success) successCount++
-        else failCount++
-      }
-      else {
-        const result = await processMovie({
-          sourcePath: file.path,
-          tmdbId: match.id,
-        })
-        fileStatus.value[file.path] = result.success ? 'success' : 'failed'
-        if (result.success) successCount++
-        else failCount++
-      }
+      const success = await processor(file, { index: i, total: selected.length, setProgress })
+      fileStatus.value[file.path] = success ? 'success' : 'failed'
+      if (success) successCount++
+      else failCount++
     }
     catch {
       failCount++
@@ -240,80 +221,62 @@ async function batchAutoProcess() {
   await loadInbox()
 }
 
+async function batchAutoProcess() {
+  await runBatchProcess(
+    '一键匹配入库',
+    count => `将对选中的 ${count} 个文件自动匹配 TMDB 并入库，是否继续？`,
+    async (file, { setProgress }) => {
+      setProgress('匹配中')
+      const matchResult = await autoMatch(
+        file.path,
+        normalizeMediaKind(file.kind),
+        file.parsed.title,
+        file.parsed.year,
+      )
+      if (!matchResult?.matched || !matchResult.result) return false
+
+      setProgress('入库中')
+      const match = matchResult.result
+      const result = await processMedia({
+        file,
+        candidate: {
+          id: match.id,
+          name: match.name,
+          title: match.name,
+        },
+        type: file.kind === 'tv' ? 'tv' : 'movie',
+        season: file.parsed.season || 1,
+        episode: file.parsed.episode || 1,
+      })
+      return result.success
+    },
+  )
+}
+
 async function batchAIProcess() {
-  const selectedSet = new Set(selectedPaths.value)
-  const selected = files.value.filter(f => selectedSet.has(f.path))
-  if (!selected.length) return
+  await runBatchProcess(
+    '一键 AI 识别入库',
+    count => `将对选中的 ${count} 个文件使用 AI 自动识别并入库，是否继续？`,
+    async (file, { setProgress }) => {
+      setProgress('AI 识别中')
+      const aiResult = await recognizePath(file.path, normalizeMediaKind(file.kind))
+      if (!aiResult?.tmdb_id) return false
 
-  const confirmed = await new Promise<boolean>((resolve) => {
-    wx.showModal({
-      title: '一键 AI 识别入库',
-      content: `将对选中的 ${selected.length} 个文件使用 AI 自动识别并入库，是否继续？`,
-      confirmText: '开始',
-      success: (res) => resolve(res.confirm),
-    })
-  })
-  if (!confirmed) return
-
-  batchProcessing.value = true
-  let successCount = 0
-  let failCount = 0
-  fileStatus.value = {}
-
-  for (let i = 0; i < selected.length; i++) {
-    const file = selected[i]
-    batchProgress.value = `AI 识别中 ${i + 1}/${selected.length}...`
-    fileStatus.value[file.path] = 'processing'
-
-    try {
-      const kind = normalizeMediaKind(file.kind)
-      const aiResult = await recognizePath(file.path, kind)
-
-      if (!aiResult || !aiResult.tmdb_id) {
-        failCount++
-        fileStatus.value[file.path] = 'failed'
-        continue
-      }
-
-      batchProgress.value = `入库中 ${i + 1}/${selected.length}...`
-
-      if (aiResult.media_type === 'tv') {
-        const result = await processTV({
-          sourcePath: file.path,
-          tmdbId: aiResult.tmdb_id,
-          showName: aiResult.tmdb_name || aiResult.title || file.name,
-          season: aiResult.season || 1,
-          episodes: [{
-            source: file.path,
-            episode: aiResult.episode || 1,
-          }],
-        })
-        fileStatus.value[file.path] = result.success ? 'success' : 'failed'
-        if (result.success) successCount++
-        else failCount++
-      }
-      else {
-        const result = await processMovie({
-          sourcePath: file.path,
-          tmdbId: aiResult.tmdb_id,
-        })
-        fileStatus.value[file.path] = result.success ? 'success' : 'failed'
-        if (result.success) successCount++
-        else failCount++
-      }
-    }
-    catch {
-      failCount++
-      fileStatus.value[file.path] = 'failed'
-    }
-  }
-
-  batchProcessing.value = false
-  batchProgress.value = ''
-  fileStatus.value = {}
-  selectedPaths.value = []
-  showToast(`完成：${successCount} 成功，${failCount} 失败`)
-  await loadInbox()
+      setProgress('入库中')
+      const result = await processMedia({
+        file,
+        candidate: {
+          id: aiResult.tmdb_id,
+          name: aiResult.tmdb_name || aiResult.title,
+          title: aiResult.tmdb_name || aiResult.title,
+        },
+        type: aiResult.media_type === 'tv' ? 'tv' : 'movie',
+        season: aiResult.season || file.parsed.season || 1,
+        episode: aiResult.episode || file.parsed.episode || 1,
+      })
+      return result.success
+    },
+  )
 }
 
 </script>
@@ -329,25 +292,25 @@ async function batchAIProcess() {
       <view class="mt-2 flex gap-2">
         <view
           class="px-2.5 py-1 text-xs rounded-lg"
-          :class="filterKind === 'all' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'"
+          :class="fmt.getFilterTabClass(filterKind, 'all')"
           data-kind="all"
           @tap="onFilterTap"
         >全部</view>
         <view
           class="px-2.5 py-1 text-xs rounded-lg"
-          :class="filterKind === 'movie' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'"
+          :class="fmt.getFilterTabClass(filterKind, 'movie')"
           data-kind="movie"
           @tap="onFilterTap"
         >电影</view>
         <view
           class="px-2.5 py-1 text-xs rounded-lg"
-          :class="filterKind === 'tv' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'"
+          :class="fmt.getFilterTabClass(filterKind, 'tv')"
           data-kind="tv"
           @tap="onFilterTap"
         >剧集</view>
         <view
           class="px-2.5 py-1 text-xs rounded-lg"
-          :class="filterKind === 'unknown' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'"
+          :class="fmt.getFilterTabClass(filterKind, 'unknown')"
           data-kind="unknown"
           @tap="onFilterTap"
         >未知</view>
@@ -421,8 +384,8 @@ async function batchAIProcess() {
                       <text class="text-xs text-muted-foreground">{{ fmt.formatFileSize(file.size) }}</text>
                       <text
                         class="text-xs px-1 rounded"
-                        :class="file.kind === 'tv' ? 'bg-muted text-blue-600' : file.kind === 'movie' ? 'bg-muted text-purple-600' : 'bg-muted text-muted-foreground'"
-                      >{{ file.kind === 'tv' ? (file.isProcessed || file.hasNfo ? '剧集' : '疑似剧集') : file.kind === 'movie' ? (file.isProcessed || file.hasNfo ? '电影' : '疑似电影') : '未知' }}</text>
+                        :class="fmt.getFileKindClass(file.kind)"
+                      >{{ fmt.getFileKindLabel(file.kind, file.isProcessed, file.hasNfo) }}</text>
                     </view>
                   </view>
                   <!-- Status indicators -->

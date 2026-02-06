@@ -1,17 +1,22 @@
-/**
- * ms-image WXS 工具函数
- * 处理图片 URL：空值返回占位图，加载出错返回错误图
- */
-function handleUrl(src, error, placeholderUrl, errorUrl) {
-  if (!src || src === '') {
-    return placeholderUrl || ''
-  }
-  if (error) {
-    return errorUrl || placeholderUrl || ''
-  }
-  return src
+function getSrc(src, placeholderUrl) {
+  return src || placeholderUrl || ''
+}
+
+function getMode(mode) {
+  return mode || 'aspectFill'
+}
+
+function asBool(value) {
+  return !!value
+}
+
+function getStyle(width, height) {
+  return 'display:block;width:' + (width || '100%') + ';height:' + (height || 'auto') + ';'
 }
 
 module.exports = {
-  handleUrl: handleUrl,
+  getSrc: getSrc,
+  getMode: getMode,
+  asBool: asBool,
+  getStyle: getStyle,
 }

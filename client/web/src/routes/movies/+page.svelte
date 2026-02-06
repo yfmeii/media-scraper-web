@@ -9,6 +9,7 @@
   import { TMDBSearchModal, BatchActionBar, TableSkeleton, PosterThumbnail, AssetIndicators, StatusBadge, SearchToolbar, MediaDetailHeader, MediaOverview, MediaDetailActions, DetailDrawer } from '$lib/components';
   import type { ActionButton } from '$lib/components/mediaDetailActions';
   import { copyPath, detailDelay, getFanartUrl } from '$lib/mediaDetail';
+  import { runBatchRefresh } from '$lib/batchRefresh';
   
   let movies = $state<MovieInfo[]>([]);
   let loading = $state(true);
@@ -117,21 +118,23 @@
     
     isOperating = true;
     operationMessage = '正在刷新元数据...';
-    
-    let successCount = 0;
-    let failCount = 0;
-    
-    batchProgress = { current: 0, total: paths.length };
-    
-    for (const movie of selectedMoviesList) {
-      operationMessage = `正在刷新 (${batchProgress.current + 1}/${batchProgress.total}): ${movie.name}`;
-      const result = await refreshMetadata('movie', movie.path, movie.tmdbId!);
-      if (result.success) successCount++;
-      else failCount++;
-      
-      batchProgress.current++;
-      batchProgress = { ...batchProgress };
-    }
+
+    const targets = selectedMoviesList.map(movie => ({
+      path: movie.path,
+      name: movie.name,
+      tmdbId: movie.tmdbId!,
+    }));
+
+    batchProgress = { current: 0, total: targets.length };
+    const { successCount, failCount } = await runBatchRefresh(
+      'movie',
+      targets,
+      refreshMetadata,
+      ({ current, total, target }) => {
+        operationMessage = `正在刷新 (${current}/${total}): ${target.name}`;
+        batchProgress = { current, total };
+      },
+    );
     
     // Refresh data
     const updatedMovies = await fetchMovies();

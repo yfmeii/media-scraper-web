@@ -13,6 +13,7 @@ import {
   NFO_EXTS,
   TASK_STATUS_LABELS,
   TASK_TYPE_LABELS,
+  CLIENT_API_ENDPOINTS,
 
   // Formatting utilities
   formatFileSize,
@@ -29,6 +30,9 @@ import {
   getSeasonMissingEpisodes,
   getShowMissingEpisodes,
   formatMissingSxEx,
+  createEmptyTaskStats,
+  createEmptyMatchResult,
+  createEmptyPreviewPlan,
 } from './index';
 
 // ── Helpers ──
@@ -102,6 +106,46 @@ describe('常量', () => {
     expect(TASK_TYPE_LABELS.refresh).toBe('刷新');
     expect(TASK_TYPE_LABELS.supplement).toBe('补刮');
     expect(TASK_TYPE_LABELS['fix-assets']).toBe('修复资产');
+  });
+
+  test('CLIENT_API_ENDPOINTS 包含核心接口', () => {
+    expect(CLIENT_API_ENDPOINTS.fetchStats).toBe('/media/stats');
+    expect(CLIENT_API_ENDPOINTS.fetchTVShows).toBe('/media/tv?include=assets&group=status');
+    expect(CLIENT_API_ENDPOINTS.fetchMovies).toBe('/media/movies?include=assets');
+    expect(CLIENT_API_ENDPOINTS.autoMatch).toBe('/scrape/match');
+    expect(CLIENT_API_ENDPOINTS.previewPlan).toBe('/scrape/preview');
+  });
+});
+
+describe('API 默认对象工厂', () => {
+  test('createEmptyTaskStats 返回默认统计结构', () => {
+    expect(createEmptyTaskStats()).toEqual({
+      total: 0,
+      pending: 0,
+      running: 0,
+      success: 0,
+      failed: 0,
+    });
+  });
+
+  test('createEmptyMatchResult 返回默认匹配结构', () => {
+    expect(createEmptyMatchResult()).toEqual({
+      matched: false,
+      candidates: [],
+    });
+  });
+
+  test('createEmptyPreviewPlan 返回默认预览结构', () => {
+    expect(createEmptyPreviewPlan()).toEqual({
+      actions: [],
+      impactSummary: {
+        filesMoving: 0,
+        nfoCreating: 0,
+        nfoOverwriting: 0,
+        postersDownloading: 0,
+        directoriesCreating: [],
+      },
+    });
   });
 });
 

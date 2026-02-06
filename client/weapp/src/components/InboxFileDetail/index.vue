@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import type { MediaFile } from '@media-scraper/shared'
-import { ref } from 'wevu'
-import { recognizePath, searchTMDB } from '@/utils/api'
+import type { MediaFile, PathRecognizeResult, PreviewAction, PreviewItem, PreviewPlan } from '@media-scraper/shared'
+import { computed, ref, watch } from 'wevu'
+import { previewPlan, recognizePath, searchTMDB } from '@/utils/api'
+import { getPosterUrl } from '@/utils/request'
 import { useToast } from '@/hooks/useToast'
 import { useMediaMatch } from '@/hooks/useMediaMatch'
 import { processMedia } from '@/hooks/useMediaProcess'
-import { normalizeMediaKind } from '@/utils/format'
 import MediaPoster from '@/components/MediaPoster/index.vue'
 
 defineComponentJson({ styleIsolation: 'apply-shared' })
@@ -16,38 +16,105 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  close: []
-  processed: []
+  (e: 'close'): void
+  (e: 'processed'): void
 }>()
 
 const { showToast } = useToast()
-const { matchLoading, searching, candidates, selectedCandidate, doAutoMatch, doSearch, selectCandidate, reset: resetMatch } = useMediaMatch()
+const {
+  matchLoading,
+  searching,
+  candidates,
+  selectedCandidate,
+  doAutoMatch,
+  doSearch,
+  selectCandidate,
+  reset: resetMatch,
+} = useMediaMatch()
 
-// ── Local State ──
+const localVisible = ref(false)
 const processing = ref(false)
 const aiLoading = ref(false)
+const previewVisible = ref(false)
+const previewLoading = ref(false)
+const previewActions = ref<PreviewAction[]>([])
+const previewSummary = ref<PreviewPlan['impactSummary'] | null>(null)
 const searchQuery = ref('')
 const searchType = ref<'tv' | 'movie'>('movie')
 const season = ref(1)
 const episode = ref(1)
-const aiResult = ref<{ title: string, confidencePercent: number } | null>(null)
+const aiResult = ref<PathRecognizeResult | null>(null)
+const aiHint = ref('')
+const autoMatchTried = ref(false)
 
-function initForFile(file: MediaFile) {
-  searchQuery.value = file.parsed.title || file.name.replace(/\.[^.]+$/, '')
-  searchType.value = file.kind === 'tv' ? 'tv' : 'movie'
+interface CandidateCard {
+  id: number
+  displayName: string
+  displayYear: string
+  posterUrl: string
+}
+
+const candidateCards = computed<CandidateCard[]>(() =>
+  candidates.value.map(candidate => ({
+    id: candidate.id,
+    displayName: candidate.name || candidate.title || '未知',
+    displayYear: (candidate.releaseDate || candidate.firstAirDate || '').slice(0, 4),
+    posterUrl: getPosterUrl(candidate.posterPath),
+  })),
+)
+
+watch(() => props.visible, (val) => {
+  localVisible.value = val
+  if (!val) {
+    previewVisible.value = false
+  }
+}, { immediate: true })
+
+function getDefaultQuery(file: MediaFile): string {
+  return file.parsed.title || file.name.replace(/\.[^.]+$/, '')
+}
+
+function inferKind(file: MediaFile): 'tv' | 'movie' {
+  if (file.kind === 'tv') return 'tv'
+  if (file.kind === 'movie') return 'movie'
+  return file.parsed.season || file.parsed.episode ? 'tv' : 'movie'
+}
+
+function sanitizeStepperValue(value: unknown, fallback: number, max: number): number {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback
+  return Math.min(Math.floor(parsed), max)
+}
+
+async function initForFile(file: MediaFile) {
+  searchQuery.value = getDefaultQuery(file)
+  searchType.value = inferKind(file)
   season.value = file.parsed.season || 1
   episode.value = file.parsed.episode || 1
   aiResult.value = null
+  aiHint.value = ''
   processing.value = false
   aiLoading.value = false
+  previewVisible.value = false
+  previewLoading.value = false
+  previewActions.value = []
+  previewSummary.value = null
+  autoMatchTried.value = false
   resetMatch()
+  await handleAutoMatch(true)
 }
 
 defineExpose({ initForFile })
 
-// ── WXML-safe event handlers ──
 function onVisibleChange(e: WechatMiniprogram.CustomEvent) {
-  if (!e.detail.visible) emit('close')
+  if (!e?.detail?.visible) {
+    previewVisible.value = false
+    emit('close')
+  }
+}
+
+function onPreviewVisibleChange(e: WechatMiniprogram.CustomEvent) {
+  previewVisible.value = !!e?.detail?.visible
 }
 
 function onSearchInput(e: WechatMiniprogram.CustomEvent) {
@@ -55,11 +122,11 @@ function onSearchInput(e: WechatMiniprogram.CustomEvent) {
 }
 
 function onSeasonChange(e: WechatMiniprogram.CustomEvent) {
-  season.value = e.detail.value
+  season.value = sanitizeStepperValue(e.detail.value, season.value, 99)
 }
 
 function onEpisodeChange(e: WechatMiniprogram.CustomEvent) {
-  episode.value = e.detail.value
+  episode.value = sanitizeStepperValue(e.detail.value, episode.value, 999)
 }
 
 function closePopup() {
@@ -82,43 +149,99 @@ function onSelectCandidate(e: WechatMiniprogram.CustomEvent) {
   selectCandidate(candidate)
 }
 
+function buildPreviewItem(): PreviewItem | null {
+  if (!props.file || !selectedCandidate.value) return null
+  const file = props.file
+  const candidate = selectedCandidate.value
+  const item: PreviewItem = {
+    sourcePath: file.path,
+    kind: searchType.value,
+    tmdbId: candidate.id,
+    showName: candidate.name || candidate.title || '未知',
+  }
+  if (searchType.value === 'tv') {
+    item.season = season.value
+    item.episodes = [{
+      source: file.path,
+      episode: episode.value,
+      episodeEnd: file.parsed.episodeEnd,
+    }]
+  }
+  return item
+}
+
 // ── Actions ──
-async function handleAutoMatch() {
+async function handleAutoMatch(silent = false) {
   if (!props.file) return
-  await doAutoMatch(props.file, normalizeMediaKind(props.file.kind))
+  const ok = await doAutoMatch(
+    props.file,
+    searchType.value,
+    searchQuery.value.trim() || undefined,
+    props.file.parsed.year,
+  )
+  autoMatchTried.value = true
+  if (!ok && !silent) {
+    showToast('未找到匹配结果', 'warning')
+  }
 }
 
 async function handleManualSearch() {
-  const ok = await doSearch(searchQuery.value, searchType.value)
-  if (!ok) showToast('搜索失败', 'error')
+  const query = searchQuery.value.trim()
+  if (!query) {
+    showToast('请输入搜索关键词', 'warning')
+    return
+  }
+  const ok = await doSearch(query, searchType.value)
+  if (!ok) {
+    showToast('搜索失败', 'error')
+    return
+  }
+  autoMatchTried.value = true
+  if (!candidates.value.length) {
+    showToast('未找到匹配结果', 'warning')
+  }
 }
 
 async function handleAIRecognize() {
   if (!props.file) return
   aiLoading.value = true
   aiResult.value = null
+  aiHint.value = ''
   try {
-    const kind = normalizeMediaKind(props.file.kind)
-    const result = await recognizePath(props.file.path, kind)
-    if (result && result.tmdb_id) {
-      aiResult.value = {
-        title: result.tmdb_name || result.title,
-        confidencePercent: Math.round(result.confidence * 100),
-      }
-      if (result.media_type) searchType.value = result.media_type
-      if (result.season) season.value = result.season
-      if (result.episode) episode.value = result.episode
-      // Search TMDB with AI result to populate candidates
-      const results = await searchTMDB(
-        result.media_type || searchType.value,
-        result.tmdb_name || result.title,
-      )
-      candidates.value = results
-      const matched = results.find(r => r.id === result.tmdb_id)
-      selectedCandidate.value = matched || results[0] || null
-    }
-    else {
+    const recognizeInput = props.file.relativePath || props.file.path
+    const result = await recognizePath(recognizeInput, searchType.value)
+    if (!result || !result.tmdb_id) {
       showToast('AI 识别失败', 'warning')
+      return
+    }
+
+    aiResult.value = result
+    searchQuery.value = result.tmdb_name || result.title || searchQuery.value
+
+    const aiType = result.media_type === 'tv' ? 'tv' : 'movie'
+    if (searchType.value !== aiType) {
+      searchType.value = aiType
+      aiHint.value = `AI 判断为${aiType === 'movie' ? '电影' : '剧集'}，已自动切换`
+    }
+
+    if (result.season !== null && result.season > 0) {
+      season.value = result.season
+    }
+    if (result.episode !== null && result.episode > 0) {
+      episode.value = result.episode
+    }
+
+    if (result.confidence < 0.7) {
+      aiHint.value = `AI 置信度 ${Math.round(result.confidence * 100)}%，建议手动确认`
+    }
+
+    const results = await searchTMDB(aiType, result.tmdb_name || result.title)
+    candidates.value = results
+    selectedCandidate.value = results.find(item => item.id === result.tmdb_id) || results[0] || null
+    autoMatchTried.value = true
+
+    if (!results.length) {
+      showToast('未找到匹配结果', 'warning')
     }
   }
   catch {
@@ -129,8 +252,31 @@ async function handleAIRecognize() {
   }
 }
 
+async function handlePreviewPlan() {
+  const item = buildPreviewItem()
+  if (!item) {
+    showToast('请先选择匹配结果', 'warning')
+    return
+  }
+  previewVisible.value = true
+  previewLoading.value = true
+  previewActions.value = []
+  previewSummary.value = null
+  try {
+    const plan = await previewPlan([item])
+    previewActions.value = plan.actions || []
+    previewSummary.value = plan.impactSummary || null
+  }
+  catch {
+    showToast('预览失败', 'error')
+  }
+  finally {
+    previewLoading.value = false
+  }
+}
+
 async function handleProcess() {
-  if (!props.file || !selectedCandidate.value) return
+  if (!props.file || !selectedCandidate.value || processing.value) return
   processing.value = true
   try {
     const result = await processMedia({
@@ -142,6 +288,7 @@ async function handleProcess() {
     })
     if (result.success) {
       showToast('入库成功', 'success')
+      wx.vibrateShort({ type: 'medium' })
       emit('close')
       emit('processed')
     }
@@ -157,28 +304,43 @@ async function handleProcess() {
   }
 }
 
+async function executeFromPreview() {
+  if (previewLoading.value || !previewActions.value.length) return
+  previewVisible.value = false
+  await handleProcess()
+}
+
+function closePreview() {
+  previewVisible.value = false
+}
+
 function goToMatchPage() {
   if (!props.file) return
   const file = props.file
   emit('close')
   wx.navigateTo({
-    url: `/pages/match/index?path=${encodeURIComponent(file.path)}&kind=${file.kind}&name=${encodeURIComponent(file.name)}`,
+    url: `/pages/match/index?path=${encodeURIComponent(file.path)}&kind=${searchType.value}&name=${encodeURIComponent(file.name)}`,
   })
 }
 </script>
 
 <template>
   <wxs module="fmt" src="../../utils/format.wxs" />
+
   <t-popup
-    :visible="visible"
+    :visible="localVisible"
     placement="bottom"
+    :close-on-overlay-click="true"
     style="--td-popup-bg-color: var(--color-background);"
     @visible-change="onVisibleChange"
   >
-    <view v-if="file" style="height: 85vh; display: flex; flex-direction: column; border-top-left-radius: 24rpx; border-top-right-radius: 24rpx;">
+    <view
+      v-if="file"
+      style="height: 88vh; display: flex; flex-direction: column; border-top-left-radius: 24rpx; border-top-right-radius: 24rpx;"
+    >
       <!-- Header -->
       <view class="flex items-center justify-between px-4" style="height: 88rpx; border-bottom: 1rpx solid var(--color-border);">
-        <text class="text-base font-semibold text-foreground">文件详情</text>
+        <text class="text-base font-semibold text-foreground">文件入库详情</text>
         <view
           class="flex items-center justify-center rounded-full bg-card"
           style="min-width: 60rpx; min-height: 60rpx;"
@@ -189,18 +351,17 @@ function goToMatchPage() {
         </view>
       </view>
 
-      <!-- Scrollable Content -->
       <scroll-view scroll-y style="flex: 1; min-height: 0;">
         <view class="px-4 pt-3 pb-4">
-          <!-- File Info Card -->
+          <!-- File Info -->
           <view class="rounded-xl bg-card p-3">
             <text class="text-sm font-medium text-foreground" style="word-break: break-all;">{{ file.name }}</text>
             <view class="mt-2 flex items-center gap-1.5 flex-wrap">
               <text class="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{{ fmt.formatFileSize(file.size) }}</text>
               <text
                 class="text-xs px-1.5 py-0.5 rounded"
-                :class="file.kind === 'tv' ? 'bg-muted text-blue-600' : file.kind === 'movie' ? 'bg-muted text-purple-600' : 'bg-muted text-muted-foreground'"
-              >{{ file.kind === 'tv' ? (file.isProcessed || file.hasNfo ? '剧集' : '疑似剧集') : file.kind === 'movie' ? (file.isProcessed || file.hasNfo ? '电影' : '疑似电影') : '未知' }}</text>
+                :class="fmt.getFileKindClass(file.kind)"
+              >{{ fmt.getFileKindLabel(file.kind, file.isProcessed, file.hasNfo) }}</text>
               <text v-if="file.parsed.resolution" class="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{{ file.parsed.resolution }}</text>
               <text v-if="file.parsed.codec" class="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{{ file.parsed.codec }}</text>
             </view>
@@ -211,16 +372,39 @@ function goToMatchPage() {
             </view>
           </view>
 
-          <!-- AI Result Banner -->
-          <view v-if="aiResult" class="mt-3 rounded-xl bg-muted p-3 flex items-center gap-2">
-            <t-icon name="check-circle" size="36rpx" color="var(--color-primary)" />
-            <view class="flex-1 min-w-0">
-              <text class="text-sm font-medium text-foreground">AI 识别: {{ aiResult.title }}</text>
-              <text class="text-xs text-muted-foreground ml-2">置信度 {{ aiResult.confidencePercent }}%</text>
+          <!-- Target Preview -->
+          <view class="mt-3 rounded-xl bg-card p-3">
+            <view class="flex items-center justify-between">
+              <text class="text-xs font-medium text-muted-foreground">入库预览</text>
+              <text
+                class="text-xs"
+                :class="selectedCandidate ? 'text-green-600' : 'text-muted-foreground'"
+              >{{ selectedCandidate ? '已匹配' : '未匹配' }}</text>
+            </view>
+            <view class="mt-2 rounded-lg bg-muted p-2">
+              <text
+                v-if="fmt.getTargetPath(selectedCandidate, searchType, season)"
+                class="text-xs text-foreground"
+                style="word-break: break-all; font-family: Menlo, Monaco, Consolas, monospace;"
+              >{{ fmt.getTargetPath(selectedCandidate, searchType, season) }}</text>
+              <text v-else class="text-xs text-muted-foreground">请选择匹配结果</text>
             </view>
           </view>
 
-          <!-- Search Section -->
+          <!-- AI Result -->
+          <view v-if="aiResult" class="mt-3 rounded-xl bg-muted p-3 flex items-center gap-2">
+            <t-icon name="check-circle" size="36rpx" color="var(--color-primary)" />
+            <view class="flex-1 min-w-0">
+              <text class="text-sm font-medium text-foreground">AI 识别: {{ aiResult.tmdb_name || aiResult.title }}</text>
+              <text class="text-xs text-muted-foreground ml-2">置信度 {{ fmt.toPercent(aiResult.confidence) }}%</text>
+            </view>
+          </view>
+
+          <view v-if="aiHint" class="mt-2 rounded-lg px-2.5 py-2 text-xs" :class="fmt.isWarningHint(aiHint) ? 'bg-warning/10 text-warning' : 'bg-primary/10 text-primary'">
+            {{ aiHint }}
+          </view>
+
+          <!-- Search -->
           <view class="mt-3">
             <view class="flex items-center gap-2">
               <view class="flex-1 flex items-center gap-2 rounded-xl bg-card px-3" style="height: 72rpx;">
@@ -244,38 +428,49 @@ function goToMatchPage() {
               </view>
             </view>
 
-            <!-- Type Toggle + Season/Episode -->
             <view class="mt-2 flex items-center gap-2">
               <view class="flex items-center gap-1 rounded-lg bg-muted p-0.5">
                 <view
                   class="px-2.5 py-1 text-xs rounded-md"
-                  :class="searchType === 'movie' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'"
+                  :class="fmt.getSearchTypeClass(searchType, 'movie')"
                   @tap="setSearchTypeMovie"
                 >电影</view>
                 <view
                   class="px-2.5 py-1 text-xs rounded-md"
-                  :class="searchType === 'tv' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'"
+                  :class="fmt.getSearchTypeClass(searchType, 'tv')"
                   @tap="setSearchTypeTV"
                 >剧集</view>
               </view>
+
               <view v-if="searchType === 'tv'" class="flex items-center gap-2 ml-auto">
                 <view class="flex items-center gap-1">
                   <text class="text-xs text-muted-foreground">S</text>
-                  <t-stepper :value="season" :min="1" :max="99" theme="filled" size="small"
-                    @change="onSeasonChange" />
+                  <t-stepper
+                    :value="season"
+                    :min="1"
+                    :max="99"
+                    theme="filled"
+                    size="small"
+                    @change="onSeasonChange"
+                  />
                 </view>
                 <view class="flex items-center gap-1">
                   <text class="text-xs text-muted-foreground">E</text>
-                  <t-stepper :value="episode" :min="1" :max="999" theme="filled" size="small"
-                    @change="onEpisodeChange" />
+                  <t-stepper
+                    :value="episode"
+                    :min="1"
+                    :max="999"
+                    theme="filled"
+                    size="small"
+                    @change="onEpisodeChange"
+                  />
                 </view>
               </view>
             </view>
 
-            <!-- Quick Actions -->
-            <view class="mt-2 flex gap-2">
+            <view class="mt-2 grid grid-cols-2 gap-2">
               <view
-                class="flex-1 flex items-center justify-center gap-1 rounded-xl py-2 bg-primary"
+                class="flex items-center justify-center gap-1 rounded-xl py-2 bg-primary"
                 :class="{ 'opacity-50': matchLoading }"
                 hover-class="opacity-80"
                 @tap="handleAutoMatch"
@@ -284,23 +479,26 @@ function goToMatchPage() {
                 <t-icon v-else name="search" size="28rpx" color="#fff" />
                 <text class="text-sm font-medium text-primary-foreground">自动匹配</text>
               </view>
+
               <view
-                class="flex-1 flex items-center justify-center gap-1 rounded-xl py-2"
-                style="background: rgba(147, 51, 234, 0.1);"
+                class="flex items-center justify-center gap-1 rounded-xl py-2 bg-accent"
                 :class="{ 'opacity-50': aiLoading }"
                 hover-class="opacity-80"
                 @tap="handleAIRecognize"
               >
                 <t-loading v-if="aiLoading" theme="circular" size="28rpx" />
-                <t-icon v-else name="root-list" size="28rpx" color="rgb(147, 51, 234)" />
-                <text class="text-sm font-medium" style="color: rgb(147, 51, 234);">AI 识别</text>
+                <t-icon v-else name="root-list" size="28rpx" color="var(--color-accent-foreground)" />
+                <text class="text-sm font-medium text-accent-foreground">AI 识别</text>
               </view>
             </view>
           </view>
 
           <!-- Candidates -->
           <view class="mt-3">
-            <text class="text-xs font-medium text-muted-foreground">匹配结果</text>
+            <view class="flex items-center justify-between">
+              <text class="text-xs font-medium text-muted-foreground">匹配结果</text>
+              <text v-if="candidates.length > 0" class="text-xs text-muted-foreground">{{ candidates.length }} 条</text>
+            </view>
 
             <view v-if="matchLoading || searching" class="mt-2 flex items-center justify-center py-6">
               <t-loading theme="circular" size="48rpx" />
@@ -308,59 +506,161 @@ function goToMatchPage() {
             </view>
 
             <view v-else-if="candidates.length === 0" class="mt-2 py-6 text-center">
-              <text class="text-sm text-muted-foreground">点击「自动匹配」或「AI 识别」开始</text>
+              <text class="text-sm text-muted-foreground">{{ autoMatchTried ? '没有找到候选结果，请尝试修改关键词' : '点击「自动匹配」或「AI 识别」开始' }}</text>
             </view>
 
             <view v-else class="mt-2 flex flex-wrap gap-2">
               <view
-                v-for="c in candidates"
+                v-for="c in candidateCards"
                 :key="c.id"
-                class="rounded-xl overflow-hidden border-2"
-                style="width: calc(33.33% - 8rpx);"
-                :class="selectedCandidate && selectedCandidate.id === c.id ? 'border-primary' : 'border-transparent'"
+                class="relative rounded-xl overflow-hidden border-2"
+                style="width: calc(50% - 8rpx);"
+                :class="fmt.isSelectedCandidate(selectedCandidate, c.id) ? 'border-primary' : 'border-transparent'"
                 :data-id="c.id"
                 @tap="onSelectCandidate"
               >
                 <MediaPoster
-                  :src="c.posterPath ? 'https://image.tmdb.org/t/p/w185' + c.posterPath : ''"
-                  height="220rpx"
+                  :src="c.posterUrl"
+                  height="280rpx"
                   rounded="rounded-none"
                 />
-                <view class="p-1.5 bg-card">
+                <view class="p-2 bg-card">
                   <text class="text-xs text-foreground" style="overflow: hidden; white-space: nowrap; text-overflow: ellipsis; display: block;">
-                    {{ c.name || c.title }}
+                    {{ c.displayName }}
                   </text>
-                  <text class="text-xs text-muted-foreground">
-                    {{ fmt.getYear(c.releaseDate || c.firstAirDate) }}
-                  </text>
+                  <text class="text-xs text-muted-foreground">{{ c.displayYear }}</text>
                 </view>
-                <view v-if="selectedCandidate && selectedCandidate.id === c.id" class="absolute top-1 right-1">
+                <view v-if="fmt.isSelectedCandidate(selectedCandidate, c.id)" class="absolute top-1 right-1">
                   <t-icon name="check-circle-filled" size="36rpx" color="var(--color-primary)" />
                 </view>
               </view>
             </view>
           </view>
-
-          <!-- Go to full match page -->
-          <view class="mt-3 text-center" @tap="goToMatchPage">
-            <text class="text-sm text-primary">前往完整匹配页面 →</text>
-          </view>
         </view>
       </scroll-view>
 
       <!-- Bottom Action -->
-      <view class="px-4 pt-2 border-t border-border">
+      <view class="px-4 pt-2 border-t border-border bg-background">
+        <view class="flex gap-2">
+          <view
+            class="w-1/3 flex items-center justify-center gap-1 py-3 rounded-xl bg-muted"
+            :class="selectedCandidate && !previewLoading && !processing ? 'text-foreground' : 'text-muted-foreground'"
+            hover-class="opacity-80"
+            @tap="handlePreviewPlan"
+          >
+            <t-loading v-if="previewLoading" theme="circular" size="30rpx" />
+            <t-icon v-else name="search" size="30rpx" color="var(--color-muted-foreground)" />
+            <text class="text-sm font-medium">预览</text>
+          </view>
+
+          <view
+            class="flex-1 flex items-center justify-center gap-1 py-3 rounded-xl"
+            :class="selectedCandidate && !processing ? 'bg-primary' : 'bg-muted'"
+            hover-class="opacity-80"
+            @tap="handleProcess"
+          >
+            <t-loading v-if="processing" theme="circular" size="32rpx" />
+            <t-icon
+              v-else
+              name="check"
+              size="32rpx"
+              :color="selectedCandidate ? '#fff' : 'var(--color-muted-foreground)'"
+            />
+            <text class="text-sm font-medium" :class="selectedCandidate ? 'text-primary-foreground' : 'text-muted-foreground'">
+              {{ processing ? '入库中...' : '确认入库' }}
+            </text>
+          </view>
+        </view>
+
+        <view class="mt-2 text-center" hover-class="opacity-60" @tap="goToMatchPage">
+          <text class="text-xs text-primary">前往完整匹配页面 →</text>
+        </view>
+        <view class="h-[calc(12rpx+env(safe-area-inset-bottom))]"></view>
+      </view>
+    </view>
+  </t-popup>
+
+  <t-popup
+    :visible="previewVisible"
+    placement="bottom"
+    :close-on-overlay-click="true"
+    style="--td-popup-bg-color: var(--color-background);"
+    @visible-change="onPreviewVisibleChange"
+  >
+    <view style="height: 78vh; display: flex; flex-direction: column; border-top-left-radius: 24rpx; border-top-right-radius: 24rpx;">
+      <view class="flex items-center justify-between px-4" style="height: 88rpx; border-bottom: 1rpx solid var(--color-border);">
+        <text class="text-base font-semibold text-foreground">移动预览</text>
         <view
-          class="flex items-center justify-center gap-1 py-3 rounded-xl"
-          :class="selectedCandidate && !processing ? 'bg-primary' : 'bg-muted'"
-          hover-class="opacity-80"
-          @tap="handleProcess"
+          class="flex items-center justify-center rounded-full bg-card"
+          style="min-width: 60rpx; min-height: 60rpx;"
+          hover-class="opacity-60"
+          @tap="closePreview"
         >
-          <t-loading v-if="processing" theme="circular" size="32rpx" />
-          <t-icon v-else name="check" size="32rpx" :color="selectedCandidate ? '#fff' : 'var(--color-muted-foreground)'" />
-          <text class="text-sm font-medium" :class="selectedCandidate ? 'text-primary-foreground' : 'text-muted-foreground'">
-            {{ processing ? '入库中...' : '确认入库' }}
-          </text>
+          <t-icon name="close" size="32rpx" color="var(--color-foreground)" />
+        </view>
+      </view>
+
+      <scroll-view scroll-y style="flex: 1; min-height: 0;">
+        <view class="px-4 py-3">
+          <view v-if="previewLoading" class="py-8 flex items-center justify-center">
+            <t-loading theme="circular" size="48rpx" />
+            <text class="ml-2 text-sm text-muted-foreground">生成预览中...</text>
+          </view>
+
+          <view v-else-if="previewActions.length === 0" class="py-8 text-center">
+            <text class="text-sm text-muted-foreground">暂无可执行动作</text>
+          </view>
+
+          <block v-else>
+            <view v-if="previewSummary" class="rounded-xl bg-card p-3">
+              <view class="text-xs text-muted-foreground">移动文件: <text class="text-foreground font-medium">{{ previewSummary.filesMoving }}</text></view>
+              <view class="mt-1 text-xs text-muted-foreground">创建 NFO: <text class="text-foreground font-medium">{{ previewSummary.nfoCreating }}</text></view>
+              <view class="mt-1 text-xs text-muted-foreground">下载海报: <text class="text-foreground font-medium">{{ previewSummary.postersDownloading }}</text></view>
+              <view v-if="previewSummary.nfoOverwriting > 0" class="mt-1 text-xs text-warning">
+                将覆盖 NFO: {{ previewSummary.nfoOverwriting }}
+              </view>
+            </view>
+
+            <view class="mt-3 flex flex-col gap-2">
+              <view
+                v-for="(action, idx) in previewActions"
+                :key="`${idx}-${action.destination}`"
+                class="rounded-xl border border-border bg-card p-3"
+              >
+                <view class="flex items-center justify-between">
+                  <text class="text-xs font-medium" :class="fmt.getPreviewActionClass(action.type)">{{ fmt.getPreviewActionLabel(action.type) }}</text>
+                  <text v-if="action.willOverwrite" class="text-[20rpx] px-1.5 py-0.5 rounded bg-warning/10 text-warning">覆盖</text>
+                </view>
+                <view v-if="action.source" class="mt-1 text-xs text-muted-foreground" style="word-break: break-all; font-family: Menlo, Monaco, Consolas, monospace;">
+                  {{ action.source }}
+                </view>
+                <view v-if="action.source" class="my-1 text-xs text-muted-foreground">↓</view>
+                <view class="text-xs text-foreground" style="word-break: break-all; font-family: Menlo, Monaco, Consolas, monospace;">
+                  {{ action.destination }}
+                </view>
+              </view>
+            </view>
+          </block>
+        </view>
+      </scroll-view>
+
+      <view class="px-4 pt-2 border-t border-border bg-background">
+        <view class="flex gap-2">
+          <view
+            class="flex-1 flex items-center justify-center py-3 rounded-xl bg-muted"
+            hover-class="opacity-80"
+            @tap="closePreview"
+          >
+            <text class="text-sm font-medium text-muted-foreground">关闭</text>
+          </view>
+          <view
+            class="flex-1 flex items-center justify-center py-3 rounded-xl bg-primary"
+            :class="{ 'opacity-50': previewLoading || previewActions.length === 0 }"
+            hover-class="opacity-80"
+            @tap="executeFromPreview"
+          >
+            <text class="text-sm font-medium text-primary-foreground">确认执行</text>
+          </view>
         </view>
         <view class="h-[calc(12rpx+env(safe-area-inset-bottom))]"></view>
       </view>

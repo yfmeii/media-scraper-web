@@ -6,7 +6,7 @@
  */
 import { computed, defineStore, ref } from 'wevu'
 import type { ServerConfig } from '@/utils/config'
-import { clearServerConfig, getServerConfig, saveServerConfig } from '@/utils/config'
+import { clearServerConfig, DEFAULT_IMAGE_PROXY_URL, getServerConfig, saveServerConfig } from '@/utils/config'
 import { testConnection } from '@/utils/request'
 
 export const useServerStore = defineStore('server', () => {
@@ -19,6 +19,8 @@ export const useServerStore = defineStore('server', () => {
   const isConfigured = computed(() => config.value !== null)
   const serverUrl = computed(() => config.value ? config.value.url : '')
   const hasApiKey = computed(() => !!(config.value && config.value.apiKey))
+  const imageProxyEnabled = computed(() => config.value ? config.value.imageProxyEnabled : true)
+  const imageProxyUrl = computed(() => config.value ? config.value.imageProxyUrl : DEFAULT_IMAGE_PROXY_URL)
 
   const apiBaseUrl = computed(() => {
     if (!config.value) return ''
@@ -28,7 +30,24 @@ export const useServerStore = defineStore('server', () => {
 
   // ── Actions ──
   function save(url: string, apiKey?: string): void {
-    const newConfig: ServerConfig = { url, apiKey }
+    const previous = config.value
+    const newConfig: ServerConfig = {
+      url,
+      apiKey,
+      imageProxyEnabled: previous ? previous.imageProxyEnabled : true,
+      imageProxyUrl: previous ? previous.imageProxyUrl : DEFAULT_IMAGE_PROXY_URL,
+    }
+    config.value = newConfig
+    saveServerConfig(newConfig)
+  }
+
+  function saveImageProxy(enabled: boolean, proxyUrl?: string): void {
+    if (!config.value) return
+    const newConfig: ServerConfig = {
+      ...config.value,
+      imageProxyEnabled: enabled,
+      imageProxyUrl: (proxyUrl || '').trim() || DEFAULT_IMAGE_PROXY_URL,
+    }
     config.value = newConfig
     saveServerConfig(newConfig)
   }
@@ -67,8 +86,11 @@ export const useServerStore = defineStore('server', () => {
     isConfigured,
     serverUrl,
     hasApiKey,
+    imageProxyEnabled,
+    imageProxyUrl,
     apiBaseUrl,
     save,
+    saveImageProxy,
     clear,
     checkConnection,
   }

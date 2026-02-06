@@ -1,4 +1,4 @@
-import { getApiBaseUrl, getServerConfig } from './config'
+import { DEFAULT_IMAGE_PROXY_URL, getApiBaseUrl, getServerConfig } from './config'
 
 interface RequestOptions {
   url: string
@@ -86,9 +86,39 @@ export function testConnection(url: string, apiKey?: string): Promise<boolean> {
   })
 }
 
+function buildProxyUrl(targetUrl: string, proxyBaseUrl: string): string {
+  const base = proxyBaseUrl.trim()
+  if (!base) return targetUrl
+
+  const encodedUrl = encodeURIComponent(targetUrl)
+  if (base.includes('{url}')) {
+    return base.split('{url}').join(encodedUrl)
+  }
+  if (base.includes('%s')) {
+    return base.split('%s').join(encodedUrl)
+  }
+  if (base.includes('url=')) {
+    return `${base}${encodedUrl}`
+  }
+  return `${base}${base.includes('?') ? '&' : '?'}url=${encodedUrl}`
+}
+
+function getExternalImageUrl(rawUrl: string): string {
+  const config = getServerConfig()
+  const proxyEnabled = config ? config.imageProxyEnabled : true
+  if (!proxyEnabled) return rawUrl
+
+  const proxyBaseUrl = config ? config.imageProxyUrl : DEFAULT_IMAGE_PROXY_URL
+  if (rawUrl.includes('wsrv.nl/?url=')) return rawUrl
+  return buildProxyUrl(rawUrl, proxyBaseUrl)
+}
+
 export function getPosterUrl(posterPath: string | undefined): string {
   if (!posterPath) return ''
-  if (posterPath.startsWith('http')) return posterPath
+  if (posterPath.startsWith('http')) {
+    // Weapp 外链图片可选代理，避免部分源站防盗链或 TLS 兼容问题
+    return getExternalImageUrl(posterPath)
+  }
 
   const apiBase = getApiBaseUrl()
   if (!apiBase) return ''

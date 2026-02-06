@@ -132,6 +132,7 @@ interface NfoDetails {
   voteAverage?: number;
   status?: string;
   year?: number;
+  thumbUrl?: string;
 }
 
 function decodeXml(text: string): string {
@@ -151,6 +152,33 @@ function extractNfoTag(content: string, tag: string): string | undefined {
   return value.length ? value : undefined;
 }
 
+function extractPosterUrlFromNfo(content: string): string | undefined {
+  const thumbs: Array<{ url: string; aspect?: string }> = [];
+  const thumbRegex = /<thumb([^>]*)>([\s\S]*?)<\/thumb>/gi;
+  let match: RegExpExecArray | null = thumbRegex.exec(content);
+
+  while (match) {
+    const attrs = match[1] || '';
+    const rawValue = decodeXml(match[2] || '').trim();
+    const aspectMatch = attrs.match(/\baspect\s*=\s*["']([^"']+)["']/i);
+    const aspect = aspectMatch?.[1]?.toLowerCase();
+    if (/^https?:\/\//i.test(rawValue)) {
+      thumbs.push({ url: rawValue, aspect });
+    }
+    match = thumbRegex.exec(content);
+  }
+
+  if (!thumbs.length) return undefined;
+
+  const isImdbPoster = (url: string) =>
+    /(?:imdb\.com|media-amazon\.com|amazonaws\.com\/images\/M\/)/i.test(url);
+
+  return thumbs.find(item => item.aspect === 'poster' && isImdbPoster(item.url))?.url
+    || thumbs.find(item => isImdbPoster(item.url))?.url
+    || thumbs.find(item => item.aspect === 'poster')?.url
+    || thumbs[0]?.url;
+}
+
 async function extractNfoDetails(nfoPath: string): Promise<NfoDetails | null> {
   try {
     const content = await Bun.file(nfoPath).text();
@@ -161,6 +189,7 @@ async function extractNfoDetails(nfoPath: string): Promise<NfoDetails | null> {
     const runtimeValue = extractNfoTag(content, 'runtime');
     const yearValue = extractNfoTag(content, 'year');
     const premieredValue = extractNfoTag(content, 'premiered');
+    const thumbUrl = extractPosterUrlFromNfo(content);
 
     const runtime = runtimeValue ? parseInt(runtimeValue, 10) : undefined;
     const voteAverage = ratingValue ? parseFloat(ratingValue) : undefined;
@@ -177,6 +206,7 @@ async function extractNfoDetails(nfoPath: string): Promise<NfoDetails | null> {
       voteAverage: Number.isFinite(voteAverage) ? voteAverage : undefined,
       status,
       year: Number.isFinite(year) ? year : undefined,
+      thumbUrl,
     };
   } catch {
     return null;
@@ -265,7 +295,7 @@ async function buildShowInfo(
     : await getNfoStatus(nfoPath);
   const nfoDetails = includeAssets ? await extractNfoDetails(nfoPath) : null;
 
-  const posterPath = await findPosterPath(showPath);
+  const posterPath = nfoDetails?.thumbUrl || await findPosterPath(showPath);
   const seasonInfos = await buildSeasonInfos(showPath, seasons, includeAssets);
 
   const show: ShowInfo = {
@@ -318,7 +348,7 @@ async function buildMovieInfo(
     : await getNfoStatus(nfoPath);
   const nfoDetails = includeAssets ? await extractNfoDetails(nfoPath) : null;
 
-  const posterPath = await findPosterPath(moviePath);
+  const posterPath = nfoDetails?.thumbUrl || await findPosterPath(moviePath);
 
   const movie: MovieInfo = {
     path: moviePath,

@@ -1,4 +1,10 @@
-import { DEFAULT_LANGUAGE } from '@media-scraper/shared';
+import {
+  DEFAULT_LANGUAGE,
+  CLIENT_API_ENDPOINTS,
+  createEmptyMatchResult,
+  createEmptyPreviewPlan,
+  createEmptyTaskStats,
+} from '@media-scraper/shared';
 import type {
   Stats,
   SearchResult,
@@ -40,31 +46,31 @@ export type {
 const API_BASE = '/api';
 
 export async function fetchStats(): Promise<Stats> {
-  const res = await fetch(`${API_BASE}/media/stats`);
+  const res = await fetch(`${API_BASE}${CLIENT_API_ENDPOINTS.fetchStats}`);
   const data = await res.json();
   return data.data;
 }
 
 export async function fetchTVShows(): Promise<ShowInfo[]> {
-  const res = await fetch(`${API_BASE}/media/tv?include=assets&group=status`);
+  const res = await fetch(`${API_BASE}${CLIENT_API_ENDPOINTS.fetchTVShows}`);
   const data = await res.json();
   return data.data || [];
 }
 
 export async function fetchMovies(): Promise<MovieInfo[]> {
-  const res = await fetch(`${API_BASE}/media/movies?include=assets`);
+  const res = await fetch(`${API_BASE}${CLIENT_API_ENDPOINTS.fetchMovies}`);
   const data = await res.json();
   return data.data || [];
 }
 
 export async function fetchInbox(): Promise<MediaFile[]> {
-  const res = await fetch(`${API_BASE}/media/inbox`);
+  const res = await fetch(`${API_BASE}${CLIENT_API_ENDPOINTS.fetchInbox}`);
   const data = await res.json();
   return data.data || [];
 }
 
 export async function fetchInboxByDirectory(): Promise<DirectoryGroup[]> {
-  const res = await fetch(`${API_BASE}/media/inbox?view=dir`);
+  const res = await fetch(`${API_BASE}${CLIENT_API_ENDPOINTS.fetchInboxByDirectory}`);
   const data = await res.json();
   return data.data || [];
 }
@@ -72,28 +78,22 @@ export async function fetchInboxByDirectory(): Promise<DirectoryGroup[]> {
 export async function searchTMDB(type: 'tv' | 'movie', query: string, year?: number): Promise<SearchResult[]> {
   const params = new URLSearchParams({ q: query });
   if (year) params.set('year', year.toString());
-  const res = await fetch(`${API_BASE}/scrape/search/${type}?${params}`);
+  const res = await fetch(`${API_BASE}${CLIENT_API_ENDPOINTS.searchTMDBBase}/${type}?${params}`);
   const data = await res.json();
   return data.data || [];
 }
 
 export async function fetchTasks(limit = 10): Promise<{ tasks: TaskItem[]; stats: TaskStats }> {
-  const res = await fetch(`${API_BASE}/tasks?limit=${limit}`);
+  const res = await fetch(`${API_BASE}${CLIENT_API_ENDPOINTS.fetchTasks}?limit=${limit}`);
   const data = await res.json();
   return {
     tasks: data.data || [],
-    stats: data.stats || { total: 0, pending: 0, running: 0, success: 0, failed: 0 },
+    stats: data.stats || createEmptyTaskStats(),
   };
 }
 
-export async function fetchTaskStats(): Promise<TaskStats> {
-  const res = await fetch(`${API_BASE}/tasks/stats`);
-  const data = await res.json();
-  return data.data || { total: 0, pending: 0, running: 0, success: 0, failed: 0 };
-}
-
 export async function cancelTaskApi(id: string): Promise<boolean> {
-  const res = await fetch(`${API_BASE}/tasks/${id}/cancel`, { method: 'POST' });
+  const res = await fetch(`${API_BASE}${CLIENT_API_ENDPOINTS.cancelTask}/${id}/cancel`, { method: 'POST' });
   const data = await res.json();
   return data.success;
 }
@@ -106,7 +106,7 @@ export async function refreshMetadata(
   options?: { season?: number; episode?: number; language?: string }
 ): Promise<ScrapeResult> {
   const { season, episode, language = DEFAULT_LANGUAGE } = options || {};
-  const res = await fetch(`${API_BASE}/scrape/refresh`, {
+  const res = await fetch(`${API_BASE}${CLIENT_API_ENDPOINTS.refreshMetadata}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ kind, path, tmdbId, season, episode, language }),
@@ -117,7 +117,7 @@ export async function refreshMetadata(
 
 // AI 路径识别
 export async function recognizePath(path: string, kind: 'tv' | 'movie'): Promise<PathRecognizeResult | null> {
-  const res = await fetch(`${API_BASE}/scrape/recognize`, {
+  const res = await fetch(`${API_BASE}${CLIENT_API_ENDPOINTS.recognizePath}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path, kind }),
@@ -127,17 +127,17 @@ export async function recognizePath(path: string, kind: 'tv' | 'movie'): Promise
 }
 
 export async function autoMatch(path: string, kind: 'tv' | 'movie', title?: string, year?: number, language = DEFAULT_LANGUAGE): Promise<MatchResult> {
-  const res = await fetch(`${API_BASE}/scrape/match`, {
+  const res = await fetch(`${API_BASE}${CLIENT_API_ENDPOINTS.autoMatch}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path, kind, title, year, language }),
   });
   const data = await res.json();
-  return data.data || { matched: false, candidates: [] };
+  return data.data || createEmptyMatchResult();
 }
 
 export async function processTV(params: ProcessTVParams): Promise<ScrapeResult> {
-  const res = await fetch(`${API_BASE}/scrape/process/tv`, {
+  const res = await fetch(`${API_BASE}${CLIENT_API_ENDPOINTS.processTV}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
@@ -147,7 +147,7 @@ export async function processTV(params: ProcessTVParams): Promise<ScrapeResult> 
 }
 
 export async function processMovie(params: ProcessMovieParams): Promise<ScrapeResult> {
-  const res = await fetch(`${API_BASE}/scrape/process/movie`, {
+  const res = await fetch(`${API_BASE}${CLIENT_API_ENDPOINTS.processMovie}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
@@ -158,7 +158,7 @@ export async function processMovie(params: ProcessMovieParams): Promise<ScrapeRe
 
 // Move file back to inbox
 export async function moveToInbox(sourcePath: string): Promise<{ success: boolean; message?: string }> {
-  const res = await fetch(`${API_BASE}/scrape/move-to-inbox`, {
+  const res = await fetch(`${API_BASE}${CLIENT_API_ENDPOINTS.moveToInbox}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sourcePath }),
@@ -168,11 +168,11 @@ export async function moveToInbox(sourcePath: string): Promise<{ success: boolea
 }
 
 export async function previewPlan(items: PreviewItem[], language = DEFAULT_LANGUAGE): Promise<PreviewPlan> {
-  const res = await fetch(`${API_BASE}/scrape/preview`, {
+  const res = await fetch(`${API_BASE}${CLIENT_API_ENDPOINTS.previewPlan}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ items, language }),
   });
   const data = await res.json();
-  return data.data || { actions: [], impactSummary: { filesMoving: 0, nfoCreating: 0, nfoOverwriting: 0, postersDownloading: 0, directoriesCreating: [] } };
+  return data.data || createEmptyPreviewPlan();
 }

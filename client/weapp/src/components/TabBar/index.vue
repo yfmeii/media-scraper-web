@@ -28,6 +28,12 @@ function onTap(index: number) {
   tabStore.setActive(index)
   wx.switchTab({ url: tabs[index].pagePath })
 }
+
+function onTabTap(e: WechatMiniprogram.CustomEvent) {
+  const index = Number((e.currentTarget as { dataset?: { index?: number | string } })?.dataset?.index)
+  if (!Number.isInteger(index) || index < 0 || index >= tabs.length) return
+  onTap(index)
+}
 </script>
 
 <template>
@@ -38,7 +44,8 @@ function onTap(index: number) {
         v-for="(tab, index) in tabs"
         :key="tab.key"
         class="tab-item"
-        @tap="() => onTap(index)"
+        :data-index="index"
+        @tap="onTabTap"
       >
         <t-icon
           :name="tab.icon"

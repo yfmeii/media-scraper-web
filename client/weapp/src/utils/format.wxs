@@ -67,6 +67,65 @@ function getYear(dateStr) {
   return dateStr.substring(0, 4)
 }
 
+function getFileKindClass(kind) {
+  if (kind === 'tv') return 'bg-muted text-blue-600'
+  if (kind === 'movie') return 'bg-muted text-purple-600'
+  return 'bg-muted text-muted-foreground'
+}
+
+function getFileKindLabel(kind, isProcessed, hasNfo) {
+  var confirmed = !!(isProcessed || hasNfo)
+  if (kind === 'tv') return confirmed ? '剧集' : '疑似剧集'
+  if (kind === 'movie') return confirmed ? '电影' : '疑似电影'
+  return '未知'
+}
+
+function getFilterTabClass(current, kind) {
+  if (current === kind) return 'bg-primary text-primary-foreground'
+  return 'bg-muted text-muted-foreground'
+}
+
+function getSearchTypeClass(current, kind) {
+  if (current === kind) return 'bg-background text-foreground shadow-sm'
+  return 'text-muted-foreground'
+}
+
+function isWarningHint(text) {
+  if (!text) return false
+  return text.indexOf('建议') >= 0 || text.indexOf('失败') >= 0
+}
+
+function toPercent(value) {
+  if (!value) return 0
+  return Math.round(value * 100)
+}
+
+function isSelectedCandidate(selected, id) {
+  return !!(selected && selected.id === id)
+}
+
+function getTargetPath(candidate, kind, season) {
+  if (!candidate) return ''
+  var name = candidate.name || candidate.title || ''
+  if (!name) return ''
+  if (kind === 'movie') return 'Library/Movies/' + name
+  return 'Library/Shows/' + name + '/Season ' + padStart(season || 1, 2, '0')
+}
+
+function getPreviewActionLabel(type) {
+  if (type === 'move') return '移动文件'
+  if (type === 'create-nfo') return '创建 NFO'
+  if (type === 'download-poster') return '下载海报'
+  return '创建目录'
+}
+
+function getPreviewActionClass(type) {
+  if (type === 'move') return 'text-green-600'
+  if (type === 'create-nfo') return 'text-blue-600'
+  if (type === 'download-poster') return 'text-cyan-600'
+  return 'text-purple-600'
+}
+
 module.exports = {
   formatRating: formatRating,
   formatFileSize: formatFileSize,
@@ -76,5 +135,15 @@ module.exports = {
   getEpisodeLabel: getEpisodeLabel,
   formatEpisodeCode: formatEpisodeCode,
   getYear: getYear,
+  getFileKindClass: getFileKindClass,
+  getFileKindLabel: getFileKindLabel,
+  getFilterTabClass: getFilterTabClass,
+  getSearchTypeClass: getSearchTypeClass,
+  isWarningHint: isWarningHint,
+  toPercent: toPercent,
+  isSelectedCandidate: isSelectedCandidate,
+  getTargetPath: getTargetPath,
+  getPreviewActionLabel: getPreviewActionLabel,
+  getPreviewActionClass: getPreviewActionClass,
   padStart: padStart,
 }

@@ -88,6 +88,13 @@ function switchTab(tab: 'movie' | 'tv') {
   activeTab.value = tab
 }
 
+function onSwitchTabTap(e: WechatMiniprogram.CustomEvent) {
+  const tab = (e.currentTarget as { dataset?: { tab?: string } })?.dataset?.tab
+  if (tab === 'movie' || tab === 'tv') {
+    switchTab(tab)
+  }
+}
+
 function toggleView() {
   viewMode.value = viewMode.value === 'grid' ? 'list' : 'grid'
 }
@@ -103,10 +110,22 @@ function openMovieDetail(movie: MovieInfo) {
   detailVisible.value = true
 }
 
+function onOpenMovieDetailTap(e: WechatMiniprogram.CustomEvent) {
+  const index = Number((e.currentTarget as { dataset?: { index?: number | string } })?.dataset?.index)
+  if (!Number.isInteger(index) || index < 0 || index >= filteredMovies.value.length) return
+  openMovieDetail(filteredMovies.value[index])
+}
+
 function openShowDetail(show: ShowInfo) {
   detailShow.value = show
   detailMovie.value = null
   detailVisible.value = true
+}
+
+function onOpenShowDetailTap(e: WechatMiniprogram.CustomEvent) {
+  const index = Number((e.currentTarget as { dataset?: { index?: number | string } })?.dataset?.index)
+  if (!Number.isInteger(index) || index < 0 || index >= filteredShows.value.length) return
+  openShowDetail(filteredShows.value[index])
 }
 
 function closeDetail() {
@@ -165,12 +184,14 @@ function onRematch(e: WechatMiniprogram.CustomEvent<{ path: string, kind: 'movie
         <view
           class="flex-1 py-2 text-center text-sm font-medium rounded-xl"
           :class="activeTab === 'movie' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'"
-          @tap="() => switchTab('movie')"
+          data-tab="movie"
+          @tap="onSwitchTabTap"
         >电影 ({{ movies.length }})</view>
         <view
           class="flex-1 py-2 text-center text-sm font-medium rounded-xl"
           :class="activeTab === 'tv' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'"
-          @tap="() => switchTab('tv')"
+          data-tab="tv"
+          @tap="onSwitchTabTap"
         >剧集 ({{ tvShows.length }})</view>
       </view>
     </view>
@@ -215,11 +236,12 @@ function onRematch(e: WechatMiniprogram.CustomEvent<{ path: string, kind: 'movie
 
         <view v-else-if="viewMode === 'grid'" class="grid grid-cols-3 gap-2">
           <view
-            v-for="movie in filteredMovies"
+            v-for="(movie, movieIndex) in filteredMovies"
             :key="movie.path"
             class="overflow-hidden rounded-xl bg-card"
             hover-class="opacity-70"
-            @tap="() => openMovieDetail(movie)"
+            :data-index="movieIndex"
+            @tap="onOpenMovieDetailTap"
           >
             <MediaPoster :src="movie.posterUrl" />
             <view class="p-1.5">
@@ -234,7 +256,8 @@ function onRematch(e: WechatMiniprogram.CustomEvent<{ path: string, kind: 'movie
             <view
               class="p-2.5 flex items-center gap-2.5"
               hover-class="opacity-70"
-              @tap="() => openMovieDetail(movie)"
+              :data-index="idx"
+              @tap="onOpenMovieDetailTap"
             >
               <MediaPoster :src="movie.posterUrl" width="110rpx" height="160rpx" rounded="rounded-lg" class="shrink-0" />
               <view class="flex-1 min-w-0">
@@ -258,11 +281,12 @@ function onRematch(e: WechatMiniprogram.CustomEvent<{ path: string, kind: 'movie
 
         <view v-else-if="viewMode === 'grid'" class="grid grid-cols-3 gap-2">
           <view
-            v-for="show in filteredShows"
+            v-for="(show, showIndex) in filteredShows"
             :key="show.path"
             class="overflow-hidden rounded-xl bg-card"
             hover-class="opacity-70"
-            @tap="() => openShowDetail(show)"
+            :data-index="showIndex"
+            @tap="onOpenShowDetailTap"
           >
             <MediaPoster :src="show.posterUrl" :badge="show.supplementBadge" />
             <view class="p-1.5">
@@ -277,7 +301,8 @@ function onRematch(e: WechatMiniprogram.CustomEvent<{ path: string, kind: 'movie
             <view
               class="p-2.5 flex items-center gap-2.5"
               hover-class="opacity-70"
-              @tap="() => openShowDetail(show)"
+              :data-index="idx"
+              @tap="onOpenShowDetailTap"
             >
               <MediaPoster :src="show.posterUrl" :badge="show.supplementBadge" width="110rpx" height="160rpx" rounded="rounded-lg" class="shrink-0" />
               <view class="flex-1 min-w-0">

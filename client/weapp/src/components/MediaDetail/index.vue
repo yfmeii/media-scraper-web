@@ -78,6 +78,15 @@ const hasNfo = computed(() => props.movie?.hasNfo || props.show?.hasNfo || false
 const assets = computed(() => props.movie?.assets || props.show?.assets)
 const seasons = computed<SeasonInfo[]>(() => props.show?.seasons || [])
 const totalEpisodes = computed(() => seasons.value.reduce((sum, s) => sum + s.episodes.length, 0))
+const episodePathMap = computed<Record<string, MediaFile>>(() => {
+  const map: Record<string, MediaFile> = {}
+  for (const season of seasons.value) {
+    for (const ep of season.episodes) {
+      map[ep.path] = ep
+    }
+  }
+  return map
+})
 
 /** 缺集信息，用于模板绑定 */
 const missingEpisodes = computed<SeasonMissingInfo[]>(() => {
@@ -109,6 +118,12 @@ function toggleSeason(season: number) {
   else {
     expandedSeasons.value = [...expandedSeasons.value, season]
   }
+}
+
+function onSeasonTap(e: WechatMiniprogram.CustomEvent) {
+  const season = Number((e.currentTarget as { dataset?: { season?: number | string } })?.dataset?.season)
+  if (!Number.isInteger(season)) return
+  toggleSeason(season)
 }
 
 // getEpisodeLabel moved to format.wxs
@@ -171,6 +186,14 @@ async function handleRefreshSeason(season: SeasonInfo) {
   finally {
     operationLoading.value = false
   }
+}
+
+function onRefreshSeasonTap(e: WechatMiniprogram.CustomEvent) {
+  const seasonNo = Number((e.currentTarget as { dataset?: { season?: number | string } })?.dataset?.season)
+  if (!Number.isInteger(seasonNo)) return
+  const season = seasons.value.find(item => item.season === seasonNo)
+  if (!season) return
+  handleRefreshSeason(season)
 }
 
 async function handleRefreshEpisode(season: number, episode: number) {
@@ -249,6 +272,19 @@ async function onEpisodeTap(ep: MediaFile) {
   catch {
     // user cancelled
   }
+}
+
+function onEpisodeItemTap(e: WechatMiniprogram.CustomEvent) {
+  const path = (e.currentTarget as { dataset?: { path?: string } })?.dataset?.path
+  if (!path) return
+  const ep = episodePathMap.value[path]
+  if (!ep) return
+  onEpisodeTap(ep)
+}
+
+function onMoveMovieTap() {
+  if (!props.movie) return
+  handleMoveToInbox(props.movie.file.path, true)
 }
 
 function onVisibleChange(e: WechatMiniprogram.CustomEvent) {
@@ -406,7 +442,8 @@ function onClose() {
               <view
                 class="flex items-center justify-between px-3 py-2.5"
                 hover-class="opacity-70"
-                @tap="() => toggleSeason(season.season)"
+                :data-season="season.season"
+                @tap="onSeasonTap"
               >
                 <view class="flex items-center gap-2">
                   <t-icon
@@ -426,7 +463,8 @@ function onClose() {
                     v-if="show.tmdbId"
                     class="flex items-center justify-center"
                     hover-class="opacity-50"
-                    @tap.stop="() => handleRefreshSeason(season)"
+                    :data-season="season.season"
+                    @tap.stop="onRefreshSeasonTap"
                   >
                     <t-icon name="refresh" size="32rpx" color="var(--color-muted-foreground)" />
                   </view>
@@ -440,7 +478,8 @@ function onClose() {
                   <view
                     class="flex items-center justify-between px-3 py-2"
                     hover-class="bg-muted/50"
-                    @tap.stop="() => onEpisodeTap(ep)"
+                    :data-path="ep.path"
+                    @tap.stop="onEpisodeItemTap"
                   >
                     <view class="flex-1 min-w-0">
                       <view class="flex items-center gap-1.5">
@@ -495,7 +534,7 @@ function onClose() {
           v-if="movie"
           class="mt-2 flex items-center justify-center gap-1 py-2.5 rounded-xl border border-destructive/30"
           hover-class="bg-destructive/5"
-          @tap="() => { if (movie) handleMoveToInbox(movie.file.path, true) }"
+          @tap="onMoveMovieTap"
         >
           <t-icon name="inbox" size="32rpx" color="var(--color-destructive)" />
           <text class="text-sm font-medium text-destructive">移回收件箱</text>

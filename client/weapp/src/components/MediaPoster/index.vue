@@ -1,37 +1,51 @@
 <script setup lang="ts">
+import { computed } from 'wevu'
 import MsImage from '@/components/MsImage/index.vue'
 
 defineComponentJson({ styleIsolation: 'apply-shared' })
 
-defineProps<{
-  /** 封面图 URL */
-  src?: string
+const props = defineProps({
+  /** 封面图 URL（允许任意类型，内部统一兜底为字符串） */
+  src: {
+    type: null,
+    default: '',
+  },
   /** 宽度，默认 100% */
-  width?: string
+  width: String,
   /** 高度，默认 300rpx */
-  height?: string
+  height: String,
   /** 圆角 class，默认 rounded-xl */
-  rounded?: string
+  rounded: String,
   /** 右上角徽章文字 */
-  badge?: string
+  badge: String,
   /** 是否懒加载，默认 true */
-  lazyLoad?: boolean
-}>()
+  lazyLoad: {
+    type: Boolean,
+    default: true,
+  },
+})
+
+const safeSrc = computed(() => {
+  const value = props.src
+  if (typeof value === 'string') return value
+  if (value == null) return ''
+  return String(value)
+})
 </script>
 
 <template>
-  <view class="relative overflow-hidden" :class="rounded || 'rounded-xl'">
+  <view class="relative overflow-hidden" :class="props.rounded || 'rounded-xl'">
     <MsImage
-      :src="src"
+      :src="safeSrc"
       mode="aspectFill"
-      :width="width || '100%'"
-      :height="height || '300rpx'"
+      :width="props.width || '100%'"
+      :height="props.height || '300rpx'"
       class="bg-muted"
-      :lazy-load="lazyLoad !== false"
+      :lazy-load="props.lazyLoad !== false"
     />
     <view
-      v-if="badge"
+      v-if="props.badge"
       class="absolute right-1 top-1 rounded-lg bg-warning px-1 py-0.5 text-xs text-white"
-    >{{ badge }}</view>
+    >{{ props.badge }}</view>
   </view>
 </template>

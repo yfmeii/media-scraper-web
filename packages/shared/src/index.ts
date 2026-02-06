@@ -149,6 +149,48 @@ export interface ScrapePlan {
 export type PreviewAction = ScrapePlanAction;
 export type PreviewPlan = ScrapePlan;
 
+// ── Client API Contract ──
+
+export const CLIENT_API_ENDPOINTS = {
+  fetchStats: '/media/stats',
+  fetchTVShows: '/media/tv?include=assets&group=status',
+  fetchMovies: '/media/movies?include=assets',
+  fetchInbox: '/media/inbox',
+  fetchInboxByDirectory: '/media/inbox?view=dir',
+  fetchTasks: '/tasks',
+  fetchTaskStats: '/tasks/stats',
+  cancelTask: '/tasks',
+  searchTMDBBase: '/scrape/search',
+  refreshMetadata: '/scrape/refresh',
+  recognizePath: '/scrape/recognize',
+  autoMatch: '/scrape/match',
+  processTV: '/scrape/process/tv',
+  processMovie: '/scrape/process/movie',
+  moveToInbox: '/scrape/move-to-inbox',
+  previewPlan: '/scrape/preview',
+} as const;
+
+export function createEmptyTaskStats(): TaskStats {
+  return { total: 0, pending: 0, running: 0, success: 0, failed: 0 };
+}
+
+export function createEmptyMatchResult(): MatchResult {
+  return { matched: false, candidates: [] };
+}
+
+export function createEmptyPreviewPlan(): PreviewPlan {
+  return {
+    actions: [],
+    impactSummary: {
+      filesMoving: 0,
+      nfoCreating: 0,
+      nfoOverwriting: 0,
+      postersDownloading: 0,
+      directoriesCreating: [],
+    },
+  };
+}
+
 export interface Stats {
   tvShows: number;
   tvEpisodes: number;

@@ -1,16 +1,36 @@
 <script setup lang="ts">
-import { computed, onShow, storeToRefs } from 'wevu'
+import { computed, onShow, ref, storeToRefs, watch } from 'wevu'
 import { useTabStore } from '@/stores/tab'
 import { useServerStore } from '@/stores/server'
 import { useToast } from '@/hooks/useToast'
+import { DEFAULT_IMAGE_PROXY_URL } from '@/utils/config'
 import TabBar from '@/components/TabBar/index.vue'
 
 definePageJson({ disableScroll: true })
 
 const tabStore = useTabStore()
 const serverStore = useServerStore()
-const { isConfigured, serverUrl, hasApiKey, connectionStatus, latency } = storeToRefs(serverStore)
+const {
+  isConfigured,
+  serverUrl,
+  hasApiKey,
+  connectionStatus,
+  latency,
+  imageProxyEnabled,
+  imageProxyUrl,
+} = storeToRefs(serverStore)
 const { showToast } = useToast()
+const proxyEnabled = ref(true)
+const proxyUrl = ref(DEFAULT_IMAGE_PROXY_URL)
+
+watch(
+  [imageProxyEnabled, imageProxyUrl],
+  ([enabled, url]) => {
+    proxyEnabled.value = enabled
+    proxyUrl.value = url || DEFAULT_IMAGE_PROXY_URL
+  },
+  { immediate: true },
+)
 
 onShow(() => {
   tabStore.setActive(3)
@@ -48,6 +68,29 @@ function onDisconnect() {
 
 function onChangeServer() {
   wx.navigateTo({ url: '/pages/setup/index' })
+}
+
+function onToggleProxy() {
+  proxyEnabled.value = !proxyEnabled.value
+}
+
+function onProxyUrlInput(e: WechatMiniprogram.CustomEvent) {
+  proxyUrl.value = e.detail.value
+}
+
+function onResetProxy() {
+  proxyEnabled.value = true
+  proxyUrl.value = DEFAULT_IMAGE_PROXY_URL
+}
+
+function onSaveProxy() {
+  if (!isConfigured.value) {
+    showToast('请先配置服务器', 'warning')
+    return
+  }
+  serverStore.saveImageProxy(proxyEnabled.value, proxyUrl.value)
+  proxyUrl.value = proxyUrl.value.trim() || DEFAULT_IMAGE_PROXY_URL
+  showToast('图片代理设置已保存')
 }
 
 const statusText = computed(() => {
@@ -91,6 +134,51 @@ const statusColor = computed(() => {
               <view class="h-1.5 w-1.5 rounded-full" :style="{ backgroundColor: statusColor }" />
               <view class="text-xs" :style="{ color: statusColor }">{{ statusText }}</view>
             </view>
+          </view>
+        </view>
+      </view>
+
+      <!-- Image Proxy -->
+      <view class="px-4">
+        <view class="pl-1 text-xs font-medium text-muted-foreground mt-6 mb-1">🖼️ 图片代理</view>
+        <view class="mt-2 rounded-xl bg-card p-3">
+          <view class="flex items-center justify-between">
+            <view class="pr-3">
+              <view class="text-sm text-foreground">外链图片代理</view>
+              <view class="mt-1 text-xs text-muted-foreground">用于 TMDB 等外链图片，降低防盗链和 TLS 问题</view>
+            </view>
+            <view
+              class="shrink-0 rounded-lg px-2 py-1 text-xs"
+              :class="proxyEnabled ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'"
+              hover-class="opacity-70"
+              @tap="onToggleProxy"
+            >{{ proxyEnabled ? '已开启' : '已关闭' }}</view>
+          </view>
+
+          <view class="h-px bg-border my-3"></view>
+
+          <view class="text-xs text-muted-foreground mb-1">代理地址</view>
+          <t-input
+            :value="proxyUrl"
+            placeholder="https://wsrv.nl/?url="
+            clearable
+            @change="onProxyUrlInput"
+          />
+          <view class="mt-1 text-xs text-muted-foreground">
+            支持两种格式：1) 末尾拼接原图 URL；2) 用 <text class="text-foreground">{url}</text> 作为占位符
+          </view>
+
+          <view class="mt-3 flex gap-2">
+            <view
+              class="flex-1 rounded-xl bg-muted py-2 text-center text-sm text-muted-foreground"
+              hover-class="opacity-70"
+              @tap="onResetProxy"
+            >恢复默认</view>
+            <view
+              class="flex-1 rounded-xl bg-primary py-2 text-center text-sm text-primary-foreground"
+              hover-class="opacity-80"
+              @tap="onSaveProxy"
+            >保存设置</view>
           </view>
         </view>
       </view>

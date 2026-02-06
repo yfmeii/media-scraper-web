@@ -12,6 +12,7 @@
   import type { ActionButton } from '$lib/components/mediaDetailActions';
   import { confirmDialog } from '$lib/stores';
   import { copyPath, detailDelay, getFanartUrl } from '$lib/mediaDetail';
+  import { runBatchRefresh } from '$lib/batchRefresh';
   
   // Helper functions for typed array operations
   function countTotalEpisodes(seasons: SeasonInfo[]): number {
@@ -140,21 +141,23 @@
     
     isOperating = true;
     operationMessage = '正在刷新元数据...';
-    
-    let successCount = 0;
-    let failCount = 0;
-    
-    batchProgress = { current: 0, total: paths.length };
-    
-    for (const show of selectedShowsList) {
-      operationMessage = `正在刷新 (${batchProgress.current + 1}/${batchProgress.total}): ${show.name}`;
-      const result = await refreshMetadata('tv', show.path, show.tmdbId!);
-      if (result.success) successCount++;
-      else failCount++;
-      
-      batchProgress.current++;
-      batchProgress = { ...batchProgress };
-    }
+
+    const targets = selectedShowsList.map(show => ({
+      path: show.path,
+      name: show.name,
+      tmdbId: show.tmdbId!,
+    }));
+
+    batchProgress = { current: 0, total: targets.length };
+    const { successCount, failCount } = await runBatchRefresh(
+      'tv',
+      targets,
+      refreshMetadata,
+      ({ current, total, target }) => {
+        operationMessage = `正在刷新 (${current}/${total}): ${target.name}`;
+        batchProgress = { current, total };
+      },
+    );
     
     // Refresh data
     const updatedShows = await fetchTVShows();
