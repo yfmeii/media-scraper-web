@@ -25,6 +25,34 @@
     return [...episodes].sort((a, b) => (a.parsed.episode || 0) - (b.parsed.episode || 0));
   }
   
+  /** 计算某季在 min~max 集号之间缺失的集号列表 */
+  function getSeasonMissingEpisodes(episodes: MediaFile[]): number[] {
+    const epNums = episodes.map(e => e.parsed.episode).filter((n): n is number => n != null && n > 0);
+    if (epNums.length < 2) return [];
+    const min = Math.min(...epNums);
+    const max = Math.max(...epNums);
+    const have = new Set(epNums);
+    const missing: number[] = [];
+    for (let i = min; i <= max; i++) {
+      if (!have.has(i)) missing.push(i);
+    }
+    return missing;
+  }
+  
+  /** 获取整部剧所有季的缺集信息 */
+  function getShowMissingEpisodes(show: ShowInfo): { season: number; missing: number[] }[] {
+    return show.seasons
+      .map(s => ({ season: s.season, missing: getSeasonMissingEpisodes(s.episodes) }))
+      .filter(s => s.missing.length > 0);
+  }
+  
+  /** 格式化缺集为 SxEx 字符串 */
+  function formatMissingSxEx(missingList: { season: number; missing: number[] }[]): string {
+    return missingList
+      .flatMap(s => s.missing.map(ep => `S${String(s.season).padStart(2, '0')}E${String(ep).padStart(2, '0')}`))
+      .join(', ');
+  }
+  
   let shows = $state<ShowInfo[]>([]);
   let loading = $state(true);
   let selectedShows = $state(new Set<string>());
@@ -344,6 +372,10 @@
 
   const showOverview = $derived.by(() => selectedShowForDetail?.overview?.trim() || '');
   
+  const showMissingEpisodes = $derived.by(() => 
+    selectedShowForDetail ? getShowMissingEpisodes(selectedShowForDetail) : []
+  );
+  
   const showDetailActions = $derived.by((): ActionButton[] => {
     if (!selectedShowForDetail) return [];
     const show = selectedShowForDetail;
@@ -406,6 +438,7 @@
             <th class="p-3 text-left font-medium">剧集名称</th>
             <th class="w-24 p-3 text-left font-medium">季数</th>
             <th class="w-24 p-3 text-left font-medium">集数</th>
+            <th class="w-28 p-3 text-left font-medium">缺集</th>
             <th class="w-32 p-3 text-left font-medium">状态</th>
             <th class="w-40 p-3 text-left font-medium">完整性</th>
             <th class="w-40 p-3 text-left font-medium">操作</th>
@@ -413,6 +446,8 @@
         </thead>
         <tbody>
           {#each filteredShows as show (show.path)}
+            {@const missingInfo = getShowMissingEpisodes(show)}
+            {@const totalMissing = missingInfo.reduce((sum, s) => sum + s.missing.length, 0)}
             <tr 
               class="border-b border-border hover:bg-accent/50 cursor-pointer {selectedShows.has(show.path) ? 'bg-accent/30 border-l-2 border-l-primary' : ''} transition-colors duration-150"
               onclick={(e) => toggleShow(show.path, e)}
@@ -442,6 +477,19 @@
               <td class="p-3"><div class="font-medium">{show.name}</div></td>
               <td class="p-3 text-muted-foreground">{show.seasons.length}</td>
               <td class="p-3 text-muted-foreground">{countTotalEpisodes(show.seasons) || '24'}</td>
+              <td class="p-3">
+                {#if totalMissing > 0}
+                  <span 
+                    class="inline-flex items-center gap-1 rounded-full border border-orange-500/30 bg-orange-500/10 px-2 py-0.5 text-xs font-medium text-orange-500 cursor-help"
+                    title={formatMissingSxEx(missingInfo)}
+                  >
+                    <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    缺 {totalMissing} 集
+                  </span>
+                {:else}
+                  <span class="text-xs text-muted-foreground">—</span>
+                {/if}
+              </td>
               <td class="p-3">
                 <StatusBadge status={show.groupStatus} />
               </td>
@@ -507,18 +555,17 @@
 
 <!-- Detail Drawer -->
 {#if showDetailDrawer && selectedShowForDetail}
-  <DetailDrawer show={showDetailDrawer} onClose={closeDetailDrawer}>
+  <DetailDrawer show={showDetailDrawer} onClose={closeDetailDrawer} title={selectedShowForDetail.name}>
     <MediaDetailHeader
       fanartUrl={showFanartUrl}
       posterPath={selectedShowForDetail.posterPath}
       title={selectedShowForDetail.name}
       metaItems={showMetaItems}
       statusBadge={showStatusBadge}
-      onClose={closeDetailDrawer}
       animationDelay={detailDelay(0)}
     />
 
-    <div class="flex-1 overflow-y-auto px-4 pb-6 pt-2 space-y-6 scrollbar-thin scrollbar-thumb-muted scrollbar-track-transparent">
+    <div class="px-4 pb-6 pt-2 space-y-6">
       <MediaOverview
         overview={showOverview}
         maxLength={140}
@@ -593,11 +640,35 @@
         </div>
       </section>
 
-      <section class="space-y-3" in:fly={{ y: 18, duration: 300, delay: detailDelay(3), easing: quintOut }}>
+      {#if showMissingEpisodes.length > 0}
+        <section class="space-y-2" in:fly={{ y: 18, duration: 300, delay: detailDelay(3), easing: quintOut }}>
+          <div class="flex items-center gap-2">
+            <svg class="h-4 w-4 text-orange-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <h3 class="text-sm font-semibold text-orange-500">缺集检测</h3>
+          </div>
+          <div class="rounded-lg border border-orange-500/30 bg-orange-500/5 p-3">
+            <div class="flex flex-wrap gap-1.5">
+              {#each showMissingEpisodes as item}
+                {#each item.missing as epNum}
+                  <span class="inline-flex items-center rounded border border-orange-500/30 bg-orange-500/10 px-2 py-0.5 text-xs font-mono text-orange-500">
+                    S{String(item.season).padStart(2, '0')}E{String(epNum).padStart(2, '0')}
+                  </span>
+                {/each}
+              {/each}
+            </div>
+            <p class="mt-2 text-[11px] text-muted-foreground">
+              共缺 {showMissingEpisodes.reduce((sum, s) => sum + s.missing.length, 0)} 集，检测逻辑：每季最小集号到最大集号之间的空缺
+            </p>
+          </div>
+        </section>
+      {/if}
+
+      <section class="space-y-3" in:fly={{ y: 18, duration: 300, delay: detailDelay(showMissingEpisodes.length > 0 ? 4 : 3), easing: quintOut }}>
         <h3 class="text-sm font-semibold">季/集文件</h3>
         <div class="space-y-3">
           {#each sortSeasons(selectedShowForDetail.seasons) as seasonItem (seasonItem.season)}
-            <div class="rounded-lg border border-border/60 bg-muted/30">
+            {@const seasonMissing = getSeasonMissingEpisodes(seasonItem.episodes)}
+            <div class="rounded-lg border {seasonMissing.length > 0 ? 'border-orange-500/40' : 'border-border/60'} bg-muted/30">
               <div 
                 class="flex items-center justify-between gap-3 p-3 cursor-pointer hover:bg-muted/50"
                 role="button"
@@ -614,6 +685,12 @@
                 <div class="flex items-center gap-2">
                   <span class="text-sm font-medium">第 {seasonItem.season} 季</span>
                   <span class="text-xs text-muted-foreground">{seasonItem.episodes.length} 集</span>
+                  {#if seasonMissing.length > 0}
+                    <span class="inline-flex items-center gap-0.5 rounded-full bg-orange-500/15 px-1.5 py-0.5 text-[11px] font-medium text-orange-500">
+                      <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                      缺 {seasonMissing.length} 集
+                    </span>
+                  {/if}
                 </div>
                 <div class="flex items-center gap-2">
                   <button 
@@ -667,7 +744,9 @@
       </section>
     </div>
 
-    <MediaDetailActions actions={showDetailActions} operationMessage={operationMessage} />
+    {#snippet footer()}
+      <MediaDetailActions actions={showDetailActions} operationMessage={operationMessage} />
+    {/snippet}
   </DetailDrawer>
 {/if}
 

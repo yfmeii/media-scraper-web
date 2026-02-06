@@ -16,7 +16,6 @@
     metaItems = [] as string[],
     statusBadge,
     subtitle,
-    onClose,
     animationDelay = 200
   }: {
     fanartUrl?: string;
@@ -25,7 +24,6 @@
     metaItems?: string[];
     statusBadge: StatusBadge;
     subtitle?: string;
-    onClose: () => void;
     animationDelay?: number;
   } = $props();
 </script>
@@ -38,16 +36,6 @@
       style={fanartUrl ? `background-image: url('${fanartUrl}')` : ''}
     ></div>
     <div class="absolute inset-0 bg-gradient-to-t from-background via-background/70 to-transparent"></div>
-    <button 
-      class="absolute right-4 top-4 inline-flex items-center justify-center rounded-md h-8 w-8 bg-background/70 hover:bg-background transition-colors" 
-      aria-label="关闭详情" 
-      onclick={onClose}
-    >
-      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M18 6 6 18"/>
-        <path d="m6 6 12 12"/>
-      </svg>
-    </button>
   </div>
   
   <!-- Poster & Title -->

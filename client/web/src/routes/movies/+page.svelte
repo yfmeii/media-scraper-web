@@ -376,7 +376,7 @@
 
 <!-- Detail Drawer -->
 {#if showDetailDrawer && selectedMovieForDetail}
-  <DetailDrawer show={showDetailDrawer} onClose={closeDetailDrawer}>
+  <DetailDrawer show={showDetailDrawer} onClose={closeDetailDrawer} title={selectedMovieForDetail.name}>
     <MediaDetailHeader
       fanartUrl={movieFanartUrl}
       posterPath={selectedMovieForDetail.posterPath}
@@ -384,11 +384,10 @@
       metaItems={movieMetaItems}
       statusBadge={movieStatusBadge}
       subtitle={selectedMovieForDetail.tagline}
-      onClose={closeDetailDrawer}
       animationDelay={detailDelay(0)}
     />
 
-    <div class="flex-1 overflow-y-auto px-4 pb-6 pt-2 space-y-6">
+    <div class="px-4 pb-6 pt-2 space-y-6">
       <MediaOverview
         overview={movieOverview}
         maxLength={160}
@@ -494,7 +493,9 @@
       </section>
     </div>
 
-    <MediaDetailActions actions={movieDetailActions} operationMessage={operationMessage} />
+    {#snippet footer()}
+      <MediaDetailActions actions={movieDetailActions} operationMessage={operationMessage} />
+    {/snippet}
   </DetailDrawer>
 {/if}
 
