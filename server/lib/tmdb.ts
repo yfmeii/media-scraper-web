@@ -164,6 +164,57 @@ export async function findByImdbId(
   return merged[0];
 }
 
+// Find a TMDB item by TMDB ID (with media type fallback)
+export async function findByTmdbId(
+  tmdbId: number,
+  preferredType: 'tv' | 'movie' = 'tv',
+  language: string = DEFAULT_LANGUAGE,
+): Promise<TMDBSearchResult | null> {
+  if (!Number.isInteger(tmdbId) || tmdbId <= 0) return null;
+
+  const tryTypes: Array<'tv' | 'movie'> = preferredType === 'movie'
+    ? ['movie', 'tv']
+    : ['tv', 'movie'];
+
+  for (const kind of tryTypes) {
+    if (kind === 'tv') {
+      const details = await getTVDetails(tmdbId, language);
+      if (!details) continue;
+      return {
+        id: details.id,
+        media_type: 'tv',
+        name: details.name,
+        title: details.name,
+        original_name: details.original_name,
+        original_title: details.original_name,
+        overview: details.overview || '',
+        poster_path: details.poster_path,
+        backdrop_path: details.backdrop_path,
+        first_air_date: details.first_air_date,
+        vote_average: details.vote_average || 0,
+      };
+    }
+
+    const details = await getMovieDetails(tmdbId, language);
+    if (!details) continue;
+    return {
+      id: details.id,
+      media_type: 'movie',
+      name: details.title,
+      title: details.title,
+      original_name: details.original_title,
+      original_title: details.original_title,
+      overview: details.overview || '',
+      poster_path: details.poster_path,
+      backdrop_path: details.backdrop_path,
+      release_date: details.release_date,
+      vote_average: details.vote_average || 0,
+    };
+  }
+
+  return null;
+}
+
 // Get TV show details
 export async function getTVDetails(id: number, language: string = DEFAULT_LANGUAGE): Promise<TMDBShowDetails | null> {
   const params = new URLSearchParams({

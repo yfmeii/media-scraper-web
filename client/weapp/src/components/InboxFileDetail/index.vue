@@ -29,6 +29,7 @@ const {
   doAutoMatch,
   doSearch,
   selectCandidate,
+  cancelPending,
   reset: resetMatch,
 } = useMediaMatch()
 
@@ -279,6 +280,9 @@ async function handleAutoMatch(silent = false) {
     searchQuery.value.trim() || undefined,
     props.file.parsed.year,
   )
+  if (ok) {
+    selectedCandidate.value = null
+  }
   autoMatchTried.value = true
   if (!ok && !silent) {
     showToast('未找到匹配结果', 'warning')
@@ -304,6 +308,7 @@ async function handleManualSearch() {
 
 async function handleAIRecognize() {
   if (!props.file) return
+  cancelPending()
   aiLoading.value = true
   aiResult.value = null
   aiHint.value = ''
@@ -332,24 +337,29 @@ async function handleAIRecognize() {
       aiHint.value = `AI 置信度 ${Math.round(result.confidence * 100)}%，建议手动确认`
     }
 
-    const imdbResults = result.imdb_id
-      ? await searchTMDBByImdb(result.imdb_id)
-      : []
-    const nameResults = (result.tmdb_name || result.title)
-      ? await searchTMDB(result.tmdb_name || result.title)
-      : []
+    const backendCandidates = result.candidates || []
+    const backendPreferredId = result.preferred_tmdb_id || result.tmdb_id || null
 
-    const preferredId = imdbResults[0]?.id || result.tmdb_id || null
-    const baseMerged = mergeCandidates(imdbResults, nameResults)
+    let imdbResults: SearchResult[] = []
+    let nameResults: SearchResult[] = []
+    if (!backendCandidates.length) {
+      imdbResults = result.imdb_id
+        ? await searchTMDBByImdb(result.imdb_id)
+        : []
+      nameResults = (result.tmdb_name || result.title)
+        ? await searchTMDB(result.tmdb_name || result.title)
+        : []
+    }
+
+    const preferredId = backendPreferredId || imdbResults[0]?.id || null
+    const baseMerged = mergeCandidates(backendCandidates, imdbResults, nameResults)
     const fallbackCandidate = buildAiFallbackCandidate(result)
     const merged = preferredId && fallbackCandidate && !baseMerged.some(item => item.id === preferredId)
       ? [fallbackCandidate, ...baseMerged]
       : baseMerged
     const ordered = moveCandidateToFront(merged, preferredId)
     candidates.value = ordered
-    selectedCandidate.value = preferredId
-      ? (ordered.find(item => item.id === preferredId) || null)
-      : null
+    selectedCandidate.value = null
     autoMatchTried.value = true
 
     if (!ordered.length) {
@@ -621,7 +631,7 @@ function closePreview() {
                 v-for="c in candidateCards"
                 :key="c.id"
                 class="relative rounded-xl overflow-hidden border-2 bg-card"
-                :class="fmt.isSelectedCandidate(selectedCandidate, c.id) ? 'border-primary' : 'border-transparent'"
+                :class="selectedCandidate && selectedCandidate.id === c.id ? 'border-primary' : 'border-transparent'"
                 :data-id="c.id"
                 @tap="onSelectCandidate"
               >

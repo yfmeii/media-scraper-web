@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono';
-import { DEFAULT_LANGUAGE, SUB_EXTS } from '@media-scraper/shared';
-import { searchTV, searchMovie, searchMulti, findByImdbId, findBestMatch, findBestMatchMixed, getPosterUrl, type TMDBSearchResult } from '../lib/tmdb';
+import { DEFAULT_LANGUAGE, SUB_EXTS, type PathRecognizeResult, type SearchResult } from '@media-scraper/shared';
+import { searchTV, searchMovie, searchMulti, findByImdbId, findByTmdbId, findBestMatch, findBestMatchMixed, getPosterUrl, type TMDBSearchResult } from '../lib/tmdb';
 import { recognizePath } from '../lib/dify';
 import { processTVShow, processMovie, refreshMetadata, generatePreviewPlan } from '../lib/scraper';
 import { parseFilename } from '../lib/scanner';
@@ -38,6 +38,100 @@ function mapSearchResult(kind: SearchKind, result: TMDBSearchResult) {
     voteAverage: result.vote_average,
     posterPath: getPosterUrl(result.poster_path, 'w185'),
   };
+}
+
+function mergeTMDBResults(...groups: TMDBSearchResult[][]): TMDBSearchResult[] {
+  const merged: TMDBSearchResult[] = [];
+  const seen = new Set<number>();
+  for (const group of groups) {
+    for (const item of group) {
+      if (!item || seen.has(item.id)) continue;
+      seen.add(item.id);
+      merged.push(item);
+    }
+  }
+  return merged;
+}
+
+function moveTMDBResultToFront(list: TMDBSearchResult[], preferredId: number | null | undefined): TMDBSearchResult[] {
+  if (!preferredId) return list;
+  const idx = list.findIndex(item => item.id === preferredId);
+  if (idx <= 0) return list;
+  const copy = list.slice();
+  const [hit] = copy.splice(idx, 1);
+  copy.unshift(hit);
+  return copy;
+}
+
+function buildRecognizeFallbackCandidate(result: PathRecognizeResult, tmdbId: number): SearchResult {
+  const mediaType: 'tv' | 'movie' = result.media_type === 'movie' ? 'movie' : 'tv';
+  const displayName = result.tmdb_name || result.title || `TMDB ${tmdbId}`;
+  const date = result.year ? `${result.year}-01-01` : undefined;
+  if (mediaType === 'movie') {
+    return {
+      id: tmdbId,
+      mediaType,
+      title: displayName,
+      name: displayName,
+      releaseDate: date,
+    };
+  }
+  return {
+    id: tmdbId,
+    mediaType,
+    name: displayName,
+    title: displayName,
+    firstAirDate: date,
+  };
+}
+
+async function enrichRecognizeCandidates(result: PathRecognizeResult, language: string): Promise<{
+  candidates: SearchResult[];
+  preferredTmdbId: number | null;
+}> {
+  let byImdb: TMDBSearchResult | null = null;
+  if (result.imdb_id) {
+    try {
+      byImdb = await findByImdbId(result.imdb_id, language, result.media_type);
+    } catch (error) {
+      console.error('[recognize] findByImdbId failed:', error);
+    }
+  }
+
+  let byTmdb: TMDBSearchResult | null = null;
+  if (result.tmdb_id) {
+    try {
+      byTmdb = await findByTmdbId(result.tmdb_id, result.media_type, language);
+    } catch (error) {
+      console.error('[recognize] findByTmdbId failed:', error);
+    }
+  }
+
+  const query = (result.tmdb_name || result.title || '').trim();
+  let byName: TMDBSearchResult[] = [];
+  if (query) {
+    try {
+      byName = await searchMulti(query, result.year ?? undefined, language);
+    } catch (error) {
+      console.error('[recognize] searchMulti failed:', error);
+    }
+  }
+
+  const preferredTmdbId = byImdb?.id || byTmdb?.id || result.tmdb_id || null;
+  const merged = moveTMDBResultToFront(
+    mergeTMDBResults(
+      byImdb ? [byImdb] : [],
+      byTmdb ? [byTmdb] : [],
+      byName,
+    ),
+    preferredTmdbId,
+  );
+
+  let candidates = merged.slice(0, 10).map(item => mapSearchResult('multi', item));
+  if (preferredTmdbId && !candidates.some(item => item.id === preferredTmdbId)) {
+    candidates = [buildRecognizeFallbackCandidate(result, preferredTmdbId), ...candidates];
+  }
+  return { candidates, preferredTmdbId };
 }
 
 async function handleSearch(c: Context, kind: SearchKind) {
@@ -84,7 +178,7 @@ scrapeRoutes.get('/search/imdb', async (c) => {
 // AI 路径识别 - 使用 Dify 完整工作流（解析路径 + TMDB 搜索 + AI 匹配）
 scrapeRoutes.post('/recognize', async (c) => {
   const body = await c.req.json();
-  const { path: filePath } = body;
+  const { path: filePath, language = DEFAULT_LANGUAGE } = body;
   
   if (!filePath) {
     return c.json({ success: false, error: 'Missing path' }, 400);
@@ -101,12 +195,38 @@ scrapeRoutes.post('/recognize', async (c) => {
       error: 'Path recognition failed',
     });
   }
+
+  let candidates: SearchResult[] = [];
+  let preferredTmdbId: number | null = result.tmdb_id;
+  try {
+    const enriched = await enrichRecognizeCandidates(result, language);
+    candidates = enriched.candidates;
+    preferredTmdbId = enriched.preferredTmdbId;
+  } catch (error) {
+    console.error('[recognize] Enrich candidates failed:', error);
+  }
+
+  if (!candidates.length && preferredTmdbId) {
+    candidates = [buildRecognizeFallbackCandidate(result, preferredTmdbId)];
+  }
+
+  const preferredCandidate = candidates.find(item => item.id === preferredTmdbId) || candidates[0];
+  const resolvedTmdbName = result.tmdb_name
+    || preferredCandidate?.name
+    || preferredCandidate?.title
+    || null;
   
   console.log('[recognize] Result:', result);
   
   return c.json({
     success: true,
-    data: result,
+    data: {
+      ...result,
+      tmdb_id: preferredTmdbId || result.tmdb_id,
+      tmdb_name: resolvedTmdbName,
+      preferred_tmdb_id: preferredTmdbId || result.tmdb_id,
+      candidates,
+    },
   });
 });
 

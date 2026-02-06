@@ -408,16 +408,23 @@
           editEpisode = result.episode;
         }
         
-        // 先使用 IMDb ID 精确查，再合并名称搜索结果
-        const imdbResults = result.imdb_id
-          ? await searchTMDBByImdb(result.imdb_id)
-          : [];
-        const nameResults = (result.tmdb_name || result.title)
-          ? await searchTMDB(result.tmdb_name || result.title)
-          : [];
+        // 优先使用后端识别接口直接回传的候选（已按 imdb/tmdb/title 做过补全）
+        const backendCandidates = result.candidates || [];
+        const backendPreferredId = result.preferred_tmdb_id || result.tmdb_id || null;
 
-        const preferredId = imdbResults[0]?.id || result.tmdb_id || null;
-        const baseMerged = mergeCandidates(imdbResults, nameResults);
+        let imdbResults: SearchResult[] = [];
+        let nameResults: SearchResult[] = [];
+        if (!backendCandidates.length) {
+          imdbResults = result.imdb_id
+            ? await searchTMDBByImdb(result.imdb_id)
+            : [];
+          nameResults = (result.tmdb_name || result.title)
+            ? await searchTMDB(result.tmdb_name || result.title)
+            : [];
+        }
+
+        const preferredId = backendPreferredId || imdbResults[0]?.id || null;
+        const baseMerged = mergeCandidates(backendCandidates, imdbResults, nameResults);
         const fallbackCandidate = buildAiFallbackCandidate(result);
         const merged = preferredId && fallbackCandidate && !baseMerged.some(item => item.id === preferredId)
           ? [fallbackCandidate, ...baseMerged]

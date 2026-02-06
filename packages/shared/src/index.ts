@@ -254,6 +254,8 @@ export interface PathRecognizeResult {
   imdb_id: string | null;
   tmdb_id: number | null;
   tmdb_name: string | null;
+  preferred_tmdb_id?: number | null;
+  candidates?: SearchResult[];
   confidence: number;
   reason: string;
 }
