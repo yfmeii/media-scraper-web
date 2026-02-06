@@ -5,6 +5,7 @@
   import { quintOut, cubicOut } from 'svelte/easing';
   import { fetchTVShows, refreshMetadata, autoMatch, moveToInbox, type ShowInfo, type SearchResult } from '$lib/api';
   import type { SeasonInfo, MediaFile } from '@media-scraper/shared';
+  import { getSeasonMissingEpisodes, getShowMissingEpisodes, formatMissingSxEx } from '@media-scraper/shared';
   import { handleItemClick, toggleAllSelection } from '$lib/selection';
   import { formatFileSize, getGroupStatusBadge } from '$lib/format';
   import { TMDBSearchModal, BatchActionBar, TableSkeleton, PosterThumbnail, AssetIndicators, StatusBadge, SearchToolbar, MediaDetailHeader, MediaOverview, MediaDetailActions, DetailDrawer } from '$lib/components';
@@ -25,33 +26,6 @@
     return [...episodes].sort((a, b) => (a.parsed.episode || 0) - (b.parsed.episode || 0));
   }
   
-  /** 计算某季在 min~max 集号之间缺失的集号列表 */
-  function getSeasonMissingEpisodes(episodes: MediaFile[]): number[] {
-    const epNums = episodes.map(e => e.parsed.episode).filter((n): n is number => n != null && n > 0);
-    if (epNums.length < 2) return [];
-    const min = Math.min(...epNums);
-    const max = Math.max(...epNums);
-    const have = new Set(epNums);
-    const missing: number[] = [];
-    for (let i = min; i <= max; i++) {
-      if (!have.has(i)) missing.push(i);
-    }
-    return missing;
-  }
-  
-  /** 获取整部剧所有季的缺集信息 */
-  function getShowMissingEpisodes(show: ShowInfo): { season: number; missing: number[] }[] {
-    return show.seasons
-      .map(s => ({ season: s.season, missing: getSeasonMissingEpisodes(s.episodes) }))
-      .filter(s => s.missing.length > 0);
-  }
-  
-  /** 格式化缺集为 SxEx 字符串 */
-  function formatMissingSxEx(missingList: { season: number; missing: number[] }[]): string {
-    return missingList
-      .flatMap(s => s.missing.map(ep => `S${String(s.season).padStart(2, '0')}E${String(ep).padStart(2, '0')}`))
-      .join(', ');
-  }
   
   let shows = $state<ShowInfo[]>([]);
   let loading = $state(true);

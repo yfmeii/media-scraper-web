@@ -9,6 +9,16 @@ client/web/.svelte-kit/
 public/
 *.tsbuildinfo
 
+# WeChat Mini Program (client/weapp)
+client/weapp/dist/
+client/weapp/miniprogram_npm/
+client/weapp/components.d.ts
+client/weapp/typed-components.d.ts
+client/weapp/auto-import-components.json
+client/weapp/mini-program.html-data.json
+client/weapp/project.private.config.json
+client/weapp/node_modules/
+
 # Environment files
 .env
 .env.local

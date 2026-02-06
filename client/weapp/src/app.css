@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+/* ── Global skeleton pulse animation ── */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.skeleton-pulse {
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+@theme {
+  /* ── Semantic Design Tokens (shadcn/ui-style) ── */
+  --color-background: #f5f5f5;
+  --color-foreground: #171717;
+  --color-card: #ffffff;
+  --color-card-foreground: #171717;
+  --color-primary: #7C3AED;
+  --color-primary-foreground: #ffffff;
+  --color-muted: #f0f0f0;
+  --color-muted-foreground: #737373;
+  --color-border: #e5e5e5;
+  --color-accent: #ede9fe;
+  --color-accent-foreground: #7C3AED;
+  --color-destructive: #DC2626;
+  --color-success: #16A34A;
+  --color-warning: #D97706;
+}

@@ -234,3 +234,44 @@ export interface PreviewItem {
   season?: number;
   episodes?: Array<{ source: string; episode: number; episodeEnd?: number }>;
 }
+
+// ── Missing Episodes Detection ──
+
+export interface SeasonMissingInfo {
+  season: number;
+  missing: number[];
+}
+
+/** Detect missing episodes in a season by finding gaps between min and max episode numbers */
+export function getSeasonMissingEpisodes(episodes: MediaFile[]): number[] {
+  const epNums = episodes
+    .map(e => e.parsed.episode)
+    .filter((n): n is number => n != null && n > 0);
+  if (epNums.length < 2) return [];
+  const min = Math.min(...epNums);
+  const max = Math.max(...epNums);
+  const have = new Set(epNums);
+  const missing: number[] = [];
+  for (let i = min; i <= max; i++) {
+    if (!have.has(i)) missing.push(i);
+  }
+  return missing;
+}
+
+/** Detect missing episodes across all seasons of a show */
+export function getShowMissingEpisodes(show: ShowInfo): SeasonMissingInfo[] {
+  return show.seasons
+    .map(s => ({ season: s.season, missing: getSeasonMissingEpisodes(s.episodes) }))
+    .filter(s => s.missing.length > 0);
+}
+
+/** Format missing episodes as SxxExx badges string */
+export function formatMissingSxEx(missingList: SeasonMissingInfo[]): string {
+  return missingList
+    .flatMap(s =>
+      s.missing.map(
+        ep => `S${String(s.season).padStart(2, '0')}E${String(ep).padStart(2, '0')}`,
+      ),
+    )
+    .join(', ');
+}

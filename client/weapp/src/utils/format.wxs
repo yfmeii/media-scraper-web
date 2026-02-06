@@ -1,0 +1,73 @@
+/**
+ * WXS 格式化工具函数
+ * 用于 WXML 模板中直接调用（小程序模板不支持调用 JS 函数）
+ */
+
+function formatRating(rating) {
+  if (!rating) return '--'
+  return rating.toFixed(1)
+}
+
+function formatFileSize(bytes) {
+  if (bytes === 0) return '0 B'
+  var units = ['B', 'KB', 'MB', 'GB', 'TB']
+  var i = Math.floor(Math.log(bytes) / Math.log(1024))
+  var size = bytes / Math.pow(1024, i)
+  return size.toFixed(i > 1 ? 1 : 0) + ' ' + units[i]
+}
+
+function truncateFilename(name, maxLen) {
+  if (!maxLen) maxLen = 28
+  if (name.length <= maxLen) return name
+  var ext = name.lastIndexOf('.')
+  if (ext > 0 && name.length - ext <= 5) {
+    var base = name.substring(0, ext)
+    var suffix = name.substring(ext)
+    var trimLen = maxLen - suffix.length - 2
+    return base.substring(0, trimLen) + '..' + suffix
+  }
+  return name.substring(0, maxLen - 2) + '..'
+}
+
+function getMediaKindLabel(kind) {
+  if (kind === 'tv') return '剧集'
+  if (kind === 'movie') return '电影'
+  return '未知'
+}
+
+function getStatusLabel(file) {
+  if (file.isProcessed) return 'AI已识别'
+  return '未处理'
+}
+
+function padStart(str, len, char) {
+  str = '' + str
+  while (str.length < len) {
+    str = char + str
+  }
+  return str
+}
+
+function getEpisodeLabel(ep) {
+  var s = (ep.parsed && ep.parsed.season) ? ep.parsed.season : 0
+  var e = (ep.parsed && ep.parsed.episode) ? ep.parsed.episode : 0
+  var end = ep.parsed ? ep.parsed.episodeEnd : 0
+  if (end && end > e) {
+    return 'S' + padStart(s, 2, '0') + 'E' + padStart(e, 2, '0') + '-E' + padStart(end, 2, '0')
+  }
+  return 'S' + padStart(s, 2, '0') + 'E' + padStart(e, 2, '0')
+}
+
+function formatEpisodeCode(season, episode) {
+  return 'S' + padStart(season, 2, '0') + 'E' + padStart(episode, 2, '0')
+}
+
+module.exports = {
+  formatRating: formatRating,
+  formatFileSize: formatFileSize,
+  truncateFilename: truncateFilename,
+  getMediaKindLabel: getMediaKindLabel,
+  getStatusLabel: getStatusLabel,
+  getEpisodeLabel: getEpisodeLabel,
+  formatEpisodeCode: formatEpisodeCode,
+}

@@ -39,7 +39,7 @@
 {#if show}
   <div class="fixed inset-0 z-50">
     <button 
-      class="absolute inset-0 bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/60" 
+      class="absolute inset-0 bg-background/95 backdrop-blur-sm supports-backdrop-filter:bg-background/60" 
       aria-label="关闭详情"
       onclick={handleClose}
       transition:fade={{ duration: 200 }}
