@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { MovieInfo, ShowInfo } from '@media-scraper/shared'
+import { getShowMissingEpisodes } from '@media-scraper/shared'
 import { computed, onShow, ref } from 'wevu'
 import { fetchMovies, fetchTVShows } from '@/utils/api'
 import { getPosterUrl } from '@/utils/request'
@@ -51,11 +52,15 @@ const filteredShows = computed<DisplayShow[]>(() => {
   const list = searchKeyword.value
     ? tvShows.value.filter(s => s.name.toLowerCase().includes(searchKeyword.value.toLowerCase()))
     : tvShows.value
-  return list.map(s => ({
-    ...s,
-    posterUrl: getPosterUrl(s.posterPath),
-    supplementBadge: (s.groupStatus === 'supplement' && s.supplementCount) ? `缺${s.supplementCount}` : '',
-  }))
+  return list.map(s => {
+    const missingInfo = getShowMissingEpisodes(s)
+    const missingCount = missingInfo.reduce((sum, item) => sum + item.missing.length, 0)
+    return {
+      ...s,
+      posterUrl: getPosterUrl(s.posterPath),
+      supplementBadge: missingCount > 0 ? `缺${missingCount}集` : '',
+    }
+  })
 })
 
 async function loadLibrary() {
@@ -82,8 +87,12 @@ onShow(() => {
 
 async function onRefresh() {
   refreshing.value = true
-  await loadLibrary()
-  refreshing.value = false
+  try {
+    await loadLibrary()
+  }
+  finally {
+    refreshing.value = false
+  }
 }
 
 function switchTab(tab: 'movie' | 'tv') {
@@ -132,6 +141,8 @@ function onOpenShowDetailTap(e: WechatMiniprogram.CustomEvent) {
 
 function closeDetail() {
   detailVisible.value = false
+  detailMovie.value = null
+  detailShow.value = null
 }
 
 async function onDetailRefresh() {
@@ -140,6 +151,7 @@ async function onDetailRefresh() {
   if (detailMovie.value) {
     const updated = movies.value.find(m => m.path === detailMovie.value?.path)
     if (updated) detailMovie.value = updated
+    else closeDetail()
   }
   if (detailShow.value) {
     const updated = tvShows.value.find(s => s.path === detailShow.value?.path)
@@ -167,10 +179,10 @@ function onRematch(e: WechatMiniprogram.CustomEvent<{ path: string, kind: 'movie
     <view class="bg-background px-4 pt-2 pb-2">
       <view class="flex items-center gap-2">
         <view class="flex-1">
-          <t-search :value="searchKeyword" placeholder="搜索媒体..." shape="round" @change="onSearch" />
+          <t-search :value="searchKeyword" placeholder="搜索媒体..." shape="square" @change="onSearch" />
         </view>
         <view
-          class="flex items-center justify-center rounded-full bg-card"
+          class="flex items-center justify-center rounded-xl bg-card"
           style="width: var(--td-search-height, 80rpx); height: var(--td-search-height, 80rpx);"
           hover-class="opacity-70"
           @tap="toggleView"
@@ -209,7 +221,7 @@ function onRematch(e: WechatMiniprogram.CustomEvent<{ path: string, kind: 'movie
       <!-- Loading Skeleton -->
       <view v-if="loading" class="px-4 pt-2 pb-4">
         <view v-if="viewMode === 'grid'" class="grid grid-cols-3 gap-2">
-          <view v-for="i in 9" :key="i" class="overflow-hidden rounded-xl">
+          <view v-for="i in 9" :key="i" class="overflow-hidden rounded-md">
             <view class="h-[300rpx] w-full bg-muted skeleton-pulse" />
             <view class="bg-card p-1.5">
               <view class="h-3 w-4/5 rounded bg-muted skeleton-pulse" />
@@ -217,10 +229,10 @@ function onRematch(e: WechatMiniprogram.CustomEvent<{ path: string, kind: 'movie
             </view>
           </view>
         </view>
-        <view v-else class="rounded-xl bg-card">
+        <view v-else class="rounded-md bg-card">
           <view v-for="i in 6" :key="i">
             <view class="p-2.5 flex gap-2.5">
-              <view class="h-[160rpx] w-[110rpx] shrink-0 rounded-lg bg-muted skeleton-pulse" />
+              <view class="h-[160rpx] w-[110rpx] shrink-0 rounded bg-muted skeleton-pulse" />
               <view class="flex-1 py-1">
                 <view class="h-3.5 w-3/5 rounded bg-muted skeleton-pulse" />
                 <view class="mt-2 h-2.5 w-2/5 rounded bg-muted skeleton-pulse" />
@@ -240,7 +252,7 @@ function onRematch(e: WechatMiniprogram.CustomEvent<{ path: string, kind: 'movie
           <view
             v-for="(movie, movieIndex) in filteredMovies"
             :key="movie.path"
-            class="overflow-hidden rounded-xl bg-card"
+            class="overflow-hidden rounded-md bg-card"
             hover-class="opacity-70"
             :data-index="movieIndex"
             @tap="onOpenMovieDetailTap"
@@ -253,7 +265,7 @@ function onRematch(e: WechatMiniprogram.CustomEvent<{ path: string, kind: 'movie
           </view>
         </view>
 
-        <view v-else class="rounded-xl bg-card">
+        <view v-else class="rounded-md bg-card">
           <view v-for="(movie, idx) in filteredMovies" :key="movie.path">
             <view
               class="p-2.5 flex items-center gap-2.5"
@@ -261,7 +273,7 @@ function onRematch(e: WechatMiniprogram.CustomEvent<{ path: string, kind: 'movie
               :data-index="idx"
               @tap="onOpenMovieDetailTap"
             >
-              <MediaPoster :src="movie.posterUrl" width="110rpx" height="160rpx" rounded="rounded-lg" class="shrink-0" />
+              <MediaPoster :src="movie.posterUrl" width="110rpx" height="160rpx" rounded="rounded" class="shrink-0" />
               <view class="flex-1 min-w-0">
                 <view class="text-sm font-medium text-foreground">{{ movie.name }}</view>
                 <view v-if="movie.year" class="mt-0.5 text-xs text-muted-foreground">{{ movie.year }}</view>
@@ -285,7 +297,7 @@ function onRematch(e: WechatMiniprogram.CustomEvent<{ path: string, kind: 'movie
           <view
             v-for="(show, showIndex) in filteredShows"
             :key="show.path"
-            class="overflow-hidden rounded-xl bg-card"
+            class="overflow-hidden rounded-md bg-card"
             hover-class="opacity-70"
             :data-index="showIndex"
             @tap="onOpenShowDetailTap"
@@ -298,7 +310,7 @@ function onRematch(e: WechatMiniprogram.CustomEvent<{ path: string, kind: 'movie
           </view>
         </view>
 
-        <view v-else class="rounded-xl bg-card">
+        <view v-else class="rounded-md bg-card">
           <view v-for="(show, idx) in filteredShows" :key="show.path">
             <view
               class="p-2.5 flex items-center gap-2.5"
@@ -306,7 +318,7 @@ function onRematch(e: WechatMiniprogram.CustomEvent<{ path: string, kind: 'movie
               :data-index="idx"
               @tap="onOpenShowDetailTap"
             >
-              <MediaPoster :src="show.posterUrl" :badge="show.supplementBadge" width="110rpx" height="160rpx" rounded="rounded-lg" class="shrink-0" />
+              <MediaPoster :src="show.posterUrl" :badge="show.supplementBadge" width="110rpx" height="160rpx" rounded="rounded" class="shrink-0" />
               <view class="flex-1 min-w-0">
                 <view class="text-sm font-medium text-foreground">{{ show.name }}</view>
                 <view class="mt-0.5 text-xs text-muted-foreground">

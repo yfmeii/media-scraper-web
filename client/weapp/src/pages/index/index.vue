@@ -43,8 +43,12 @@ onShow(() => {
 
 async function onRefresh() {
   refreshing.value = true
-  await loadStats()
-  refreshing.value = false
+  try {
+    await loadStats()
+  }
+  finally {
+    refreshing.value = false
+  }
 }
 
 function goInbox() {

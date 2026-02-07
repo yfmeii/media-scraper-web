@@ -209,9 +209,6 @@ function resetPopupState() {
 
 watch(() => props.visible, (val) => {
   localVisible.value = val
-  if (!val) {
-    resetPopupState()
-  }
 }, { immediate: true })
 
 watch(
@@ -243,7 +240,9 @@ async function initForFile(file: MediaFile) {
 defineExpose({ initForFile })
 
 function onVisibleChange(e: WechatMiniprogram.CustomEvent) {
-  if (!e?.detail?.visible) {
+  // Only handle overlay/gesture dismiss (localVisible still true).
+  // Programmatic close (closePopup) already set localVisible=false, skip to avoid double emit.
+  if (e?.detail?.visible === false && localVisible.value) {
     localVisible.value = false
     resetPopupState()
     emit('close')
@@ -453,7 +452,7 @@ async function handleProcess() {
     if (result.success) {
       showToast('入库成功', 'success')
       wx.vibrateShort({ type: 'medium' })
-      emit('close')
+      closePopup()
       emit('processed')
     }
     else {

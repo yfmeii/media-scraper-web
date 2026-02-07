@@ -16,7 +16,7 @@ const props = defineProps({
   height: String,
   /** 图片模式，默认 aspectFill */
   mode: String,
-  /** 圆角 class，默认 rounded-xl */
+  /** 圆角 class，默认 rounded-md */
   rounded: String,
   /** 右上角徽章文字 */
   badge: String,
@@ -36,7 +36,7 @@ const safeSrc = computed(() => {
 </script>
 
 <template>
-  <view class="relative overflow-hidden" :class="props.rounded || 'rounded-xl'">
+  <view class="relative overflow-hidden" :class="props.rounded || 'rounded-md'">
     <MsImage
       :src="safeSrc"
       :mode="props.mode || 'aspectFill'"
@@ -47,7 +47,7 @@ const safeSrc = computed(() => {
     />
     <view
       v-if="props.badge"
-      class="absolute right-1 top-1 rounded-lg bg-warning px-1 py-0.5 text-xs text-white"
+      class="absolute right-1 top-1 rounded bg-warning px-1 py-0.5 text-xs text-white"
     >{{ props.badge }}</view>
   </view>
 </template>

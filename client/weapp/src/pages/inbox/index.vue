@@ -105,8 +105,12 @@ onShow(() => {
 
 async function onRefresh() {
   refreshing.value = true
-  await loadInbox()
-  refreshing.value = false
+  try {
+    await loadInbox()
+  }
+  finally {
+    refreshing.value = false
+  }
 }
 
 function onSearch(e: WechatMiniprogram.CustomEvent) {
@@ -184,30 +188,34 @@ async function runBatchProcess(
   let successCount = 0
   let failCount = 0
 
-  for (let i = 0; i < selected.length; i++) {
-    const file = selected[i]
-    fileStatus.value[file.path] = 'processing'
+  try {
+    for (let i = 0; i < selected.length; i++) {
+      const file = selected[i]
+      fileStatus.value[file.path] = 'processing'
 
-    const setProgress = (prefix: string) => {
-      batchProgress.value = `${prefix} ${i + 1}/${selected.length}...`
-    }
+      const setProgress = (prefix: string) => {
+        batchProgress.value = `${prefix} ${i + 1}/${selected.length}...`
+      }
 
-    try {
-      const success = await processor(file, { index: i, total: selected.length, setProgress })
-      fileStatus.value[file.path] = success ? 'success' : 'failed'
-      if (success) successCount++
-      else failCount++
-    }
-    catch {
-      failCount++
-      fileStatus.value[file.path] = 'failed'
+      try {
+        const success = await processor(file, { index: i, total: selected.length, setProgress })
+        fileStatus.value[file.path] = success ? 'success' : 'failed'
+        if (success) successCount++
+        else failCount++
+      }
+      catch {
+        failCount++
+        fileStatus.value[file.path] = 'failed'
+      }
     }
   }
+  finally {
+    batchProcessing.value = false
+    batchProgress.value = ''
+    fileStatus.value = {}
+    selectedPaths.value = []
+  }
 
-  batchProcessing.value = false
-  batchProgress.value = ''
-  fileStatus.value = {}
-  selectedPaths.value = []
   showToast(`完成：${successCount} 成功，${failCount} 失败`)
   await loadInbox()
 }
@@ -287,7 +295,7 @@ async function batchAIProcess() {
 
     <!-- Search -->
     <view class="bg-background px-4 pt-2 pb-2">
-      <t-search :value="searchKeyword" placeholder="搜索文件名..." shape="round" @change="onSearch" />
+      <t-search :value="searchKeyword" placeholder="搜索文件名..." shape="square" @change="onSearch" />
     </view>
 
     <!-- File List -->

@@ -59,24 +59,34 @@ export const useServerStore = defineStore('server', () => {
     clearServerConfig()
   }
 
+  let checkingPromise: Promise<boolean> | null = null
+
   async function checkConnection(): Promise<boolean> {
     if (!config.value) {
       connectionStatus.value = 'offline'
       return false
     }
-    connectionStatus.value = 'checking'
-    const start = Date.now()
-    try {
-      const ok = await testConnection(config.value.url, config.value.apiKey)
-      latency.value = Date.now() - start
-      connectionStatus.value = ok ? 'online' : 'offline'
-      return ok
-    }
-    catch {
-      latency.value = 0
-      connectionStatus.value = 'offline'
-      return false
-    }
+    // Prevent concurrent checks — reuse the in-flight promise
+    if (checkingPromise) return checkingPromise
+    checkingPromise = (async () => {
+      connectionStatus.value = 'checking'
+      const start = Date.now()
+      try {
+        const ok = await testConnection(config.value!.url, config.value!.apiKey)
+        latency.value = Date.now() - start
+        connectionStatus.value = ok ? 'online' : 'offline'
+        return ok
+      }
+      catch {
+        latency.value = 0
+        connectionStatus.value = 'offline'
+        return false
+      }
+      finally {
+        checkingPromise = null
+      }
+    })()
+    return checkingPromise
   }
 
   return {

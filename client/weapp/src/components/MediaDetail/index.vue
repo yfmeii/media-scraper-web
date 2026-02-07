@@ -98,6 +98,17 @@ const totalMissingCount = computed(() =>
   missingEpisodes.value.reduce((sum, s) => sum + s.missing.length, 0),
 )
 
+/** 扁平化缺集列表，用于模板单层 v-for 水平排列 */
+const flatMissingEpisodes = computed(() => {
+  const result: Array<{ season: number; ep: number }> = []
+  for (const item of missingEpisodes.value) {
+    for (const ep of item.missing) {
+      result.push({ season: item.season, ep })
+    }
+  }
+  return result
+})
+
 /** 每季的缺集数量 Record，模板中用 seasonMissingMap[season.season] 访问 */
 const seasonMissingMap = computed<Record<number, number[]>>(() => {
   if (!props.show) return {}
@@ -139,6 +150,7 @@ async function handleRefreshMetadata() {
     const result = await refreshMetadata(kind.value, path.value, tmdbId.value)
     if (result.success) {
       showToast('刷新成功')
+      localVisible.value = false
       emit('close')
       emit('refresh')
     }
@@ -155,6 +167,7 @@ async function handleRefreshMetadata() {
 }
 
 function handleRematch() {
+  localVisible.value = false
   emit('close')
   emit('rematch', {
     path: path.value,
@@ -235,7 +248,10 @@ async function handleMoveToInbox(sourcePath: string, isMovie = false) {
     const result = await moveToInbox(sourcePath)
     if (result.success) {
       showToast('已移回收件箱')
-      if (isMovie) emit('close')
+      if (isMovie) {
+        localVisible.value = false
+        emit('close')
+      }
       emit('refresh')
     }
     else {
@@ -288,7 +304,9 @@ function onMoveMovieTap() {
 }
 
 function onVisibleChange(e: WechatMiniprogram.CustomEvent) {
-  if (e && e.detail && !e.detail.visible) {
+  // Only handle overlay/gesture dismiss (localVisible still true).
+  // Programmatic close (onClose/action handlers) already set localVisible=false, skip to avoid double emit.
+  if (e?.detail?.visible === false && localVisible.value) {
     localVisible.value = false
     emit('close')
   }
@@ -296,6 +314,7 @@ function onVisibleChange(e: WechatMiniprogram.CustomEvent) {
 
 function onClose() {
   localVisible.value = false
+  operationLoading.value = false
   emit('close')
 }
 </script>
@@ -367,16 +386,16 @@ function onClose() {
             <!-- Status badges -->
             <view class="mt-2 flex flex-wrap gap-1.5">
               <view
-                class="rounded-lg px-1.5 py-0.5 text-xs"
+                class="rounded px-1.5 py-0.5 text-xs"
                 :class="hasNfo ? 'bg-green-100 text-green-700' : 'bg-muted text-muted-foreground'"
               >{{ hasNfo ? '已刮削' : '未刮削' }}</view>
               <view v-if="assets" class="flex gap-1">
                 <view
-                  class="rounded-lg px-1.5 py-0.5 text-xs"
+                  class="rounded px-1.5 py-0.5 text-xs"
                   :class="assets.hasPoster ? 'bg-blue-100 text-blue-700' : 'bg-muted text-muted-foreground'"
                 >海报</view>
                 <view
-                  class="rounded-lg px-1.5 py-0.5 text-xs"
+                  class="rounded px-1.5 py-0.5 text-xs"
                   :class="assets.hasFanart ? 'bg-purple-100 text-purple-700' : 'bg-muted text-muted-foreground'"
                 >背景</view>
               </view>
@@ -421,15 +440,10 @@ function onClose() {
             </view>
             <view class="flex flex-wrap gap-1">
               <view
-                v-for="item in missingEpisodes"
-                :key="item.season"
-              >
-                <view
-                  v-for="ep in item.missing"
-                  :key="ep"
-                  class="rounded bg-warning/10 px-1.5 py-0.5 text-xs text-warning"
-                >{{ fmt.formatEpisodeCode(item.season, ep) }}</view>
-              </view>
+                v-for="item in flatMissingEpisodes"
+                :key="`${item.season}-${item.ep}`"
+                class="rounded bg-warning/10 px-1.5 py-0.5 text-xs text-warning"
+              >{{ fmt.formatEpisodeCode(item.season, item.ep) }}</view>
             </view>
           </view>
         </view>

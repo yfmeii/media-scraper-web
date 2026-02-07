@@ -254,12 +254,12 @@ async function onProcess() {
         </view>
         <view class="mt-2 flex gap-2">
           <view
-            class="px-2.5 py-1 text-xs rounded-lg"
+            class="px-2.5 py-1 text-xs rounded"
             :class="searchType === 'movie' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'"
             @tap="setSearchTypeMovie"
           >电影</view>
           <view
-            class="px-2.5 py-1 text-xs rounded-lg"
+            class="px-2.5 py-1 text-xs rounded"
             :class="searchType === 'tv' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'"
             @tap="setSearchTypeTV"
           >剧集</view>

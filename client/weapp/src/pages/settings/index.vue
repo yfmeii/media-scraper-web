@@ -150,7 +150,7 @@ const statusColor = computed(() => {
               <view class="mt-1 text-xs text-muted-foreground">用于 TMDB 等外链图片，降低防盗链和 TLS 问题</view>
             </view>
             <view
-              class="shrink-0 rounded-lg px-2 py-1 text-xs"
+              class="shrink-0 rounded px-2 py-1 text-xs"
               :class="proxyEnabled ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'"
               hover-class="opacity-70"
               @tap="onToggleProxy"
