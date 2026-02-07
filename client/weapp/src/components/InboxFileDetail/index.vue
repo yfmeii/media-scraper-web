@@ -604,24 +604,26 @@ function closePreview() {
               <view v-if="selectedMediaType === 'tv'" class="flex items-center gap-2 ml-auto">
                 <view class="flex items-center gap-1">
                   <text class="text-xs text-muted-foreground">S</text>
-                  <t-stepper
+                  <input
                     :value="season"
-                    :min="1"
-                    :max="99"
-                    theme="filled"
-                    size="small"
-                    @change="onSeasonChange"
+                    type="number"
+                    class="text-xs text-center rounded-md px-1"
+                    style="width: 92rpx; height: 52rpx; border: 1rpx solid var(--color-border); color: var(--color-foreground);"
+                    placeholder="1"
+                    placeholder-style="color: var(--color-muted-foreground);"
+                    @input="onSeasonChange"
                   />
                 </view>
                 <view class="flex items-center gap-1">
                   <text class="text-xs text-muted-foreground">E</text>
-                  <t-stepper
+                  <input
                     :value="episode"
-                    :min="1"
-                    :max="999"
-                    theme="filled"
-                    size="small"
-                    @change="onEpisodeChange"
+                    type="number"
+                    class="text-xs text-center rounded-md px-1"
+                    style="width: 110rpx; height: 52rpx; border: 1rpx solid var(--color-border); color: var(--color-foreground);"
+                    placeholder="1"
+                    placeholder-style="color: var(--color-muted-foreground);"
+                    @input="onEpisodeChange"
                   />
                 </view>
               </view>

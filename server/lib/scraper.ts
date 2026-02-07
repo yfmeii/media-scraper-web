@@ -1,8 +1,8 @@
 import { mkdir, rename, writeFile, rm, stat, readdir } from 'fs/promises';
 import { join, dirname, extname, basename } from 'path';
-import { DEFAULT_LANGUAGE } from '@media-scraper/shared';
-import { SUB_EXTS } from '@media-scraper/shared';
+import { DEFAULT_LANGUAGE, SUB_EXTS } from '@media-scraper/shared';
 import { NFO_GENERATOR, MEDIA_PATHS } from './config';
+import { cleanupSourceDir } from './cleanup';
 import { getTVDetails, getMovieDetails, getSeasonDetails, getPosterUrl, getBackdropUrl, type TMDBShowDetails, type TMDBMovieDetails, type TMDBSeasonDetails } from './tmdb';
 import { extractTmdbIdFromNfo, parseFilename } from './scanner';
 
@@ -249,14 +249,8 @@ export async function processTVShow(
       }
     }
     
-    // Clean up empty source directories (only if empty)
-    try {
-      const srcDir = dirname(sourcePath);
-      const remaining = await readdir(srcDir);
-      if (remaining.length === 0) {
-        await rm(srcDir, { recursive: false });
-      }
-    } catch {}
+    // Clean up source directory if no video files remain
+    await cleanupSourceDir(dirname(sourcePath));
     
     return { success: true, message: `Successfully processed ${episodes.length} episodes`, destPath: seasonDir };
   } catch (error) {
@@ -310,10 +304,8 @@ export async function processMovie(
     if (posterUrl) await downloadImage(posterUrl, join(movieDir, 'poster.jpg'));
     if (backdropUrl) await downloadImage(backdropUrl, join(movieDir, 'fanart.jpg'));
     
-    // Clean up empty source directory
-    try {
-      await rm(srcDir, { recursive: true });
-    } catch {}
+    // Clean up source directory if no video files remain
+    await cleanupSourceDir(srcDir);
     
     return { success: true, message: `Successfully processed movie: ${movie.title}`, destPath: movieDir };
   } catch (error) {

@@ -167,6 +167,79 @@ describe('刮削业务逻辑', () => {
     expect(await pathExists(join(movieDir, 'poster.jpg'))).toBe(true);
   });
 
+  test('🛡️ 电影直接在 Inbox 根目录不会删除 Inbox', async () => {
+    globalThis.fetch = createMockFetch();
+    mockMovieTitle = uniqueName('InboxRootMovie');
+    mockMovieYear = '2024-06-01';
+
+    const { processMovie } = await import('./scraper');
+    // Place movie file directly in inbox root (not in a subdirectory)
+    const srcFile = join(inboxRoot, `${mockMovieTitle}.mkv`);
+    await writeFile(srcFile, 'video');
+    // Also place another file in inbox to prove it's not deleted
+    const otherFile = join(inboxRoot, 'other-movie.mkv');
+    await writeFile(otherFile, 'other-video');
+
+    const result = await processMovie(srcFile, 99);
+    expect(result.success).toBe(true);
+
+    // The inbox directory must still exist
+    expect(await pathExists(inboxRoot)).toBe(true);
+    // The other file must still be there
+    expect(await pathExists(otherFile)).toBe(true);
+    // The movie should be in the movies directory
+    const movieDir = join(movieRoot, `${mockMovieTitle} (2024)`);
+    expect(await pathExists(join(movieDir, `${mockMovieTitle} (2024).mkv`))).toBe(true);
+
+    // Clean up
+    await rm(otherFile, { force: true });
+  });
+
+  test('🧹 电影子目录空时被清理', async () => {
+    globalThis.fetch = createMockFetch();
+    mockMovieTitle = uniqueName('SubdirMovie');
+    mockMovieYear = '2023-03-15';
+
+    const { processMovie } = await import('./scraper');
+    const srcDir = join(inboxRoot, uniqueName('movie-subdir'));
+    await mkdir(srcDir, { recursive: true });
+    const srcFile = join(srcDir, `${mockMovieTitle}.mkv`);
+    await writeFile(srcFile, 'video');
+
+    const result = await processMovie(srcFile, 99);
+    expect(result.success).toBe(true);
+
+    // The subdirectory should be cleaned up (was empty after moving video)
+    expect(await pathExists(srcDir)).toBe(false);
+    // But inbox still exists
+    expect(await pathExists(inboxRoot)).toBe(true);
+  });
+
+  test('🎬 目录有其他视频文件时不删除', async () => {
+    globalThis.fetch = createMockFetch();
+    mockMovieTitle = uniqueName('KeepDirMovie');
+    mockMovieYear = '2022-07-20';
+
+    const { processMovie } = await import('./scraper');
+    const srcDir = join(inboxRoot, uniqueName('multi-movie-dir'));
+    await mkdir(srcDir, { recursive: true });
+    const srcFile = join(srcDir, `${mockMovieTitle}.mkv`);
+    await writeFile(srcFile, 'video');
+    // Another video file in the same directory
+    const otherVideo = join(srcDir, 'AnotherMovie.mp4');
+    await writeFile(otherVideo, 'other-video');
+
+    const result = await processMovie(srcFile, 99);
+    expect(result.success).toBe(true);
+
+    // The subdirectory should NOT be deleted because it still has a video file
+    expect(await pathExists(srcDir)).toBe(true);
+    expect(await pathExists(otherVideo)).toBe(true);
+
+    // Clean up
+    await rm(srcDir, { recursive: true, force: true });
+  });
+
   test('🔄 刷新指定季与集生成最新 NFO', async () => {
     globalThis.fetch = createMockFetch();
     mockShowName = uniqueName('RefreshShow');
