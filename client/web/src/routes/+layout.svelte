@@ -1,18 +1,16 @@
 <script lang="ts">
   import '../app.css';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { GlobalConfirmDialog } from '$lib/components';
-  import { fly } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
   import type { Snippet } from 'svelte';
   
   let { children }: { children?: Snippet } = $props();
   
-  const currentPath = $derived($page.url.pathname);
+  const currentPath = $derived(page.url.pathname);
 </script>
 
 <div class="min-h-screen bg-background flex flex-col">
-  <header class="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+  <header class="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60">
     <div class="container mx-auto px-4 h-16 flex items-center justify-between">
       <div class="flex items-center gap-3">
         <svg class="h-6 w-6 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -32,16 +30,8 @@
     </div>
   </header>
   
-  <div class="flex-1 relative">
-    {#key currentPath}
-      <div
-        in:fly={{ x: 10, duration: 300, delay: 150, easing: cubicOut }}
-        out:fly={{ x: -10, duration: 150, easing: cubicOut }}
-        class="h-full"
-      >
-        {@render children?.()}
-      </div>
-    {/key}
+  <div class="flex-1">
+    {@render children?.()}
   </div>
 </div>
 

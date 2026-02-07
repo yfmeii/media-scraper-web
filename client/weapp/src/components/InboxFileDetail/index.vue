@@ -692,9 +692,7 @@ function closePreview() {
                   {{ c.mediaType === 'movie' ? '电影' : '剧集' }}
                 </view>
                 <view class="p-1.5 bg-card">
-                  <text class="text-xs text-foreground" style="overflow: hidden; white-space: nowrap; text-overflow: ellipsis; display: block;">
-                    {{ c.displayName }}
-                  </text>
+                  <text class="text-xs text-foreground" style="overflow: hidden; white-space: nowrap; text-overflow: ellipsis; display: block;">{{ c.displayName }}</text>
                   <text class="text-xs text-muted-foreground">{{ c.displayYear }}</text>
                 </view>
               </view>
@@ -730,9 +728,7 @@ function closePreview() {
               size="32rpx"
               :color="selectedCandidate ? '#fff' : 'var(--color-muted-foreground)'"
             />
-            <text class="text-sm font-medium" :class="selectedCandidate ? 'text-primary-foreground' : 'text-muted-foreground'">
-              {{ processing ? '入库中...' : '确认入库' }}
-            </text>
+            <text class="text-sm font-medium" :class="selectedCandidate ? 'text-primary-foreground' : 'text-muted-foreground'">{{ processing ? '入库中...' : '确认入库' }}</text>
           </view>
         </view>
       </view>

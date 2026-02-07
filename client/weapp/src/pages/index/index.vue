@@ -34,8 +34,10 @@ async function loadStats() {
   }
 }
 
+// Initial data load (runs once during setup)
+loadStats()
+
 onShow(() => {
-  loadStats()
   tabStore.setActive(0)
 })
 

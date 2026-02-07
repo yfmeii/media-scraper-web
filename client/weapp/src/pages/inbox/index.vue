@@ -96,8 +96,10 @@ async function loadInbox() {
   }
 }
 
+// Initial data load (runs once during setup)
+loadInbox()
+
 onShow(() => {
-  loadInbox()
   tabStore.setActive(1)
 })
 
@@ -315,7 +317,7 @@ async function batchAIProcess() {
         </view>
 
         <!-- Empty -->
-        <view v-else-if="filteredFiles.length === 0" class="pt-8">
+        <view v-else-if="filteredFiles.length === 0" class="mt-3">
           <EmptyState title="暂无文件" :description="searchKeyword ? '没有匹配的文件' : '收件箱为空'" />
         </view>
 

@@ -32,11 +32,13 @@ watch(
   { immediate: true },
 )
 
+// Initial connection check (runs once during setup)
+if (isConfigured.value) {
+  serverStore.checkConnection()
+}
+
 onShow(() => {
   tabStore.setActive(3)
-  if (isConfigured.value) {
-    serverStore.checkConnection()
-  }
 })
 
 const displayUrl = computed(() => isConfigured.value ? serverUrl.value : '未配置')

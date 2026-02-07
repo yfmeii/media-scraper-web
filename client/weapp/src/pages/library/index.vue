@@ -73,8 +73,10 @@ async function loadLibrary() {
   }
 }
 
+// Initial data load (runs once during setup)
+loadLibrary()
+
 onShow(() => {
-  loadLibrary()
   tabStore.setActive(2)
 })
 

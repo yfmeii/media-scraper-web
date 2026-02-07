@@ -25,12 +25,11 @@ function onAction() {
 </script>
 
 <template>
-  <view class="rounded-xl bg-card p-5">
-    <t-empty :title="title" :description="description" />
-    <view v-if="props.actionText" class="mt-4 flex justify-center">
-      <t-button theme="primary" variant="outline" size="small" @tap="onAction">
-        {{ props.actionText }}
-      </t-button>
+  <view class="rounded-xl bg-card py-8 px-5 flex flex-col items-center">
+    <view class="text-sm text-foreground font-medium">{{ title }}</view>
+    <view v-if="description" class="mt-1 text-xs text-muted-foreground">{{ description }}</view>
+    <view v-if="props.actionText" class="mt-4">
+      <t-button theme="primary" variant="outline" size="small" @tap="onAction">{{ props.actionText }}</t-button>
     </view>
   </view>
 </template>
