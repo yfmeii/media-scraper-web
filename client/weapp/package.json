@@ -17,16 +17,16 @@
     "tdesign-miniprogram": "^1.12.3"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
+    "@tailwindcss/postcss": "^4.1.18",
     "miniprogram-api-typings": "^5.0.0",
     "postcss": "^8.5.6",
     "sass": "^1.97.3",
-    "tailwindcss": "^4",
+    "tailwindcss": "^4.1.18",
     "typescript": "^5.9.3",
     "vite-plugin-static-copy": "^3.2.0",
     "vue-tsc": "^3.2.4",
     "weapp-tailwindcss": "^4.9.8",
-    "weapp-vite": "^6.5.2",
-    "wevu": "^2.1.6"
+    "weapp-vite": "^6.5.3",
+    "wevu": "^2.1.7"
   }
 }
