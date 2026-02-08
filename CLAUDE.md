@@ -19,12 +19,18 @@ media-scraper-web/
 ├── server/                 # Bun + Hono API
 │   ├── server.ts
 │   ├── routes/             # media/scrape/tasks 路由
-│   └── lib/                # scanner/scraper/tmdb/dify/tasks
+│   └── lib/                # scanner/scraper/tmdb/dify/tasks/cleanup
 ├── client/
 │   ├── web/                # SvelteKit Web 管理台
 │   └── weapp/              # 微信小程序端
+│       └── src/
+│           ├── pages/      # index/inbox/library/match/settings/setup
+│           ├── components/ # MediaDetail/InboxFileDetail/MediaPoster/MsImage/EmptyState/TabBar
+│           ├── hooks/      # useMediaMatch/useMediaProcess/useToast/useDialog
+│           ├── stores/     # server(连接配置)/tab(底栏状态)
+│           └── utils/      # api/request/config/format.wxs
 ├── packages/
-│   └── shared/             # 共享类型与常量
+│   └── shared/             # 共享类型、常量与工具函数
 ├── dify/
 │   └── path-recognizer.yml # Dify 工作流导出
 └── CLAUDE.md               # 当前文档
@@ -99,6 +105,14 @@ media-scraper-web/
   - TV 以剧根目录为基准，可按剧/季/集刷新。
   - 电影可传目录或文件路径。
 
+### 6.4 源目录清理（`server/lib/cleanup.ts`）
+
+入库后对源目录进行安全清理，规则：
+- **永不删除保护目录**：Inbox/TV/Movies 根目录不可删除（动态读取 `MEDIA_PATHS`）。
+- **包含视频文件则保留**：如果目录中仍有有效视频文件（`.mkv/.mp4/.m4v/.avi/.mov`）则不删除。
+- **非递归删除**：仅使用 `rmdir`（不含 `recursive`），目录非空则失败保留。
+- 使用 `FileSystemOps` 接口抽象磁盘操作，便于在单元测试中 mock。
+
 ## 7. API 面向（主要）
 
 - `GET /api/media/tv?include=assets&group=status`
@@ -129,9 +143,43 @@ media-scraper-web/
 ### 8.2 小程序（`client/weapp`）
 
 - 首次进入未配置服务器会跳转 `/pages/setup/index`。
-- 业务页：`index`、`inbox`、`library`、`match`、`settings`。
+- 业务页：`index`（首页统计）、`inbox`（收件箱）、`library`（媒体库）、`match`（匹配/重匹配）、`settings`（设置）。
 - API 封装在 `client/weapp/src/utils/api.ts`，请求层在 `src/utils/request.ts`。
+- WXS 格式化函数在 `src/utils/format.wxs`（小程序模板不支持直接调用 JS 函数）。
 
+#### 8.2.1 组件架构
+
+| 组件 | 职责 |
+|------|------|
+| `MediaDetail` | 媒体详情弹框（剧集/电影），支持刷新元数据、移回收件箱、重新匹配 |
+| `InboxFileDetail` | 收件箱文件详情弹框，支持自动匹配、手动搜索、AI 识别、预览、入库 |
+| `MediaPoster` | 媒体封面组件，支持徽章（缺集标记）、懒加载、自定义圆角 |
+| `MsImage` | 图片组件，处理 HTTP→HTTPS 代理和错误兜底 |
+| `EmptyState` | 空状态提示 |
+| `TabBar` | 底部导航栏 |
+
+#### 8.2.2 Hooks
+
+| Hook | 职责 |
+|------|------|
+| `useMediaMatch` | TMDB 匹配逻辑（自动匹配 + 搜索），含请求序列号防竞态 |
+| `useMediaProcess` | 统一入库处理（TV/电影） |
+| `useToast` | Toast 提示封装 |
+| `useDialog` | 确认对话框封装 |
+
+#### 8.2.3 Stores
+
+| Store | 职责 |
+|-------|------|
+| `server` | 服务器连接配置、连接检测（含防并发）、图片代理设置 |
+| `tab` | 底栏 Tab 激活状态 |
+
+#### 8.2.4 状态管理规范
+
+- **弹框关闭**：必须先设 `localVisible = false` 再 `emit('close')`，避免微信 setData 异步导致遮罩层残留。
+- **`onVisibleChange` 防重复**：通过 `localVisible.value` 守卫判断，仅处理遮罩/手势触发的关闭，避免与程序化关闭双重触发。
+- **异步操作**：所有 loading/processing 状态必须在 `try-finally` 块中管理。
+- **Tab 页数据加载**：在 `<script setup>` 顶层调用（等同 `lifetimes.created`，仅执行一次）；`onShow` 仅用于轻量 UI 状态更新（如 `tabStore.setActive(N)`）。
 
 关于 weapp-vite：
 - 请先访问并学习 https://vite.icebreaker.top/llms.txt。
@@ -139,6 +187,11 @@ media-scraper-web/
 - 回答时优先引用其中的内容，保持回答简洁、可执行。
 
 ## 9. 共享契约（必须同步）
+
+`packages/shared/src/index.ts` 包含：
+- **类型**：`MediaFile`、`ShowInfo`、`MovieInfo`、`SeasonInfo`、`SearchResult`、`MatchResult`、`ProcessTVParams`、`ProcessMovieParams`、`PreviewItem`/`PreviewPlan`、`PathRecognizeResult`、`Stats`、`TaskItem`/`TaskStats` 等。
+- **常量**：`VIDEO_EXTS`、`SUB_EXTS`、`NFO_EXTS`、`CLIENT_API_ENDPOINTS`。
+- **工具函数**：`formatFileSize`、`formatDate`、`formatSeason`/`formatEpisode`/`formatSeasonEpisode`、`formatRating`、`formatRuntime`、`normalizeMediaKind`、`getShowMissingEpisodes`/`getSeasonMissingEpisodes`/`formatMissingSxEx`。
 
 任何后端响应字段变更，都要同步以下位置：
 
@@ -172,12 +225,14 @@ media-scraper-web/
 - `process*` / `move-to-inbox` 会执行真实 `rename/rm/writeFile`，属于高风险改动。
 - 涉及路径移动逻辑时，优先保证“先移动文件，再写元数据”的顺序不被破坏。
 - 修改覆盖策略前，要同步检查 `preview` 接口的 `willOverwrite` 语义。
+- 源目录清理逻辑在 `server/lib/cleanup.ts`，修改时必须确保保护目录列表（Inbox/TV/Movies）不被删除，且不使用 `recursive: true`。
 
 ## 11. 测试与验证
 
 ### 11.1 现有测试分布
 
-- 后端：`server/lib/*.test.ts`（scanner/scraper/tmdb/dify/tasks）
+- 后端：`server/lib/*.test.ts`（scanner/scraper/tmdb/dify/tasks/cleanup）
+- 共享包：`packages/shared/src/index.test.ts`
 - Web 工具：`client/web/src/lib/*.test.ts`
 
 ### 11.2 推荐验证顺序
