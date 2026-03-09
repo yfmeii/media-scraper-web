@@ -13,13 +13,13 @@ export const NFO_EXTS = new Set(NFO_EXTS_LIST);
 // Use getters so tests can override env vars safely at runtime.
 export const MEDIA_PATHS = {
   get inbox() {
-    return process.env.INBOX_PATH || '/mnt/media/Inbox';
+    return process.env.INBOX_PATH || '/media/inbox';
   },
   get tv() {
-    return process.env.TV_PATH || '/mnt/media/TV';
+    return process.env.TV_PATH || '/media/tv';
   },
   get movies() {
-    return process.env.MOVIES_PATH || '/mnt/media/Movies';
+    return process.env.MOVIES_PATH || '/media/movies';
   },
 };
 
@@ -29,6 +29,9 @@ export const TMDB_API_KEY = process.env.TMDB_API_KEY || '';
 // 路径识别 Dify API (可选)
 export const DIFY_PATH_RECOGNIZER_KEY = process.env.DIFY_PATH_RECOGNIZER_KEY || '';
 export const DIFY_BASE_URL = process.env.DIFY_URL || 'https://api.dify.ai/v1/chat-messages';
+
+// File operations mode: "rename" (fast, same device) or "copy" (slower, cross-device safe)
+export const FILE_OPS_MODE = (process.env.FILE_OPS_MODE || 'rename') as 'rename' | 'copy';
 
 // Validate required environment variables
 if (!TMDB_API_KEY) {

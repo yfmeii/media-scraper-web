@@ -4,7 +4,19 @@ import { searchTV, searchMovie, searchMulti, findByImdbId, findByTmdbId, findBes
 import { recognizePath } from '../lib/dify';
 import { processTVShow, processMovie, refreshMetadata, generatePreviewPlan } from '../lib/scraper';
 import { parseFilename } from '../lib/scanner';
-import { MEDIA_PATHS } from '../lib/config';
+import { MEDIA_PATHS, FILE_OPS_MODE } from '../lib/config';
+import { copyFile, unlink } from 'fs/promises';
+
+// Helper function to move or copy files based on config
+async function moveFile(src: string, dest: string): Promise<void> {
+  if (FILE_OPS_MODE === 'copy') {
+    await copyFile(src, dest);
+    await unlink(src);
+  } else {
+    const { rename } = await import('fs/promises');
+    await rename(src, dest);
+  }
+}
 
 export const scrapeRoutes = new Hono();
 
@@ -323,7 +335,6 @@ scrapeRoutes.post('/process/movie', async (c) => {
 
 // Move file back to inbox
 scrapeRoutes.post('/move-to-inbox', async (c) => {
-  const { rename, unlink } = await import('fs/promises');
   const { basename, dirname, join: pathJoin } = await import('path');
   
   const body = await c.req.json();
@@ -343,7 +354,7 @@ scrapeRoutes.post('/move-to-inbox', async (c) => {
     const fileName = basename(sourcePath);
     const destPath = pathJoin(MEDIA_PATHS.inbox, fileName);
     
-    await rename(sourcePath, destPath);
+    await moveFile(sourcePath, destPath);
     
     const srcDir = dirname(sourcePath);
     const srcName = basename(sourcePath, basename(sourcePath).match(/\.[^.]+$/)?.[0] || '');
@@ -353,7 +364,7 @@ scrapeRoutes.post('/move-to-inbox', async (c) => {
       try {
         const subSrc = pathJoin(srcDir, srcName + subExt);
         const subDest = pathJoin(MEDIA_PATHS.inbox, srcName + subExt);
-        await rename(subSrc, subDest);
+        await moveFile(subSrc, subDest);
       } catch {} // Ignore if subtitle doesn't exist
     }
     

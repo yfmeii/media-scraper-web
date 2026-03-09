@@ -1,7 +1,17 @@
-import { mkdir, rename, writeFile, rm, stat, readdir } from 'fs/promises';
+import { mkdir, rename, writeFile, rm, stat, readdir, copyFile, unlink } from 'fs/promises';
 import { join, dirname, extname, basename } from 'path';
 import { DEFAULT_LANGUAGE, SUB_EXTS } from '@media-scraper/shared';
-import { NFO_GENERATOR, MEDIA_PATHS } from './config';
+import { NFO_GENERATOR, MEDIA_PATHS, FILE_OPS_MODE } from './config';
+
+// Helper function to move or copy files based on config
+async function moveFile(src: string, dest: string): Promise<void> {
+  if (FILE_OPS_MODE === 'copy') {
+    await copyFile(src, dest);
+    await unlink(src);
+  } else {
+    await moveFile(src, dest);
+  }
+}
 import { cleanupSourceDir } from './cleanup';
 import { getTVDetails, getMovieDetails, getSeasonDetails, getPosterUrl, getBackdropUrl, type TMDBShowDetails, type TMDBMovieDetails, type TMDBSeasonDetails } from './tmdb';
 import { extractTmdbIdFromNfo, parseFilename } from './scanner';
@@ -196,7 +206,7 @@ export async function processTVShow(
       const destPath = join(seasonDir, destName);
       
       // Move main file
-      await rename(ep.source, destPath);
+      await moveFile(ep.source, destPath);
       movedFiles.push({ destPath, episode: ep.episode });
       
       // Move related subtitle files
@@ -205,7 +215,7 @@ export async function processTVShow(
       for (const subExt of SUB_EXTS) {
         const subPath = join(srcDir, srcName + subExt);
         try {
-          await rename(subPath, join(seasonDir, destName.replace(ext, subExt)));
+          await moveFile(subPath, join(seasonDir, destName.replace(ext, subExt)));
         } catch {}
       }
     }
@@ -281,7 +291,7 @@ export async function processMovie(
     // STEP 1: Move files first (before generating metadata)
     const ext = extname(sourcePath);
     const destPath = join(movieDir, `${folderName}${ext}`);
-    await rename(sourcePath, destPath);
+    await moveFile(sourcePath, destPath);
     
     // Move related subtitle files
     const srcDir = dirname(sourcePath);
@@ -289,7 +299,7 @@ export async function processMovie(
     for (const subExt of SUB_EXTS) {
       const subPath = join(srcDir, srcName + subExt);
       try {
-        await rename(subPath, join(movieDir, `${folderName}${subExt}`));
+        await moveFile(subPath, join(movieDir, `${folderName}${subExt}`));
       } catch {}
     }
     
