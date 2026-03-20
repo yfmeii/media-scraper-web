@@ -14,3 +14,5 @@ export { default as SearchToolbar } from './SearchToolbar.svelte';
 export { default as MediaDetailHeader } from './MediaDetailHeader.svelte';
 export { default as MediaOverview } from './MediaOverview.svelte';
 export { default as MediaDetailActions } from './MediaDetailActions.svelte';
+export { default as MovieTable } from './movies/MovieTable.svelte';
+export { default as MovieDetailDrawer } from './movies/MovieDetailDrawer.svelte';

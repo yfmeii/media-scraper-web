@@ -1,6 +1,13 @@
 <script setup lang="ts">
-import type { MovieInfo, SeasonInfo, SeasonMissingInfo, ShowInfo } from '@media-scraper/shared/types'
+import type { MovieInfo, SeasonMissingInfo, ShowInfo } from '@media-scraper/shared'
 import MediaPoster from '@/components/MediaPoster/index.vue'
+import { formatFileSizeLabel, formatVoteRatingWithScale, getMediaFileDisplayName } from '@/utils/display'
+import SeasonList from './SeasonList.vue'
+
+function getMovieFileName(file?: MovieInfo['file']): string {
+  if (!file) return '未知文件'
+  return getMediaFileDisplayName(file)
+}
 
 defineProps<{
   movie?: MovieInfo | null
@@ -13,7 +20,7 @@ defineProps<{
   tmdbId?: number
   hasNfo: boolean
   assets?: MovieInfo['assets'] | ShowInfo['assets']
-  seasons: SeasonInfo[]
+  seasons: ShowInfo['seasons']
   totalEpisodes: number
   missingEpisodes: SeasonMissingInfo[]
   totalMissingCount: number
@@ -47,7 +54,7 @@ const emit = defineEmits<{
         </view>
         <view v-if="rating" class="mt-1.5 flex items-center gap-1">
           <t-icon name="star-filled" size="28rpx" color="var(--color-warning)" />
-          <text class="text-sm font-medium text-foreground">{{ fmt.formatRating(rating) }}</text>
+          <text class="text-xs font-medium" style="color: var(--color-foreground); line-height: 1;">{{ formatVoteRatingWithScale(rating) }}</text>
         </view>
         <view class="mt-2 flex flex-wrap gap-1.5">
           <view class="rounded px-1.5 py-0.5 text-xs" :class="hasNfo ? 'bg-green-100 text-green-700' : 'bg-muted text-muted-foreground'">{{ hasNfo ? '已刮削' : '未刮削' }}</view>
@@ -64,72 +71,38 @@ const emit = defineEmits<{
       <view class="text-xs text-muted-foreground leading-relaxed">{{ overview }}</view>
     </view>
 
-    <view v-if="movie" class="px-4 pb-3">
+    <view v-if="movie && movie.file" class="px-4 pb-3">
       <view class="rounded-xl bg-card p-3">
         <view class="text-xs font-medium text-foreground mb-1.5">文件信息</view>
-        <view class="text-xs text-muted-foreground">{{ movie.file.name }}</view>
-        <view v-if="movie.file.parsed.resolution" class="mt-1 flex flex-wrap gap-1.5">
+        <view class="text-xs text-muted-foreground">{{ getMovieFileName(movie.file) }}</view>
+        <view v-if="movie.file.parsed.resolution || movie.file.parsed.codec || movie.file.parsed.source" class="mt-1 flex flex-wrap gap-1.5">
           <view v-if="movie.file.parsed.resolution" class="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{{ movie.file.parsed.resolution }}</view>
           <view v-if="movie.file.parsed.codec" class="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{{ movie.file.parsed.codec }}</view>
           <view v-if="movie.file.parsed.source" class="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{{ movie.file.parsed.source }}</view>
         </view>
-        <view class="mt-1 text-xs text-muted-foreground">{{ fmt.formatFileSize(movie.file.size) }}</view>
+        <view v-if="formatFileSizeLabel(movie.file.size)" class="mt-1 text-xs text-muted-foreground">{{ formatFileSizeLabel(movie.file.size) }}</view>
       </view>
     </view>
 
     <view v-if="show && missingEpisodes.length > 0" class="px-4 pb-3">
-      <view class="rounded-xl border border-warning/40 bg-warning/5 p-3">
+      <view class="rounded-xl p-3" style="border: 1rpx solid rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.05);">
         <view class="flex items-center gap-1.5 mb-2">
           <t-icon name="error-circle" size="28rpx" color="var(--color-warning)" />
           <text class="text-xs font-medium text-warning">共缺 {{ totalMissingCount }} 集</text>
         </view>
         <view class="flex flex-wrap gap-1">
-          <view v-for="item in flatMissingEpisodes" :key="`${item.season}-${item.ep}`" class="rounded bg-warning/10 px-1.5 py-0.5 text-xs text-warning">{{ fmt.formatEpisodeCode(item.season, item.ep) }}</view>
+          <view v-for="item in flatMissingEpisodes" :key="`${item.season}-${item.ep}`" class="rounded px-1.5 py-0.5 text-xs text-warning" style="background: rgba(245, 158, 11, 0.1);">{{ fmt.formatEpisodeCode(item.season, item.ep) }}</view>
         </view>
       </view>
     </view>
-
-    <view v-if="show && seasons.length > 0" class="px-4 pb-3">
-      <view class="rounded-xl bg-card overflow-hidden">
-        <view v-for="(season, sIdx) in seasons" :key="season.season">
-          <view class="flex items-center justify-between px-3 py-2.5" hover-class="opacity-70" :data-season="season.season" @tap="emit('season-tap', $event)">
-            <view class="flex items-center gap-2">
-              <t-icon :name="expandedMap[season.season] ? 'chevron-down' : 'chevron-right'" size="32rpx" color="var(--color-muted-foreground)" />
-              <text class="text-sm font-medium text-foreground">第 {{ season.season }} 季</text>
-              <text class="text-xs text-muted-foreground">{{ season.episodes.length }} 集</text>
-              <view v-if="seasonMissingMap[season.season]" class="rounded bg-warning/10 px-1 py-0.5 text-xs text-warning">缺 {{ seasonMissingMap[season.season].length }}</view>
-            </view>
-            <view class="flex items-center gap-2">
-              <view v-if="show.tmdbId" class="flex items-center justify-center" hover-class="opacity-50" :data-season="season.season" @tap.stop="emit('refresh-season-tap', $event)">
-                <t-icon name="refresh" size="32rpx" color="var(--color-muted-foreground)" />
-              </view>
-            </view>
-          </view>
-
-          <view v-if="expandedMap[season.season]" class="animate-fade-in">
-            <view v-for="ep in season.episodes" :key="ep.path">
-              <view class="h-px bg-border mx-3" />
-              <view class="flex items-center justify-between px-3 py-2" hover-class="bg-muted/50" :data-path="ep.path" @tap.stop="emit('episode-item-tap', $event)">
-                <view class="flex-1 min-w-0">
-                  <view class="flex items-center gap-1.5">
-                    <text class="text-xs font-medium text-foreground">{{ fmt.getEpisodeLabel(ep) }}</text>
-                    <view v-if="ep.hasNfo" class="h-1.5 w-1.5 rounded-full bg-green-500" />
-                    <view v-else class="h-1.5 w-1.5 rounded-full bg-muted-foreground" />
-                  </view>
-                  <view class="mt-0.5 text-xs text-muted-foreground truncate">{{ ep.name }}</view>
-                  <view v-if="ep.parsed && (ep.parsed.resolution || ep.size)" class="mt-0.5 flex items-center gap-1">
-                    <text v-if="ep.parsed.resolution" class="text-xs text-muted-foreground/60">{{ ep.parsed.resolution }}</text>
-                    <text v-if="ep.size" class="text-xs text-muted-foreground/60">{{ fmt.formatFileSize(ep.size) }}</text>
-                  </view>
-                </view>
-                <t-icon name="chevron-right" size="28rpx" color="var(--color-muted-foreground)" class="ml-2 shrink-0" />
-              </view>
-            </view>
-          </view>
-
-          <view v-if="sIdx < seasons.length - 1" class="h-px bg-border" />
-        </view>
-      </view>
-    </view>
+    <SeasonList
+      :show="show"
+      :seasons="seasons"
+      :season-missing-map="seasonMissingMap"
+      :expanded-map="expandedMap"
+      @season-tap="emit('season-tap', $event)"
+      @refresh-season-tap="emit('refresh-season-tap', $event)"
+      @episode-item-tap="emit('episode-item-tap', $event)"
+    />
   </view>
 </template>

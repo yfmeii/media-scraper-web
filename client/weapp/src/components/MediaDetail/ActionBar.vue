@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { MovieInfo } from '@media-scraper/shared/types'
+import type { MovieInfo } from '@media-scraper/shared'
 
 defineProps<{
   tmdbId?: number
@@ -26,7 +26,7 @@ const emit = defineEmits<{
       </view>
     </view>
 
-    <view v-if="movie" class="mt-2 flex items-center justify-center gap-1 py-2.5 rounded-xl border border-destructive/30" hover-class="bg-destructive/5 active-scale" @tap="emit('move-movie')">
+    <view v-if="movie" class="mt-2 flex items-center justify-center gap-1 py-2.5 rounded-xl border" style="border-color: rgba(220, 38, 38, 0.3);" hover-class="opacity-80 active-scale" @tap="emit('move-movie')">
       <t-icon name="inbox" size="32rpx" color="var(--color-destructive)" />
       <text class="text-sm font-medium text-destructive">移回收件箱</text>
     </view>

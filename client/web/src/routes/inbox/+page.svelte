@@ -4,16 +4,12 @@
     inferCandidateMediaType as inferCandidateMediaKind,
     inferMediaTypeFromParsed,
   } from '@media-scraper/shared/inbox-workflow';
-  import { 
-    fetchInboxByDirectory, 
+  import {
     previewPlan,
     recognizePath,
     type MediaFile, 
     type SearchResult, 
     type DirectoryGroup,
-    type PathRecognizeResult,
-    type PreviewAction,
-    type PreviewPlan
   } from '$lib/api';
   import InboxSidebar from '$lib/components/inbox/InboxSidebar.svelte';
   import InboxFileTable from '$lib/components/inbox/InboxFileTable.svelte';
@@ -21,9 +17,17 @@
   import InboxDetailModal from '$lib/components/inbox/InboxDetailModal.svelte';
   import InboxPreviewModal from '$lib/components/inbox/InboxPreviewModal.svelte';
   import InboxToolbar from '$lib/components/inbox/InboxToolbar.svelte';
-  import { buildInboxPreviewItem, loadInboxDetailMatch, resolveInboxAiRecognize, resolveInboxTargetPath, searchInboxCandidates } from '$lib/inboxDetail';
+  import { buildInboxPreviewItem, loadInboxDetailMatch, resolveInboxAiRecognize, searchInboxCandidates } from '$lib/inboxDetail';
   import { autoProcessInboxFile, aiRecognizeProcessInboxFile, processSelectedCandidate } from '$lib/inboxProcess';
   import { runInboxBatchProcess } from '$lib/inboxBatch';
+  import {
+    createClosingInboxDetailUiState,
+    createInboxDetailUiState,
+    createInboxOperationUiState,
+    createInboxPreviewUiState,
+    createOpenedInboxDetailUiState,
+    setInboxFileProcessStatus,
+  } from '$lib/inboxPageState';
   import {
     applyAiRecognizeState,
     applyProcessedFile,
@@ -46,58 +50,31 @@
   let files = $state<MediaFile[]>([]);
   let allFiles = $state<MediaFile[]>([]);
   let selectedFiles = $state(new Set<string>());
-  let selectedFile = $state<MediaFile | null>(null);
-  let detailFile = $state<MediaFile | null>(null);
   let loading = $state(true);
   let filterStatus = $state('all');
   let searchQuery = $state('');
   
   let currentDir = $state('');
-  
-  // Match candidates for selected file
-  let matchCandidates = $state<SearchResult[]>([]);
-  let selectedCandidate = $state<SearchResult | null>(null);
-  let isAutoMatched = $state(false);  // Whether current selection is from auto-match
-  let matchScore = $state(0);  // Match confidence score
-  let isSearchingTMDB = $state(false);
-  let manualSearchQuery = $state('');
-  let showDetailModal = $state(false);
-  
-  // Target library path
-  let targetPath = $state('');
-  let isLoadingTargetPath = $state(false);
-  let targetPathSeq = 0;
-  
-  // 用户可编辑的季数和集数
-  let editSeason = $state(1);
-  let editEpisode = $state(1);
-  
-  // Batch operation state
-  let isOperating = $state(false);
-  let operationMessage = $state('');
-  let batchProgress = $state({ current: 0, total: 0 });
-  
-  // Preview modal
-  let showPreviewModal = $state(false);
-  let previewActions = $state<PreviewAction[]>([]);
-  let previewSummary = $state<PreviewPlan['impactSummary'] | null>(null);
-  let isLoadingPreview = $state(false);
-  
-  // AI 识别状态
-  let isAIRecognizing = $state(false);
-  let aiRecognizeResult = $state<PathRecognizeResult | null>(null);
-  let fileStatus = $state(new Map<string, 'processing' | 'success' | 'failed'>());
+
+  let detailState = $state(createInboxDetailUiState());
+  let operationState = $state(createInboxOperationUiState());
+  let previewState = $state(createInboxPreviewUiState());
 
   function setFileStatus(path: string, status: 'processing' | 'success' | 'failed') {
-    fileStatus = new Map(fileStatus).set(path, status);
+    operationState.fileStatus = setInboxFileProcessStatus(operationState.fileStatus, path, status);
   }
 
   function markFileProcessed(path: string) {
-    const nextState = applyProcessedFile({ files, allFiles, selectedFile, detailFile }, path);
+    const nextState = applyProcessedFile({
+      files,
+      allFiles,
+      selectedFile: detailState.selectedFile,
+      detailFile: detailState.detailFile,
+    }, path);
     files = nextState.files;
     allFiles = nextState.allFiles;
-    selectedFile = nextState.selectedFile;
-    detailFile = nextState.detailFile;
+    detailState.selectedFile = nextState.selectedFile;
+    detailState.detailFile = nextState.detailFile;
 
     if (!nextState.updated) return;
   }
@@ -117,12 +94,12 @@
       currentDir = nextState.currentDir;
       files = nextState.files;
       selectedFiles = nextState.selectedFiles;
-      selectedFile = nextState.selectedFile;
-      detailFile = nextState.detailFile;
-      showDetailModal = nextState.showDetailModal;
-      matchCandidates = nextState.matchCandidates;
-      selectedCandidate = nextState.selectedCandidate;
-      fileStatus = nextState.fileStatus;
+      detailState.selectedFile = nextState.selectedFile;
+      detailState.detailFile = nextState.detailFile;
+      detailState.showDetailModal = nextState.showDetailModal;
+      detailState.matchCandidates = nextState.matchCandidates;
+      detailState.selectedCandidate = nextState.selectedCandidate;
+      operationState.fileStatus = nextState.fileStatus;
     } catch (e) {
       console.error(e);
     } finally {
@@ -173,95 +150,74 @@
   }
 
   function inferCandidateMediaType(candidate: SearchResult | null): 'tv' | 'movie' {
-    return inferCandidateMediaKind(candidate, inferFileMediaType(selectedFile));
+    return inferCandidateMediaKind(candidate, inferFileMediaType(detailState.selectedFile));
   }
 
   function closeDetailModal() {
-    showDetailModal = false;
-    matchCandidates = [];
-    selectedCandidate = null;
-    manualSearchQuery = '';
-    isAutoMatched = false;
-    matchScore = 0;
-    aiRecognizeResult = null;
-    targetPath = '';
-    isLoadingTargetPath = false;
-    targetPathSeq++;
+    detailState = createClosingInboxDetailUiState({
+      selectedFile: detailState.selectedFile,
+      detailFile: detailState.detailFile,
+      currentTargetPathSeq: detailState.targetPathSeq,
+    });
   }
 
   function handleDetailModalOutroEnd() {
-    if (!showDetailModal) {
-      selectedFile = null;
-      detailFile = null;
+    if (!detailState.showDetailModal) {
+      detailState.selectedFile = null;
+      detailState.detailFile = null;
     }
   }
 
   async function refreshTargetPath() {
-    if (!showDetailModal || !selectedFile || !selectedCandidate) {
-      targetPath = '';
-      isLoadingTargetPath = false;
+    if (!detailState.showDetailModal || !detailState.selectedFile || !detailState.selectedCandidate) {
+      detailState.targetPath = '';
+      detailState.isLoadingTargetPath = false;
       return;
     }
 
-    const currentSeq = ++targetPathSeq;
-    isLoadingTargetPath = true;
+    const currentSeq = ++detailState.targetPathSeq;
+    detailState.isLoadingTargetPath = true;
     try {
       const nextTargetPath = await refreshInboxTargetPath({
-        showDetailModal,
-        file: selectedFile,
-        candidate: selectedCandidate,
-        season: editSeason,
-        episode: editEpisode,
+        showDetailModal: detailState.showDetailModal,
+        file: detailState.selectedFile,
+        candidate: detailState.selectedCandidate,
+        season: detailState.editSeason,
+        episode: detailState.editEpisode,
       });
-      if (currentSeq !== targetPathSeq) return;
-      targetPath = nextTargetPath;
+      if (currentSeq !== detailState.targetPathSeq) return;
+      detailState.targetPath = nextTargetPath;
     } catch (e) {
       console.error('Refresh target path error:', e);
-      if (currentSeq !== targetPathSeq) return;
-      targetPath = '';
+      if (currentSeq !== detailState.targetPathSeq) return;
+      detailState.targetPath = '';
     } finally {
-      if (currentSeq === targetPathSeq) {
-        isLoadingTargetPath = false;
+      if (currentSeq === detailState.targetPathSeq) {
+        detailState.isLoadingTargetPath = false;
       }
     }
   }
   
   async function selectFileForDetail(file: MediaFile) {
-    selectedFile = file;
-    detailFile = file;
-    matchCandidates = [];
-    selectedCandidate = null;
-    isAutoMatched = false;
-    matchScore = 0;
-    fileStatus = new Map();
-    showDetailModal = true;
-    
-    // 初始化可编辑的季数和集数
-    editSeason = file.parsed.season || 1;
-    editEpisode = file.parsed.episode || 1;
-    
-    targetPath = '';
-    isLoadingTargetPath = false;
-    targetPathSeq++;
-    
-    isSearchingTMDB = true;
+    detailState = createOpenedInboxDetailUiState(file, detailState.targetPathSeq);
+    operationState.fileStatus = new Map();
+    detailState.isSearchingTMDB = true;
     try {
-      const detailState = await loadInboxDetailMatch(file);
-      matchCandidates = detailState.candidates;
-      selectedCandidate = detailState.selectedCandidate;
-      isAutoMatched = detailState.isAutoMatched;
-      matchScore = detailState.matchScore;
+      const matchState = await loadInboxDetailMatch(file);
+      detailState.matchCandidates = matchState.candidates;
+      detailState.selectedCandidate = matchState.selectedCandidate;
+      detailState.isAutoMatched = matchState.isAutoMatched;
+      detailState.matchScore = matchState.matchScore;
       await refreshTargetPath();
     } catch (e) {
       console.error(e);
     } finally {
-      isSearchingTMDB = false;
+      detailState.isSearchingTMDB = false;
     }
   }
   
   function handleDoubleClick(file: MediaFile) {
-    selectedFile = file;
-    selectFileForDetail(file);
+    void selectFileForDetail(file);
     // TODO: Open detail modal/drawer
   }
   
@@ -270,67 +226,67 @@
   }
   
   async function handleManualSearch() {
-    if (!manualSearchQuery.trim() || !selectedFile) return;
-    isSearchingTMDB = true;
+    if (!detailState.manualSearchQuery.trim() || !detailState.selectedFile) return;
+    detailState.isSearchingTMDB = true;
     try {
-      matchCandidates = await searchInboxCandidates(manualSearchQuery);
-      selectedCandidate = null;
+      detailState.matchCandidates = await searchInboxCandidates(detailState.manualSearchQuery);
+      detailState.selectedCandidate = null;
       await refreshTargetPath();
     } catch (e) {
       console.error(e);
     } finally {
-      isSearchingTMDB = false;
+      detailState.isSearchingTMDB = false;
     }
   }
   
   function selectCandidate(candidate: SearchResult) {
-    selectedCandidate = candidate;
+    detailState.selectedCandidate = candidate;
     // 更新预计路径 - 使用选中的候选名称
-    refreshTargetPath();
+    void refreshTargetPath();
   }
 
   function updateManualSearchQuery(value: string) {
-    manualSearchQuery = value;
+    detailState.manualSearchQuery = value;
   }
 
   function updateEditSeason(value: number) {
-    editSeason = normalizeInboxIndex(value);
+    detailState.editSeason = normalizeInboxIndex(value);
     void refreshTargetPath();
   }
 
   function updateEditEpisode(value: number) {
-    editEpisode = normalizeInboxIndex(value);
+    detailState.editEpisode = normalizeInboxIndex(value);
     void refreshTargetPath();
   }
   
   // AI 智能识别路径
   async function handleAIRecognize() {
-    if (!selectedFile) return;
+    if (!detailState.selectedFile) return;
     
-    isAIRecognizing = true;
-    aiRecognizeResult = null;
+    detailState.isAIRecognizing = true;
+    detailState.aiRecognizeResult = null;
     
     try {
-      const resolved = await resolveInboxAiRecognize(selectedFile);
+      const resolved = await resolveInboxAiRecognize(detailState.selectedFile);
       const appliedState = applyAiRecognizeState({
         resolved,
-        currentSeason: editSeason,
-        currentEpisode: editEpisode,
+        currentSeason: detailState.editSeason,
+        currentEpisode: detailState.editEpisode,
       });
-      aiRecognizeResult = appliedState.aiRecognizeResult;
-      matchCandidates = appliedState.matchCandidates;
-      selectedCandidate = appliedState.selectedCandidate;
-      editSeason = appliedState.editSeason;
-      editEpisode = appliedState.editEpisode;
-      operationMessage = appliedState.operationMessage;
+      detailState.aiRecognizeResult = appliedState.aiRecognizeResult;
+      detailState.matchCandidates = appliedState.matchCandidates;
+      detailState.selectedCandidate = appliedState.selectedCandidate;
+      detailState.editSeason = appliedState.editSeason;
+      detailState.editEpisode = appliedState.editEpisode;
+      operationState.operationMessage = appliedState.operationMessage;
       if (resolved.aiRecognizeResult) {
         await refreshTargetPath();
       }
     } catch (e) {
       console.error('AI recognize error:', e);
-      operationMessage = `❌ AI 识别错误: ${e instanceof Error ? e.message : '未知错误'}`;
+      operationState.operationMessage = `❌ AI 识别错误: ${e instanceof Error ? e.message : '未知错误'}`;
     } finally {
-      isAIRecognizing = false;
+      detailState.isAIRecognizing = false;
     }
   }
   
@@ -346,16 +302,16 @@
   }
   
   async function executeBatchAutoMatch() {
-    isOperating = true;
+    operationState.isOperating = true;
     const selectedFilesList = getInboxBatchSelection(allFiles, selectedFiles);
-    batchProgress = { current: 0, total: selectedFilesList.length };
+    operationState.batchProgress = { current: 0, total: selectedFilesList.length };
 
     const summary = await runInboxBatchProcess(selectedFilesList, async (file, context) => {
-      operationMessage = `匹配中 (${context.current}/${context.total}): ${file.name}`;
+      operationState.operationMessage = `匹配中 (${context.current}/${context.total}): ${file.name}`;
       const { result, mediaType } = await autoProcessInboxFile(file);
 
       if (result.success && mediaType) {
-        operationMessage = `入库中 (${context.current}/${context.total}): ${file.name} [${mediaType === 'movie' ? '电影' : '剧集'}]`;
+        operationState.operationMessage = `入库中 (${context.current}/${context.total}): ${file.name} [${mediaType === 'movie' ? '电影' : '剧集'}]`;
         return { success: true, mediaType };
       }
 
@@ -371,7 +327,7 @@
         } else {
           setFileStatus(file.path, 'failed');
         }
-        batchProgress = { current: context.current, total: context.total };
+        operationState.batchProgress = { current: context.current, total: context.total };
       },
       onError: (file, error) => {
         console.error('Batch auto match error:', file.path, error);
@@ -380,14 +336,14 @@
     
     const postBatchState = createPostBatchState({ summary, selectedFiles });
     const hadSuccess = postBatchState.hadSuccess;
-    operationMessage = postBatchState.operationMessage;
+    operationState.operationMessage = postBatchState.operationMessage;
     if (hadSuccess) {
       await loadData();
     }
     
     setTimeout(() => {
-      isOperating = false;
-      operationMessage = '';
+      operationState.isOperating = false;
+      operationState.operationMessage = '';
       if (hadSuccess) {
         selectedFiles = postBatchState.selectedFiles;
       }
@@ -407,16 +363,16 @@
   }
   
   async function executeBatchAIRecognize() {
-    isOperating = true;
+    operationState.isOperating = true;
     const selectedFilesList = getInboxBatchSelection(allFiles, selectedFiles);
-    batchProgress = { current: 0, total: selectedFilesList.length };
+    operationState.batchProgress = { current: 0, total: selectedFilesList.length };
 
     const summary = await runInboxBatchProcess(selectedFilesList, async (file, context) => {
-      operationMessage = `AI 识别中 (${context.current}/${context.total}): ${file.relativePath}`;
+      operationState.operationMessage = `AI 识别中 (${context.current}/${context.total}): ${file.relativePath}`;
       const { result, mediaType } = await aiRecognizeProcessInboxFile(file, recognizePath);
 
       if (result.success && mediaType) {
-        operationMessage = `入库中 (${context.current}/${context.total}): ${file.relativePath} [${mediaType === 'movie' ? '电影' : '剧集'}]`;
+        operationState.operationMessage = `入库中 (${context.current}/${context.total}): ${file.relativePath} [${mediaType === 'movie' ? '电影' : '剧集'}]`;
         return { success: true, mediaType };
       }
 
@@ -432,7 +388,7 @@
         } else {
           setFileStatus(file.path, 'failed');
         }
-        batchProgress = { current: context.current, total: context.total };
+        operationState.batchProgress = { current: context.current, total: context.total };
       },
       onError: (file, error) => {
         console.error('Batch AI process error:', file.path, error);
@@ -441,14 +397,14 @@
     
     const postBatchState = createPostBatchState({ summary, selectedFiles });
     const hadSuccess = postBatchState.hadSuccess;
-    operationMessage = postBatchState.operationMessage;
+    operationState.operationMessage = postBatchState.operationMessage;
     if (hadSuccess) {
       await loadData();
     }
     
     setTimeout(() => {
-      isOperating = false;
-      operationMessage = '';
+      operationState.isOperating = false;
+      operationState.operationMessage = '';
       if (hadSuccess) {
         selectedFiles = postBatchState.selectedFiles;
       }
@@ -456,21 +412,21 @@
   }
   
   async function processSingleFile() {
-    if (!selectedFile || !selectedCandidate) return;
+    if (!detailState.selectedFile || !detailState.selectedCandidate) return;
 
-    const currentFile = selectedFile;
-    const currentCandidate = selectedCandidate;
+    const currentFile = detailState.selectedFile;
+    const currentCandidate = detailState.selectedCandidate;
     
-    isOperating = true;
-    operationMessage = `正在处理: ${currentFile.relativePath}`;
+    operationState.isOperating = true;
+    operationState.operationMessage = `正在处理: ${currentFile.relativePath}`;
     setFileStatus(currentFile.path, 'processing');
     
     try {
       const result = await processSelectedCandidate(currentFile, currentCandidate, {
-        season: editSeason,
-        episode: editEpisode,
+        season: detailState.editSeason,
+        episode: detailState.editEpisode,
       });
-      operationMessage = result.success ? '处理成功' : (result.message || '处理失败');
+      operationState.operationMessage = result.success ? '处理成功' : (result.message || '处理失败');
       if (result.success) {
         markFileProcessed(currentFile.path);
         setFileStatus(currentFile.path, 'success');
@@ -480,25 +436,25 @@
       
       await loadData();
     } catch (e) {
-      operationMessage = '处理出错';
+      operationState.operationMessage = '处理出错';
       console.error(e);
       setFileStatus(currentFile.path, 'failed');
     }
     
     setTimeout(() => {
-      isOperating = false;
-      operationMessage = '';
+      operationState.isOperating = false;
+      operationState.operationMessage = '';
     }, 2000);
   }
   
   async function showPreview() {
-    if (!selectedFile || !selectedCandidate) return;
+    if (!detailState.selectedFile || !detailState.selectedCandidate) return;
 
-    const currentFile = selectedFile;
-    const currentCandidate = selectedCandidate;
+    const currentFile = detailState.selectedFile;
+    const currentCandidate = detailState.selectedCandidate;
     
-    isLoadingPreview = true;
-    showPreviewModal = true;
+    previewState.isLoadingPreview = true;
+    previewState.showPreviewModal = true;
     
     try {
       // 根据选中候选自动决定媒体类型
@@ -506,20 +462,20 @@
         buildInboxPreviewItem({
           file: currentFile,
           candidate: currentCandidate,
-          season: editSeason,
-          episode: editEpisode,
+          season: detailState.editSeason,
+          episode: detailState.editEpisode,
         })!,
       ]);
-      const previewState = createInboxPreviewState(plan);
-      previewActions = previewState.previewActions;
-      previewSummary = previewState.previewSummary;
+      const nextPreviewState = createInboxPreviewState(plan);
+      previewState.previewActions = nextPreviewState.previewActions;
+      previewState.previewSummary = nextPreviewState.previewSummary;
     } catch (e) {
       console.error(e);
-      const previewState = createInboxPreviewState(null);
-      previewActions = previewState.previewActions;
-      previewSummary = previewState.previewSummary;
+      const nextPreviewState = createInboxPreviewState(null);
+      previewState.previewActions = nextPreviewState.previewActions;
+      previewState.previewSummary = nextPreviewState.previewSummary;
     } finally {
-      isLoadingPreview = false;
+      previewState.isLoadingPreview = false;
     }
   }
   
@@ -536,19 +492,19 @@
       <div class="flex-1 flex flex-col overflow-hidden">
         <InboxToolbar bind:filterStatus bind:searchQuery currentDirLabel={currentDirLabel} onRefresh={loadData} />
         
-        <InboxFileTable loading={loading} filteredFiles={filteredFiles} selectedFiles={selectedFiles} fileStatus={fileStatus} onToggleAll={toggleAll} onToggleFile={toggleFile} onToggleFileSelection={toggleFileSelection} onDoubleClick={handleDoubleClick} />
+        <InboxFileTable loading={loading} filteredFiles={filteredFiles} selectedFiles={selectedFiles} fileStatus={operationState.fileStatus} onToggleAll={toggleAll} onToggleFile={toggleFile} onToggleFileSelection={toggleFileSelection} onDoubleClick={handleDoubleClick} />
       
     </div>
     
     <!-- Bottom Panel: Action bar always visible, Details slides -->
-    <InboxBatchBar isOperating={isOperating} operationMessage={operationMessage} batchProgress={batchProgress} selectedCount={selectedFiles.size} onBatchAuto={batchAutoMatchAndProcess} onBatchAI={batchAIRecognizeAndProcess} />
+    <InboxBatchBar isOperating={operationState.isOperating} operationMessage={operationState.operationMessage} batchProgress={operationState.batchProgress} selectedCount={selectedFiles.size} onBatchAuto={batchAutoMatchAndProcess} onBatchAI={batchAIRecognizeAndProcess} />
   </div>
   </div>
 </div>
 
-<InboxDetailModal show={showDetailModal} detailFile={detailFile} selectedCandidate={selectedCandidate} targetPath={targetPath} isLoadingTargetPath={isLoadingTargetPath} isOperating={isOperating} manualSearchQuery={manualSearchQuery} isSearchingTMDB={isSearchingTMDB} isAIRecognizing={isAIRecognizing} editSeason={editSeason} editEpisode={editEpisode} aiRecognizeResult={aiRecognizeResult} matchCandidates={matchCandidates} inferCandidateMediaType={inferCandidateMediaType} onClose={closeDetailModal} onOutroEnd={handleDetailModalOutroEnd} onShowPreview={showPreview} onProcess={processSingleFile} onManualSearch={handleManualSearch} onAIRecognize={handleAIRecognize} onManualSearchQueryChange={updateManualSearchQuery} onSelectCandidate={selectCandidate} onEditSeasonChange={updateEditSeason} onEditEpisodeChange={updateEditEpisode} />
+<InboxDetailModal show={detailState.showDetailModal} detailFile={detailState.detailFile} selectedCandidate={detailState.selectedCandidate} targetPath={detailState.targetPath} isLoadingTargetPath={detailState.isLoadingTargetPath} isOperating={operationState.isOperating} manualSearchQuery={detailState.manualSearchQuery} isSearchingTMDB={detailState.isSearchingTMDB} isAIRecognizing={detailState.isAIRecognizing} editSeason={detailState.editSeason} editEpisode={detailState.editEpisode} aiRecognizeResult={detailState.aiRecognizeResult} matchCandidates={detailState.matchCandidates} inferCandidateMediaType={inferCandidateMediaType} onClose={closeDetailModal} onOutroEnd={handleDetailModalOutroEnd} onShowPreview={showPreview} onProcess={processSingleFile} onManualSearch={handleManualSearch} onAIRecognize={handleAIRecognize} onManualSearchQueryChange={updateManualSearchQuery} onSelectCandidate={selectCandidate} onEditSeasonChange={updateEditSeason} onEditEpisodeChange={updateEditEpisode} />
 
-<InboxPreviewModal show={showPreviewModal} isLoading={isLoadingPreview} actions={previewActions} summary={previewSummary} onClose={() => showPreviewModal = false} onConfirm={() => { showPreviewModal = false; processSingleFile(); }} />
+<InboxPreviewModal show={previewState.showPreviewModal} isLoading={previewState.isLoadingPreview} actions={previewState.previewActions} summary={previewState.previewSummary} onClose={() => previewState.showPreviewModal = false} onConfirm={() => { previewState.showPreviewModal = false; processSingleFile(); }} />
 
 <!-- Confirm Dialog is now handled globally in +layout.svelte -->
 

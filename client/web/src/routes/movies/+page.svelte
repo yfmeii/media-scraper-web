@@ -1,14 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { fly } from 'svelte/transition';
-  import { flip } from 'svelte/animate';
-  import { quintOut, cubicOut } from 'svelte/easing';
   import { fetchMovieDetail, fetchMovies, refreshMetadata, type MovieInfo, type SearchResult } from '$lib/api';
   import { handleItemClick, toggleAllSelection } from '$lib/selection';
-  import { formatFileSize, getGroupStatusBadge } from '$lib/format';
-  import { TMDBSearchModal, BatchActionBar, TableSkeleton, PosterThumbnail, AssetIndicators, StatusBadge, SearchToolbar, MediaDetailHeader, MediaOverview, MediaDetailActions, DetailDrawer } from '$lib/components';
+  import { getGroupStatusBadge } from '$lib/format';
+  import { TMDBSearchModal, BatchActionBar, SearchToolbar, MovieTable, MovieDetailDrawer } from '$lib/components';
   import type { ActionButton } from '$lib/components/mediaDetailActions';
-  import { copyPath, detailDelay, getFanartUrl } from '$lib/mediaDetail';
+  import { getFanartUrl } from '$lib/mediaDetail';
   import { buildMovieMetaItems, countMoviesByProcessed, filterMovies } from '$lib/moviePage';
   import {
     buildBatchRefreshPlan,
@@ -66,6 +63,17 @@
   
   function toggleAll() {
     selectedMovies = toggleAllSelection(selectedMovies, filteredMovies, m => m.path);
+  }
+
+  function toggleMovieSelection(path: string, event: MouseEvent) {
+    event.stopPropagation();
+    const nextSelected = new Set(selectedMovies);
+    if (nextSelected.has(path)) {
+      nextSelected.delete(path);
+    } else {
+      nextSelected.add(path);
+    }
+    selectedMovies = nextSelected;
   }
   
   async function handleRowDoubleClick(movie: MovieInfo) {
@@ -241,88 +249,16 @@
   />
   
   <!-- Table -->
-  <div class="rounded-lg border border-border bg-card overflow-hidden">
-    {#if loading}
-      <TableSkeleton rows={8} columns={5} />
-    {:else if filteredMovies.length === 0}
-      <div class="p-8 text-center text-muted-foreground">没有找到符合条件的电影</div>
-    {:else}
-      <table class="w-full">
-        <thead class="bg-card">
-          <tr class="border-b border-border text-xs text-muted-foreground">
-            <th class="w-12 p-3 text-left"><input type="checkbox" class="h-4 w-4 rounded border-input accent-primary" checked={selectedMovies.size === filteredMovies.length && filteredMovies.length > 0} onchange={toggleAll} /></th>
-            <th class="w-16 p-3 text-left font-medium">海报</th>
-            <th class="p-3 text-left font-medium">电影名称</th>
-            <th class="w-20 p-3 text-left font-medium">年份</th>
-            <th class="w-32 p-3 text-left font-medium">状态</th>
-            <th class="w-40 p-3 text-left font-medium">完整性</th>
-            <th class="w-40 p-3 text-left font-medium">操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each filteredMovies as movie (movie.path)}
-            <tr 
-              class="border-b border-border hover:bg-accent/50 cursor-pointer {selectedMovies.has(movie.path) ? 'bg-accent/30 border-l-2 border-l-primary' : ''} transition-colors duration-150"
-              onclick={(e) => toggleMovie(movie.path, e)}
-              ondblclick={() => handleRowDoubleClick(movie)}
-              animate:flip={{ duration: 300, easing: quintOut }}
-              in:fly={{ y: 20, duration: 300, easing: cubicOut }}
-            >
-              <td class="p-3">
-                <input 
-                  type="checkbox" 
-                  class="h-4 w-4 rounded border-input accent-primary" 
-                  checked={selectedMovies.has(movie.path)} 
-                  onclick={(e) => {
-                    e.stopPropagation();
-                    if (selectedMovies.has(movie.path)) {
-                      selectedMovies.delete(movie.path);
-                    } else {
-                      selectedMovies.add(movie.path);
-                    }
-                    selectedMovies = new Set(selectedMovies);
-                  }}
-                />
-              </td>
-              <td class="p-3">
-                <PosterThumbnail src={movie.posterPath} alt={movie.name} hasPoster={movie.assets?.hasPoster} size="sm" />
-              </td>
-              <td class="p-3"><div class="font-medium">{movie.name}</div></td>
-              <td class="p-3 text-muted-foreground">{movie.year || '-'}</td>
-              <td class="p-3">
-                <StatusBadge status={movie.isProcessed ? 'scraped' : 'unscraped'} />
-              </td>
-              <td class="p-3">
-                <AssetIndicators assets={{ hasPoster: movie.assets?.hasPoster, hasNfo: movie.assets?.hasNfo }} showFanart={false} />
-              </td>
-              <td class="p-3">
-                <div class="flex gap-1">
-                  <button 
-                    class="inline-flex items-center justify-center rounded-md text-xs font-medium h-7 px-2 border border-input bg-background hover:bg-accent"
-                    onclick={(e) => {
-                      e.stopPropagation();
-                      handleRowDoubleClick(movie);
-                    }}
-                  >
-                    详情
-                  </button>
-                  <button 
-                    class="inline-flex items-center justify-center rounded-md text-xs font-medium h-7 px-2 border border-input bg-background hover:bg-accent"
-                    onclick={(e) => {
-                      e.stopPropagation();
-                      openSearchModal(movie);
-                    }}
-                  >
-                    匹配
-                  </button>
-                </div>
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    {/if}
-  </div>
+  <MovieTable
+    {loading}
+    {filteredMovies}
+    {selectedMovies}
+    onToggleAll={toggleAll}
+    onToggleMovie={toggleMovie}
+    onToggleCheckbox={toggleMovieSelection}
+    onOpenDetail={handleRowDoubleClick}
+    onOpenSearch={openSearchModal}
+  />
   
   <!-- Bottom Bar -->
   <BatchActionBar 
@@ -352,132 +288,17 @@
   </BatchActionBar>
 </main>
 
-<!-- Detail Drawer -->
-{#if showDetailDrawer && selectedMovieForDetail}
-  <DetailDrawer show={showDetailDrawer} onClose={closeDetailDrawer} title={selectedMovieForDetail.name}>
-    <MediaDetailHeader
-      fanartUrl={movieFanartUrl}
-      posterPath={selectedMovieForDetail.posterPath}
-      title={selectedMovieForDetail.name}
-      metaItems={movieMetaItems}
-      statusBadge={movieStatusBadge}
-      subtitle={selectedMovieForDetail.tagline}
-      animationDelay={detailDelay(0)}
-    />
-
-    <div class="px-4 pb-6 pt-2 space-y-6">
-      <MediaOverview
-        overview={movieOverview}
-        maxLength={160}
-        bind:expanded={overviewExpanded}
-        animationDelay={detailDelay(1)}
-        lineClampClass="line-clamp-4"
-      />
-
-      <section class="space-y-3" in:fly={{ y: 18, duration: 300, delay: detailDelay(2), easing: quintOut }}>
-        <h3 class="text-sm font-semibold">元数据</h3>
-        <div class="grid grid-cols-2 gap-3 text-sm">
-          <div class="rounded-lg border border-border/60 bg-muted/30 p-3">
-            <p class="text-xs text-muted-foreground">TMDB</p>
-            {#if selectedMovieForDetail.tmdbId}
-              <a 
-                class="mt-1 inline-flex items-center gap-1 text-sm font-medium text-primary hover:opacity-80"
-                href={`https://www.themoviedb.org/movie/${selectedMovieForDetail.tmdbId}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                #{selectedMovieForDetail.tmdbId}
-                <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg>
-              </a>
-            {:else}
-              <p class="mt-1 text-sm font-medium">未匹配</p>
-            {/if}
-          </div>
-          <div class="rounded-lg border border-border/60 bg-muted/30 p-3">
-            <p class="text-xs text-muted-foreground">状态</p>
-            <span class="mt-1 inline-flex items-center rounded-full border px-2 py-0.5 text-xs {movieStatusBadge.bgColor} {movieStatusBadge.border} {movieStatusBadge.color}">
-              {movieStatusBadge.label}
-            </span>
-          </div>
-          <button 
-            class="col-span-2 rounded-lg border border-border/60 bg-muted/30 p-3 text-left hover:bg-muted/50"
-            title="点击复制路径"
-            onclick={() => copyPath(selectedMovieForDetail?.path)}
-          >
-            <p class="text-xs text-muted-foreground">路径</p>
-            <p class="mt-1 font-mono text-xs break-all">{selectedMovieForDetail.path}</p>
-            <p class="mt-1 text-[11px] text-muted-foreground">点击复制</p>
-          </button>
-          <div class="col-span-2 rounded-lg border border-border/60 bg-muted/30 p-3">
-            <p class="text-xs text-muted-foreground">资源完整性</p>
-            <div class="mt-2 flex flex-wrap gap-3">
-              <span class="flex items-center gap-1 text-xs {selectedMovieForDetail.assets?.hasPoster ? 'text-green-500' : 'text-red-500'}">
-                {#if selectedMovieForDetail.assets?.hasPoster}
-                  <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
-                {:else}
-                  <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-                {/if}
-                海报
-              </span>
-              <span class="flex items-center gap-1 text-xs {selectedMovieForDetail.assets?.hasNfo ? 'text-green-500' : 'text-red-500'}">
-                {#if selectedMovieForDetail.assets?.hasNfo}
-                  <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
-                {:else}
-                  <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-                {/if}
-                NFO
-              </span>
-              <span class="flex items-center gap-1 text-xs {selectedMovieForDetail.assets?.hasFanart ? 'text-green-500' : 'text-red-500'}">
-                {#if selectedMovieForDetail.assets?.hasFanart}
-                  <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
-                {:else}
-                  <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-                {/if}
-                Fanart
-              </span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {#if selectedMovieForDetail.file}
-        <section class="space-y-3" in:fly={{ y: 18, duration: 300, delay: detailDelay(3), easing: quintOut }}>
-          <h3 class="text-sm font-semibold">文件技术信息</h3>
-          <div class="rounded-lg border border-border/60 bg-muted/30 p-4 space-y-3">
-            <div>
-              <p class="text-xs text-muted-foreground">文件</p>
-              <p class="mt-1 text-sm font-medium break-all">{selectedMovieForDetail.file.name}</p>
-          </div>
-          <div class="flex flex-wrap gap-2">
-            {#if selectedMovieForDetail.file.parsed.resolution}
-              <span class="rounded-md border border-blue-500/20 bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-500">
-                {selectedMovieForDetail.file.parsed.resolution}
-              </span>
-            {/if}
-            {#if selectedMovieForDetail.file.parsed.codec}
-              <span class="rounded-md border border-purple-500/20 bg-purple-500/10 px-2 py-0.5 text-xs font-medium text-purple-500">
-                {selectedMovieForDetail.file.parsed.codec}
-              </span>
-            {/if}
-            {#if selectedMovieForDetail.file.parsed.source}
-              <span class="rounded-md border border-border/60 bg-background/60 px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                {selectedMovieForDetail.file.parsed.source}
-              </span>
-            {/if}
-            <span class="rounded-md border border-green-500/20 bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-500">
-              {formatFileSize(selectedMovieForDetail.file.size)}
-            </span>
-            </div>
-          </div>
-        </section>
-      {/if}
-    </div>
-
-    {#snippet footer()}
-      <MediaDetailActions actions={movieDetailActions} operationMessage={operationMessage} />
-    {/snippet}
-  </DetailDrawer>
-{/if}
+<MovieDetailDrawer
+  movie={selectedMovieForDetail}
+  visible={showDetailDrawer}
+  fanartUrl={movieFanartUrl}
+  metaItems={movieMetaItems}
+  statusBadge={movieStatusBadge}
+  bind:overviewExpanded
+  {operationMessage}
+  actions={movieDetailActions}
+  onClose={closeDetailDrawer}
+/>
 
 <!-- TMDB Search Modal -->
 <TMDBSearchModal
@@ -487,14 +308,3 @@
   onSelect={handleTMDBSelect}
   onClose={() => { showSearchModal = false; }}
 />
-
-<style lang="postcss">
-  @reference "tailwindcss";
-
-  .line-clamp-4 {
-    display: -webkit-box;
-    -webkit-line-clamp: 4;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-</style>
