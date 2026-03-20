@@ -2,9 +2,24 @@ import type { Context } from 'hono';
 import { DEFAULT_LANGUAGE } from '@media-scraper/shared/constants';
 import { recognizePath } from '../lib/dify';
 import { enrichRecognizeCandidates } from './scrape-helpers';
-import { parseRecognizeBody } from './scrape-request';
+import { type ParseResult } from './scrape-request';
 import { buildRecognizeResponse } from './scrape-response';
 import { badRequest } from './route-utils';
+
+function parseRecognizeBody(body: any): ParseResult<{
+  filePath: string;
+  language: string;
+}> {
+  const { path: filePath, language = DEFAULT_LANGUAGE } = body;
+  if (!filePath) {
+    return { ok: false, error: 'Missing path' };
+  }
+
+  return {
+    ok: true,
+    data: { filePath, language },
+  };
+}
 
 export async function handleRecognize(c: Context) {
   const parsed = parseRecognizeBody(await c.req.json());

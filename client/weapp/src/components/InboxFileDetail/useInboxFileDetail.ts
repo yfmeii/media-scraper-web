@@ -4,8 +4,11 @@ import {
 } from '@media-scraper/shared'
 import type {
   MediaFile,
+  PathRecognizeResult,
+  PreviewAction,
+  PreviewPlan,
 } from '@media-scraper/shared'
-import { computed, watch } from 'wevu'
+import { computed, ref, watch } from 'wevu'
 import { previewPlan } from '@/utils/api'
 import { normalizeText } from '@/utils/display'
 import { getPosterUrl } from '@/utils/request'
@@ -14,7 +17,6 @@ import { useMediaMatch } from '@/hooks/useMediaMatch'
 import { processMedia } from '@/hooks/useMediaProcess'
 import { runInboxAiRecognize } from './detail-actions'
 import { useInboxTargetPreview } from './detail-preview'
-import { createInboxDetailState, resetInboxDetailState } from './detail-state'
 
 export interface CandidateCard {
   id: number
@@ -50,24 +52,21 @@ export function useInboxFileDetail(options: {
   } = useMediaMatch()
 
   const currentFile = computed(() => options.getFile())
-  const state = createInboxDetailState()
-  const {
-    localVisible,
-    processing,
-    aiLoading,
-    previewVisible,
-    previewLoading,
-    previewActions,
-    previewSummary,
-    searchQuery,
-    season,
-    episode,
-    aiResult,
-    aiHint,
-    autoMatchTried,
-    targetPreviewPath,
-    targetPreviewLoading,
-  } = state
+  const localVisible = ref(false)
+  const processing = ref(false)
+  const aiLoading = ref(false)
+  const previewVisible = ref(false)
+  const previewLoading = ref(false)
+  const previewActions = ref<PreviewAction[]>([])
+  const previewSummary = ref<PreviewPlan['impactSummary'] | null>(null)
+  const searchQuery = ref('')
+  const season = ref(1)
+  const episode = ref(1)
+  const aiResult = ref<PathRecognizeResult | null>(null)
+  const aiHint = ref('')
+  const autoMatchTried = ref(false)
+  const targetPreviewPath = ref('')
+  const targetPreviewLoading = ref(false)
 
   const candidateCards = computed<CandidateCard[]>(() =>
     candidates.value.map(candidate => ({
@@ -96,7 +95,20 @@ export function useInboxFileDetail(options: {
   })
 
   function resetPopupState() {
-    resetInboxDetailState(state)
+    processing.value = false
+    aiLoading.value = false
+    previewVisible.value = false
+    previewLoading.value = false
+    previewActions.value = []
+    previewSummary.value = null
+    searchQuery.value = ''
+    season.value = 1
+    episode.value = 1
+    aiResult.value = null
+    aiHint.value = ''
+    autoMatchTried.value = false
+    targetPreviewPath.value = ''
+    targetPreviewLoading.value = false
     resetTargetPreview()
     resetMatch()
   }

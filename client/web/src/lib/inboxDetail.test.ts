@@ -1,12 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { MediaFile, PathRecognizeResult, PreviewPlan, SearchResult } from '$lib/api';
-import {
-  buildInboxPreviewItem,
-  loadInboxDetailMatch,
-  resolveInboxAiRecognize,
-  resolveInboxTargetPath,
-  searchInboxCandidates,
-} from './inboxDetail';
+import { loadInboxDetailMatch, searchInboxCandidates } from './inboxMatch';
+import { resolveInboxAiRecognize } from './inboxRecognize';
+import { buildInboxPreviewItem, resolveInboxTargetPath } from './inboxPreview';
 
 const originalFetch = globalThis.fetch;
 
@@ -62,7 +58,7 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-describe('inboxDetail helpers', () => {
+describe('inbox detail helper modules', () => {
   test('builds preview item from selected file and candidate', () => {
     const file = makeFile();
     const candidate: SearchResult = { id: 100, name: 'Matched Show' };

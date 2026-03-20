@@ -1,12 +1,11 @@
 import { getSeasonMissingEpisodes, getShowMissingEpisodes } from '@media-scraper/shared'
 import type { MediaFile, MovieInfo, SeasonInfo, SeasonMissingInfo, ShowInfo } from '@media-scraper/shared'
-import { computed, watch } from 'wevu'
+import { computed, ref, watch } from 'wevu'
 import { useDialog } from '@/hooks/useDialog'
 import { useToast } from '@/hooks/useToast'
 import { moveToInbox, refreshMetadata } from '@/utils/api'
 import { normalizeText } from '@/utils/display'
 import { getPosterUrl } from '@/utils/request'
-import { createMediaDetailState, resetMediaDetailState } from './detail-state'
 
 interface MediaDetailProps {
   visible: boolean
@@ -22,8 +21,16 @@ export function useMediaDetail(options: {
 }) {
   const { showToast } = useToast()
   const { confirm } = useDialog()
-  const state = createMediaDetailState()
-  const { expandedSeasons, operationLoading, localVisible, scrollTop } = state
+  const expandedSeasons = ref<number[]>([])
+  const operationLoading = ref(false)
+  const localVisible = ref(false)
+  const scrollTop = ref(0)
+
+  function resetDetailState() {
+    expandedSeasons.value = []
+    operationLoading.value = false
+    scrollTop.value = 0
+  }
 
   const expandedMap = computed<Record<number, boolean>>(() => {
     const map: Record<number, boolean> = {}
@@ -103,7 +110,7 @@ export function useMediaDetail(options: {
   watch(() => options.props.visible, (visible) => {
     localVisible.value = visible
     if (visible) {
-      resetMediaDetailState(state)
+      resetDetailState()
     }
   }, { immediate: true })
 

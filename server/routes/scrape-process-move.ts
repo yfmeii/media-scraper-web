@@ -1,7 +1,10 @@
 import type { Context } from 'hono';
 import { MoveToInboxError, moveMediaToInbox } from '../lib/move-to-inbox';
-import { parseMoveToInboxBody } from './scrape-request';
 import { invalidateMovedItemCache } from '../lib/library-cache-invalidation';
+
+function parseMoveToInboxBody(body: any): { sourcePath: string | undefined } {
+  return { sourcePath: body?.sourcePath };
+}
 
 export async function handleMoveToInbox(c: Context) {
   const { sourcePath } = parseMoveToInboxBody(await c.req.json());

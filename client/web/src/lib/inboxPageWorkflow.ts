@@ -10,7 +10,7 @@ import {
   buildInboxBatchSummaryMessage,
   createInboxPreviewState,
 } from '@media-scraper/shared/inbox-workflow';
-import { resolveInboxTargetPath } from '$lib/inboxDetail';
+import { resolveInboxTargetPath } from '$lib/inboxPreview';
 import { getSelectedInboxFiles, markInboxFileProcessed } from '$lib/inboxPage';
 
 export interface InboxPageState {

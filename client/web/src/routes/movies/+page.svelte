@@ -13,14 +13,6 @@
     buildRefreshCompletedMessage,
     executeBatchRefresh,
   } from '$lib/libraryBatch';
-  import {
-    buildErrorMessage,
-    buildMatchFailureMessage,
-    buildMatchStartMessage,
-    buildRefreshResultMessage,
-    reloadLibraryItems,
-    withClearedMessage,
-  } from '$lib/libraryDetailOps';
   
   let movies = $state<MovieInfo[]>([]);
   let loading = $state(true);
@@ -55,6 +47,36 @@
     }
     
   });
+
+  function toggleMoviePath(path: string) {
+    const nextSelected = new Set(selectedMovies);
+    if (nextSelected.has(path)) {
+      nextSelected.delete(path);
+    } else {
+      nextSelected.add(path);
+    }
+    selectedMovies = nextSelected;
+  }
+
+  async function loadMovies({ syncDetail = true } = {}) {
+    const nextMovies = [...await fetchMovies()];
+    movies = nextMovies;
+    if (syncDetail) {
+      selectedMovieForDetail = selectedMovieForDetail
+        ? nextMovies.find(item => item.path === selectedMovieForDetail?.path) || null
+        : null;
+    }
+  }
+
+  function clearOperationMessage(delay = 3000) {
+    return setTimeout(() => {
+      operationMessage = '';
+    }, delay);
+  }
+
+  function getRefreshResultMessage(result: { success: boolean; message?: string }, successMessage: string) {
+    return result.success ? successMessage : `失败: ${result.message || '未知错误'}`;
+  }
   
   // 使用通用选择逻辑
   function toggleMovie(path: string, event: MouseEvent) {
@@ -67,13 +89,7 @@
 
   function toggleMovieSelection(path: string, event: MouseEvent) {
     event.stopPropagation();
-    const nextSelected = new Set(selectedMovies);
-    if (nextSelected.has(path)) {
-      nextSelected.delete(path);
-    } else {
-      nextSelected.add(path);
-    }
-    selectedMovies = nextSelected;
+    toggleMoviePath(path);
   }
   
   async function handleRowDoubleClick(movie: MovieInfo) {
@@ -99,7 +115,7 @@
     const moviePath = selectedMovieForDetail.path;
     showSearchModal = false;
     isOperating = true;
-    operationMessage = buildMatchStartMessage(result);
+    operationMessage = `正在匹配 ${result.name || result.title}...`;
     
     try {
       const res = await refreshMetadata('movie', moviePath, result.id);
@@ -107,19 +123,18 @@
       if (res.success) {
         operationMessage = '匹配成功，已创建元数据';
         loading = true;
-        movies = [];
-        movies = await reloadLibraryItems(fetchMovies);
+        await loadMovies();
         loading = false;
       } else {
-        operationMessage = buildMatchFailureMessage(res.message);
+        operationMessage = `匹配失败: ${res.message || '未知错误'}`;
       }
     } catch (e) {
-      operationMessage = buildErrorMessage(e);
+      operationMessage = `错误: ${e}`;
     }
     
     isOperating = false;
     
-    withClearedMessage(() => { operationMessage = ''; });
+    clearOperationMessage();
   }
   
   // Batch operations - 批量刷新元数据
@@ -129,7 +144,7 @@
     const plan = buildBatchRefreshPlan(movies, selectedMovies);
     if (plan.missingTmdbCount > 0) {
       operationMessage = buildMissingTmdbMessage(plan.missingTmdbCount, '部电影');
-      withClearedMessage(() => { operationMessage = ''; });
+      clearOperationMessage();
       return;
     }
 
@@ -143,21 +158,21 @@
     });
     
     // Refresh data
-    movies = await reloadLibraryItems(fetchMovies);
+    await loadMovies({ syncDetail: false });
     
     operationMessage = buildRefreshCompletedMessage(successCount, failCount);
     isOperating = false;
     selectedMovies = new Set();
     
-    withClearedMessage(() => { 
+    setTimeout(() => {
       operationMessage = '';
       batchProgress = null;
     }, 2000);
   }
   
   function batchRematch() {
-    const firstPath = Array.from(selectedMovies)[0];
-    const movie = movies.find(m => m.path === firstPath);
+    const firstPath = selectedMovies.values().next().value;
+    const movie = firstPath ? movies.find(item => item.path === firstPath) || null : null;
     if (movie) {
       openSearchModal(movie);
     }
@@ -169,7 +184,7 @@
     
     if (!movie.tmdbId) {
       operationMessage = '未刮削电影需要先匹配 TMDB，请点击"重新匹配"';
-      withClearedMessage(() => { operationMessage = ''; }, 5000);
+      clearOperationMessage(5000);
       return;
     }
     
@@ -178,15 +193,15 @@
     
     try {
       const result = await refreshMetadata('movie', movie.path, movie.tmdbId);
-      operationMessage = buildRefreshResultMessage(result, '刷新成功');
+      operationMessage = getRefreshResultMessage(result, '刷新成功');
       
-      movies = await reloadLibraryItems(fetchMovies);
+      await loadMovies();
     } catch (e) {
-      operationMessage = buildErrorMessage(e);
+      operationMessage = `错误: ${e}`;
     }
     
     isOperating = false;
-    withClearedMessage(() => { operationMessage = ''; });
+    clearOperationMessage();
   }
   
   

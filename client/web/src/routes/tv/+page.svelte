@@ -14,15 +14,6 @@
     buildRefreshCompletedMessage,
     executeBatchRefresh,
   } from '$lib/libraryBatch';
-  import {
-    buildErrorMessage,
-    buildMatchFailureMessage,
-    buildMatchStartMessage,
-    buildRefreshResultMessage,
-    reloadLibraryItems,
-    syncSelectedDetailItem,
-    withClearedMessage,
-  } from '$lib/libraryDetailOps';
   import { buildShowMetaItems } from '$lib/tvDetail';
   import { buildShowPrimaryActionLabel, countShowsByStatus, filterShows, toggleSeasonSet } from '$lib/tvPage';
   import TVShowTable from '$lib/components/tv/TVShowTable.svelte';
@@ -62,6 +53,36 @@
     }
     
   });
+
+  function toggleShowSelection(path: string) {
+    const nextSelected = new Set(selectedShows);
+    if (nextSelected.has(path)) {
+      nextSelected.delete(path);
+    } else {
+      nextSelected.add(path);
+    }
+    selectedShows = nextSelected;
+  }
+
+  async function loadShows({ syncDetail = true } = {}) {
+    const nextShows = [...await fetchTVShows()];
+    shows = nextShows;
+    if (syncDetail) {
+      selectedShowForDetail = selectedShowForDetail
+        ? nextShows.find(item => item.path === selectedShowForDetail?.path) || null
+        : null;
+    }
+  }
+
+  function clearOperationMessage(delay = 3000) {
+    return setTimeout(() => {
+      operationMessage = '';
+    }, delay);
+  }
+
+  function getRefreshResultMessage(result: { success: boolean; message?: string }, successMessage: string) {
+    return result.success ? successMessage : `失败: ${result.message || '未知错误'}`;
+  }
   
   // 使用通用选择逻辑
   function toggleShow(path: string, event: MouseEvent) {
@@ -74,13 +95,7 @@
 
   function toggleShowCheckbox(path: string, event: MouseEvent) {
     event.stopPropagation();
-    const nextSelected = new Set(selectedShows);
-    if (nextSelected.has(path)) {
-      nextSelected.delete(path);
-    } else {
-      nextSelected.add(path);
-    }
-    selectedShows = nextSelected;
+    toggleShowSelection(path);
   }
   
   async function handleRowDoubleClick(show: ShowInfo) {
@@ -108,7 +123,7 @@
     const showPath = selectedShowForDetail.path;
     showSearchModal = false;
     isOperating = true;
-    operationMessage = buildMatchStartMessage(result);
+    operationMessage = `正在匹配 ${result.name || result.title}...`;
     
     try {
       // Call refresh metadata to apply the TMDB match and create NFO/poster
@@ -119,19 +134,19 @@
         // Refresh shows list - force re-fetch
         loading = true;
         shows = [];
-        shows = await reloadLibraryItems(fetchTVShows);
+        await loadShows();
         loading = false;
         operationMessage = '匹配成功';
       } else {
-        operationMessage = buildMatchFailureMessage(res.message);
+        operationMessage = `匹配失败: ${res.message || '未知错误'}`;
       }
     } catch (e) {
-      operationMessage = buildErrorMessage(e);
+      operationMessage = `错误: ${e}`;
     }
     
     isOperating = false;
     
-    withClearedMessage(() => { operationMessage = ''; });
+    clearOperationMessage();
   }
   
   // Batch operations - 批量刷新元数据
@@ -141,7 +156,7 @@
     const plan = buildBatchRefreshPlan(shows, selectedShows);
     if (plan.missingTmdbCount > 0) {
       operationMessage = buildMissingTmdbMessage(plan.missingTmdbCount, '个剧集');
-      withClearedMessage(() => { operationMessage = ''; });
+      clearOperationMessage();
       return;
     }
 
@@ -155,13 +170,13 @@
     });
     
     // Refresh data
-    shows = await reloadLibraryItems(fetchTVShows);
+    await loadShows();
     
     operationMessage = buildRefreshCompletedMessage(successCount, failCount);
     isOperating = false;
     selectedShows = new Set();
     
-    withClearedMessage(() => { 
+    setTimeout(() => {
       operationMessage = '';
       batchProgress = null;
     }, 2000);
@@ -169,8 +184,8 @@
   
   function batchRematch() {
     // For batch rematch, show modal with first selected show
-    const firstPath = Array.from(selectedShows)[0];
-    const show = shows.find(s => s.path === firstPath);
+    const firstPath = selectedShows.values().next().value;
+    const show = firstPath ? shows.find(item => item.path === firstPath) || null : null;
     if (show) {
       openSearchModal(show);
     }
@@ -193,7 +208,7 @@
           // 自动匹配成功，执行刮削
           operationMessage = `匹配成功: ${matchResult.result.name}，正在创建元数据...`;
           const result = await refreshMetadata('tv', show.path, matchResult.result.id);
-          operationMessage = buildRefreshResultMessage(result, '元数据创建成功');
+          operationMessage = getRefreshResultMessage(result, '元数据创建成功');
         } else if (matchResult.candidates && matchResult.candidates.length > 0) {
           // 有多个候选，打开搜索模态框
           isOperating = false;
@@ -204,18 +219,17 @@
           // 无匹配结果
           isOperating = false;
           operationMessage = '未找到匹配结果，请手动搜索';
-          withClearedMessage(() => { operationMessage = ''; });
+          clearOperationMessage();
           openSearchModal(show);
           return;
         }
       } catch (err) {
-        operationMessage = buildMatchFailureMessage(String(err));
+        operationMessage = `匹配失败: ${String(err) || '未知错误'}`;
       }
       
       isOperating = false;
-      shows = await reloadLibraryItems(fetchTVShows);
-      selectedShowForDetail = syncSelectedDetailItem(shows, selectedShowForDetail);
-      withClearedMessage(() => { operationMessage = ''; });
+      await loadShows();
+      clearOperationMessage();
       return;
     }
     
@@ -229,13 +243,13 @@
     operationMessage = '正在刷新元数据...';
     
     const result = await refreshMetadata('tv', show.path, show.tmdbId);
-    operationMessage = buildRefreshResultMessage(result, '刷新成功');
+    operationMessage = getRefreshResultMessage(result, '刷新成功');
     isOperating = false;
     
     // Refresh shows
-    shows = await reloadLibraryItems(fetchTVShows);
+    await loadShows();
     
-    withClearedMessage(() => { operationMessage = ''; });
+    clearOperationMessage();
   }
   
   // 刷新指定季的元数据
@@ -245,14 +259,13 @@
     operationMessage = `正在刷新第 ${season} 季元数据...`;
     
     const result = await refreshMetadata('tv', selectedShowForDetail.path, selectedShowForDetail.tmdbId, { season });
-    operationMessage = buildRefreshResultMessage(result, `第 ${season} 季刷新成功`);
+    operationMessage = getRefreshResultMessage(result, `第 ${season} 季刷新成功`);
     isOperating = false;
     
     // Refresh shows
-    shows = await reloadLibraryItems(fetchTVShows);
-    selectedShowForDetail = syncSelectedDetailItem(shows, selectedShowForDetail);
+    await loadShows();
     
-    withClearedMessage(() => { operationMessage = ''; });
+    clearOperationMessage();
   }
   
   // 刷新指定集的元数据
@@ -262,10 +275,10 @@
     operationMessage = `正在刷新 S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')} 元数据...`;
     
     const result = await refreshMetadata('tv', selectedShowForDetail.path, selectedShowForDetail.tmdbId, { season, episode });
-    operationMessage = buildRefreshResultMessage(result, `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')} 刷新成功`);
+    operationMessage = getRefreshResultMessage(result, `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')} 刷新成功`);
     isOperating = false;
     
-    withClearedMessage(() => { operationMessage = ''; });
+    clearOperationMessage();
   }
   
   // 移回收件箱
@@ -280,14 +293,13 @@
         operationMessage = `正在移动: ${fileName}`;
         
         const result = await moveToInbox(filePath);
-        operationMessage = buildRefreshResultMessage(result, '已移回收件箱');
+        operationMessage = getRefreshResultMessage(result, '已移回收件箱');
         isOperating = false;
         
         // Refresh shows
-        shows = await reloadLibraryItems(fetchTVShows);
-        selectedShowForDetail = syncSelectedDetailItem(shows, selectedShowForDetail);
+        await loadShows();
         
-        withClearedMessage(() => { operationMessage = ''; });
+        clearOperationMessage();
       }
     });
   }

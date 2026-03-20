@@ -1,130 +1,57 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  parseImdbSearchParams,
-  parseMatchBody,
-  parsePreviewBody,
-  parseProcessMovieBody,
-  parseProcessTVBody,
-  parseRecognizeBody,
-  parseRefreshBody,
-  parseSearchParams,
+  isNonEmptyString,
+  parsePreviewItems,
+  parseTVEpisodes,
+  toPositiveInteger,
 } from './scrape-request';
 
 describe('scrape request parsers', () => {
-  test('parses search and imdb query params', () => {
-    expect(parseSearchParams({})).toEqual({ ok: false, error: 'Missing query parameter' });
-    expect(parseSearchParams({ q: 'Andor', year: '2022' })).toEqual({
-      ok: true,
-      data: { query: 'Andor', year: 2022, language: 'zh-CN' },
-    });
+  test('validates non-empty strings and positive integers', () => {
+    expect(isNonEmptyString('Andor')).toBe(true);
+    expect(isNonEmptyString('   ')).toBe(false);
+    expect(isNonEmptyString(1)).toBe(false);
 
-    expect(parseImdbSearchParams({})).toEqual({ ok: false, error: 'Missing imdb_id parameter' });
-    expect(parseImdbSearchParams({ imdb_id: 'tt1', language: 'en-US' })).toEqual({
-      ok: true,
-      data: { imdbId: 'tt1', language: 'en-US' },
-    });
+    expect(toPositiveInteger(2)).toBe(2);
+    expect(toPositiveInteger(0)).toBeNull();
+    expect(toPositiveInteger(1.5)).toBeNull();
+    expect(toPositiveInteger('2')).toBeNull();
   });
 
-  test('parses match and recognize bodies', () => {
-    expect(parseMatchBody({})).toEqual({ ok: false, error: 'Missing path' });
-    expect(parseMatchBody({ path: '/inbox/a.mkv', kind: 'tv', title: 'A', year: 2024 })).toEqual({
-      ok: true,
-      data: { path: '/inbox/a.mkv', kind: 'tv', title: 'A', year: 2024, language: 'zh-CN' },
-    });
-
-    expect(parseRecognizeBody({})).toEqual({ ok: false, error: 'Missing path' });
-    expect(parseRecognizeBody({ path: 'A.mkv' })).toEqual({
-      ok: true,
-      data: { filePath: 'A.mkv', language: 'zh-CN' },
-    });
+  test('parses tv episode inputs', () => {
+    expect(parseTVEpisodes([])).toBeNull();
+    expect(parseTVEpisodes([{ source: '/a', episode: 2 }])).toEqual([
+      { source: '/a', episode: 2 },
+    ]);
+    expect(parseTVEpisodes([{ source: '/a', episode: 3, episodeEnd: 2 }])).toBeNull();
+    expect(parseTVEpisodes([{ source: '', episode: 1 }])).toBeNull();
   });
 
-  test('parses process and refresh bodies', () => {
-    expect(parseProcessTVBody({ sourcePath: '/a' })).toEqual({ ok: false, error: 'Missing required parameters' });
-    expect(parseProcessMovieBody({ sourcePath: '/a' })).toEqual({ ok: false, error: 'Missing required parameters' });
-    expect(parseRefreshBody({ kind: 'tv', path: '/a' })).toEqual({ ok: false, error: 'Missing required parameters' });
+  test('parses preview items', () => {
+    expect(parsePreviewItems(null)).toBeNull();
+    expect(parsePreviewItems([{ sourcePath: '/a' }])).toBeNull();
+    expect(parsePreviewItems([{ sourcePath: '/a', kind: 'movie', tmdbId: 8 }])).toEqual([
+      { sourcePath: '/a', kind: 'movie', tmdbId: 8 },
+    ]);
 
-    expect(parseProcessTVBody({
-      sourcePath: '/a',
-      showName: 'Show',
-      tmdbId: 1,
-      season: 2,
-      episodes: [{ source: '/a', episode: 3 }],
-    })).toEqual({
-      ok: true,
-      data: {
-        sourcePath: '/a',
-        showName: 'Show',
-        tmdbId: 1,
-        season: 2,
-        episodes: [{ source: '/a', episode: 3 }],
-        language: 'zh-CN',
-      },
-    });
-
-    expect(parseProcessMovieBody({ sourcePath: '/a', tmdbId: 1 })).toEqual({
-      ok: true,
-      data: { sourcePath: '/a', tmdbId: 1, language: 'zh-CN' },
-    });
-
-    expect(parseRefreshBody({ kind: 'tv', path: '/a', tmdbId: 1, season: 2, episode: 4 })).toEqual({
-      ok: true,
-      data: { kind: 'tv', path: '/a', tmdbId: 1, season: 2, episode: 4, language: 'zh-CN' },
-    });
-  });
-
-  test('rejects malformed process and refresh bodies', () => {
-    expect(parseProcessTVBody({
-      sourcePath: '/a',
-      showName: 'Show',
-      tmdbId: 1,
-      season: 1,
-      episodes: [],
-    })).toEqual({ ok: false, error: 'Missing required parameters' });
-
-    expect(parseProcessTVBody({
-      sourcePath: '/a',
-      showName: 'Show',
-      tmdbId: 1,
-      season: 1,
-      episodes: [{ source: '/a', episode: 3, episodeEnd: 2 }],
-    })).toEqual({ ok: false, error: 'Missing required parameters' });
-
-    expect(parseProcessMovieBody({ sourcePath: '/a', tmdbId: '1' })).toEqual({ ok: false, error: 'Missing required parameters' });
-    expect(parseRefreshBody({ kind: 'unknown', path: '/a', tmdbId: 1 })).toEqual({ ok: false, error: 'Missing required parameters' });
-    expect(parseRefreshBody({ kind: 'tv', path: '/a', tmdbId: 1, season: 0 })).toEqual({ ok: false, error: 'Missing required parameters' });
-  });
-
-  test('parses preview body', () => {
-    expect(parsePreviewBody({ items: null })).toEqual({ ok: false, error: 'Missing items array' });
-    expect(parsePreviewBody({ items: [{ sourcePath: '/a' }] })).toEqual({ ok: false, error: 'Missing items array' });
-    expect(parsePreviewBody({ items: [{ sourcePath: '/a', kind: 'movie', tmdbId: 8 }] })).toEqual({
-      ok: true,
-      data: { items: [{ sourcePath: '/a', kind: 'movie', tmdbId: 8 }], language: 'zh-CN' },
-    });
-
-    expect(parsePreviewBody({
-      items: [{
+    expect(parsePreviewItems([
+      {
         sourcePath: '/a',
         kind: 'tv',
         showName: 'Show',
         tmdbId: 1,
         season: 1,
         episodes: [{ source: '/a', episode: 1 }],
-      }],
-    })).toEqual({
-      ok: true,
-      data: {
-        items: [{
-          sourcePath: '/a',
-          kind: 'tv',
-          showName: 'Show',
-          tmdbId: 1,
-          season: 1,
-          episodes: [{ source: '/a', episode: 1 }],
-        }],
-        language: 'zh-CN',
       },
-    });
+    ])).toEqual([
+      {
+        sourcePath: '/a',
+        kind: 'tv',
+        showName: 'Show',
+        tmdbId: 1,
+        season: 1,
+        episodes: [{ source: '/a', episode: 1 }],
+      },
+    ]);
   });
 });

@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { enrichShowStatus, mergeMovieDetail, mergeShowDetail, summarizeShowEpisodes } from './library-summary';
+import { mergeMovieDetail } from './library-movie-summary';
+import { enrichShowStatus, mergeShowDetail } from './library-show-summary';
+import { summarizeShowEpisodes } from './library-summary-shared';
 
 describe('library summary helpers', () => {
   test('summarizeShowEpisodes groups and sorts by season and episode', () => {

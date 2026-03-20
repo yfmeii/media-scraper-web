@@ -1,6 +1,7 @@
 import type { MediaFile, MovieInfo, ShowInfo } from '@media-scraper/shared/types';
 import type { CacheEntryKind } from './library-cache-meta';
-import { buildMovieBaseSummary, buildShowBaseSummary } from './library-summary';
+import { buildMovieBaseSummary } from './library-movie-summary';
+import { buildShowBaseSummary } from './library-show-summary';
 import { deleteCachedEntry, readCachedEntry, writeCachedEntry } from './library-cache-storage';
 
 export async function getCachedShowSummary(params: {

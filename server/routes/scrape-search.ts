@@ -1,10 +1,72 @@
 import type { Context } from 'hono';
+import { DEFAULT_LANGUAGE } from '@media-scraper/shared/constants';
 import { findBestMatch, findBestMatchMixed, findByImdbId, searchMovie, searchMulti, searchTV } from '../lib/tmdb';
 import { parseFilename } from '../lib/scanner-parser';
 import { buildMatchPayload, mapSearchResult, type SearchKind } from './scrape-helpers';
-import { parseImdbSearchParams, parseMatchBody, parseSearchParams } from './scrape-request';
+import { type ParseResult } from './scrape-request';
 import { buildImdbSearchResponse, buildMatchNotFoundResponse, buildSearchResponse } from './scrape-response';
 import { badRequest } from './route-utils';
+
+function parseSearchParams(query: { q?: string; year?: string; language?: string }): ParseResult<{
+  query: string;
+  year?: number;
+  language: string;
+}> {
+  if (!query.q) {
+    return { ok: false, error: 'Missing query parameter' };
+  }
+
+  return {
+    ok: true,
+    data: {
+      query: query.q,
+      year: query.year ? parseInt(query.year, 10) : undefined,
+      language: query.language || DEFAULT_LANGUAGE,
+    },
+  };
+}
+
+function parseImdbSearchParams(query: { imdb_id?: string; id?: string; language?: string }): ParseResult<{
+  imdbId: string;
+  language: string;
+}> {
+  const imdbId = query.imdb_id || query.id;
+  if (!imdbId) {
+    return { ok: false, error: 'Missing imdb_id parameter' };
+  }
+
+  return {
+    ok: true,
+    data: {
+      imdbId,
+      language: query.language || DEFAULT_LANGUAGE,
+    },
+  };
+}
+
+function parseMatchBody(body: any): ParseResult<{
+  path: string;
+  kind: 'tv' | 'movie' | undefined;
+  title?: string;
+  year?: number;
+  language: string;
+}> {
+  const { path, kind: inputKind, title, year, language = DEFAULT_LANGUAGE } = body;
+  if (!path) {
+    return { ok: false, error: 'Missing path' };
+  }
+
+  return {
+    ok: true,
+    data: {
+      path,
+      kind: inputKind === 'tv' || inputKind === 'movie' ? inputKind : undefined,
+      title,
+      year,
+      language,
+    },
+  };
+}
 
 export async function handleSearch(c: Context, kind: SearchKind) {
   const parsed = parseSearchParams({
