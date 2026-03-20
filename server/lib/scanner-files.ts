@@ -9,6 +9,12 @@ function buildRelativePath(fullPath: string, rootPath: string): string {
   return fullPath.replace(`${rootPath}/`, '');
 }
 
+function getSidecarPath(filePath: string, nextExt: string): string {
+  const currentExt = extname(filePath);
+  if (!currentExt) return `${filePath}${nextExt}`;
+  return `${filePath.slice(0, -currentExt.length)}${nextExt}`;
+}
+
 function inferMediaKind(parsed: ParsedInfo): MediaFile['kind'] {
   return parsed.season || parsed.episode ? 'tv' : 'movie';
 }
@@ -19,8 +25,7 @@ async function buildMediaFile(params: {
   relativePath: string;
   parsed: ParsedInfo;
 }): Promise<MediaFile> {
-  const ext = extname(params.name).toLowerCase();
-  const nfoPath = params.fullPath.replace(ext, '.nfo');
+  const nfoPath = getSidecarPath(params.fullPath, '.nfo');
   const { hasNfo, processed } = await getNfoStatus(nfoPath);
   const fileStat = await stat(params.fullPath);
 
@@ -169,7 +174,7 @@ export async function detectSupplementFiles(showPath: string): Promise<MediaFile
         if (!VIDEO_EXTS.has(ext)) continue;
 
         const filePath = join(seasonPath, file.name);
-        const nfoPath = filePath.replace(ext, '.nfo');
+        const nfoPath = getSidecarPath(filePath, '.nfo');
 
         try {
           await stat(nfoPath);

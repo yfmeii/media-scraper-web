@@ -133,6 +133,21 @@ describe('文件名解析', () => {
     expect(files[0].name).toContain('Show.S01E01.mkv');
   });
 
+  test('📼 扫描目录支持大写扩展名且不会误读视频为 NFO', async () => {
+    const root = await ensureTempRoot();
+    const dir = join(root, 'scan-uppercase');
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'Movie.2024.MP4'), 'video');
+
+    const files = await scanDirectory(dir);
+    expect(files).toHaveLength(1);
+    expect(files[0]).toMatchObject({
+      name: 'Movie.2024.MP4',
+      hasNfo: false,
+      isProcessed: false,
+    });
+  });
+
   test('🗃️ 收件箱目录分组包含根目录文件与子目录摘要', async () => {
     const root = await ensureTempRoot();
     const inbox = join(root, 'inbox-groups');
@@ -176,5 +191,19 @@ describe('文件名解析', () => {
     expect(supplementFiles[0]?.relativePath).toBe('Season 01/Demo.Show.S01E03.mkv');
     expect(supplementFiles[0]?.parsed.season).toBe(1);
     expect(supplementFiles[0]?.parsed.episode).toBe(3);
+  });
+
+  test('🧾 detectSupplementFiles correctly matches uppercase sidecar extensions', async () => {
+    const root = await ensureTempRoot();
+    const showDir = join(root, 'supplement-uppercase-show');
+    const seasonDir = join(showDir, 'Season 01');
+    await mkdir(seasonDir, { recursive: true });
+
+    const completeEpisode = join(seasonDir, 'Demo.Show.S01E05.MP4');
+    await writeFile(completeEpisode, 'episode-5');
+    await writeFile(join(seasonDir, 'Demo.Show.S01E05.nfo'), '<episodedetails />');
+
+    const supplementFiles = await detectSupplementFiles(showDir);
+    expect(supplementFiles).toHaveLength(0);
   });
 });
