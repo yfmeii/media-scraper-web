@@ -61,6 +61,37 @@ export interface CleanupResult {
   reason: 'protected' | 'has-video' | 'not-empty' | 'deleted' | 'error' | 'already-gone';
 }
 
+function getErrorCode(error: unknown): string | undefined {
+  if (typeof error === 'object' && error && 'code' in error && typeof error.code === 'string') {
+    return error.code;
+  }
+
+  if (error instanceof Error) {
+    const match = error.message.match(/\b(E[A-Z]+)\b/);
+    return match?.[1];
+  }
+
+  return undefined;
+}
+
+function classifyReadDirError(error: unknown): CleanupResult {
+  return getErrorCode(error) === 'ENOENT'
+    ? { deleted: false, reason: 'already-gone' }
+    : { deleted: false, reason: 'error' };
+}
+
+function classifyRemoveDirError(error: unknown): CleanupResult {
+  const code = getErrorCode(error);
+  if (code === 'ENOENT') {
+    return { deleted: false, reason: 'already-gone' };
+  }
+  if (code === 'ENOTEMPTY') {
+    return { deleted: false, reason: 'not-empty' };
+  }
+
+  return { deleted: false, reason: 'error' };
+}
+
 /**
  * Safely clean up a source directory after files have been moved out.
  *
@@ -77,12 +108,12 @@ export async function cleanupSourceDir(
   dirPath: string,
   fs: FileSystemOps = realFs,
 ): Promise<CleanupResult> {
-  try {
-    // Rule 1: never touch protected directories
-    if (isProtectedDir(dirPath)) {
-      return { deleted: false, reason: 'protected' };
-    }
+  // Rule 1: never touch protected directories
+  if (isProtectedDir(dirPath)) {
+    return { deleted: false, reason: 'protected' };
+  }
 
+  try {
     const entries = await fs.readdir(dirPath);
 
     // Rule 2: don't delete if any remaining file is a video
@@ -92,14 +123,17 @@ export async function cleanupSourceDir(
 
     // Rule 3: only delete if truly empty
     if (entries.length === 0) {
-      await fs.rmdir(dirPath);
-      return { deleted: true, reason: 'deleted' };
+      try {
+        await fs.rmdir(dirPath);
+        return { deleted: true, reason: 'deleted' };
+      } catch (error) {
+        return classifyRemoveDirError(error);
+      }
     }
 
     // Rule 4: non-video leftover files → keep directory
     return { deleted: false, reason: 'not-empty' };
-  } catch {
-    // Directory might already be gone or inaccessible
-    return { deleted: false, reason: 'error' };
+  } catch (error) {
+    return classifyReadDirError(error);
   }
 }

@@ -189,6 +189,13 @@ describe('cleanupSourceDir', () => {
       expect(result.deleted).toBe(true);
       expect(result.reason).toBe('deleted');
     });
+
+    test('目录已不存在时返回 already-gone', async () => {
+      const fs = createMockFs({});
+      const result = await cleanupSourceDir('/mnt/media/Inbox/missing', fs);
+      expect(result.deleted).toBe(false);
+      expect(result.reason).toBe('already-gone');
+    });
   });
 
   // ── Directories with video files ──
@@ -416,11 +423,11 @@ describe('cleanupSourceDir', () => {
   // ── Error handling ──
 
   describe('错误处理', () => {
-    test('目录已不存在 → 返回 error 不崩溃', async () => {
+    test('目录已不存在 → 返回 already-gone 不崩溃', async () => {
       const fs = createMockFs({});  // no directory exists
       const result = await cleanupSourceDir('/mnt/media/Inbox/ghost', fs);
       expect(result.deleted).toBe(false);
-      expect(result.reason).toBe('error');
+      expect(result.reason).toBe('already-gone');
     });
 
     test('readdir 权限错误 → 返回 error 不崩溃', async () => {
@@ -433,7 +440,7 @@ describe('cleanupSourceDir', () => {
       expect(result.reason).toBe('error');
     });
 
-    test('并发删除（rmdir 失败） → 返回 error 不崩溃', async () => {
+    test('并发删除（rmdir 失败） → 返回 already-gone 不崩溃', async () => {
       // Simulate: readdir returns [], but by the time rmdir runs, dir is gone
       const mockFs: FileSystemOps = {
         readdir: async () => [],
@@ -441,7 +448,7 @@ describe('cleanupSourceDir', () => {
       };
       const result = await cleanupSourceDir('/mnt/media/Inbox/concurrent', mockFs);
       expect(result.deleted).toBe(false);
-      expect(result.reason).toBe('error');
+      expect(result.reason).toBe('already-gone');
     });
   });
 

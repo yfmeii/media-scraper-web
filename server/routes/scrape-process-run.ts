@@ -1,8 +1,7 @@
 import type { Context } from 'hono';
-import { processMovie, processTVShow } from '../lib/scraper/process';
 import { parseProcessMovieBody, parseProcessTVBody } from './scrape-request';
 import { badRequest } from './route-utils';
-import { invalidateTVShowCache, invalidateMovieCache } from '../lib/library-cache-invalidation';
+import { runProcessMovie, runProcessTV } from './scrape-process-service';
 
 export async function handleProcessTV(c: Context) {
   const parsed = parseProcessTVBody(await c.req.json());
@@ -10,12 +9,7 @@ export async function handleProcessTV(c: Context) {
     return badRequest(c, parsed.error);
   }
 
-  const { sourcePath, showName, tmdbId, season, episodes, language } = parsed.data;
-  const result = await processTVShow(sourcePath, showName, tmdbId, season, episodes, language);
-  if (result.success && result.destPath) {
-    await invalidateTVShowCache(result.destPath);
-  }
-  return c.json(result);
+  return c.json(await runProcessTV(parsed.data));
 }
 
 export async function handleProcessMovie(c: Context) {
@@ -24,10 +18,5 @@ export async function handleProcessMovie(c: Context) {
     return badRequest(c, parsed.error);
   }
 
-  const { sourcePath, tmdbId, language } = parsed.data;
-  const result = await processMovie(sourcePath, tmdbId, language);
-  if (result.success && result.destPath) {
-    await invalidateMovieCache(result.destPath);
-  }
-  return c.json(result);
+  return c.json(await runProcessMovie(parsed.data));
 }

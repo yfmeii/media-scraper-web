@@ -2,7 +2,7 @@ import { describe, expect, test, beforeAll, afterAll, afterEach } from 'bun:test
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import type { TMDBSeasonDetails } from './tmdb';
+import type { TMDBSeasonDetails } from './tmdb-types';
 
 let tmpRoot = '';
 let tvRoot = '';
@@ -334,5 +334,34 @@ describe('刮削业务逻辑', () => {
     expect(plan.impactSummary.directoriesCreating.length).toBe(2);
     expect(plan.impactSummary.nfoCreating).toBe(3);
     expect(plan.impactSummary.postersDownloading).toBe(2);
+  });
+
+  test('🧭 TV 预览和处理都使用 TMDB 剧名而不是输入 showName', async () => {
+    globalThis.fetch = createMockFetch();
+    mockShowName = uniqueName('RealShow');
+
+    const { generatePreviewPlan, processTVShow } = await import('./scraper');
+    const srcDir = join(inboxRoot, uniqueName('inbox-real-show'));
+    await mkdir(srcDir, { recursive: true });
+    const srcFile = join(srcDir, 'Alias.Name.S01E01.mkv');
+    await writeFile(srcFile, 'video');
+
+    const plan = await generatePreviewPlan([{
+      kind: 'tv',
+      sourcePath: srcFile,
+      showName: 'Alias Name',
+      tmdbId: 123,
+      season: 1,
+      episodes: [{ source: srcFile, episode: 1 }],
+    }]);
+
+    const moveAction = plan.actions.find(action => action.type === 'move');
+    expect(moveAction?.destination).toContain(join('TV', mockShowName, 'Season 01', `${mockShowName} - S01E01.mkv`));
+    expect(moveAction?.destination.includes('Alias Name')).toBe(false);
+
+    const result = await processTVShow(srcFile, 'Alias Name', 123, 1, [{ source: srcFile, episode: 1 }]);
+    expect(result.success).toBe(true);
+    expect(result.destPath).toBe(join(tvRoot, mockShowName, 'Season 01'));
+    expect(await pathExists(join(tvRoot, mockShowName, 'Season 01', `${mockShowName} - S01E01.mkv`))).toBe(true);
   });
 });

@@ -1,13 +1,8 @@
 import { extname, join } from 'path';
 import { DEFAULT_LANGUAGE } from '@media-scraper/shared/constants';
-import { MEDIA_PATHS } from '../config';
-import { getMovieDetails } from '../tmdb';
-import {
-  buildTVEpisodeDestinationName,
-  fileExists,
-  getMovieFolderName,
-  getSeasonDirName,
-} from './common';
+import { getMovieDetails, getTVDetails } from '../tmdb';
+import { fileExists } from './common';
+import { resolveMovieDestination, resolveTVEpisodeDestination, resolveTVSeasonDir, resolveTVShowDir } from './destination';
 
 export async function generatePreviewPlan(
   items: Array<{
@@ -50,8 +45,11 @@ export async function generatePreviewPlan(
   for (const item of items) {
     try {
       if (item.kind === 'tv' && item.showName && item.season && item.episodes) {
-        const showDir = join(MEDIA_PATHS.tv, item.showName);
-        const seasonDir = join(showDir, getSeasonDirName(item.season));
+        const show = await getTVDetails(item.tmdbId, language);
+        if (!show) continue;
+
+        const showDir = resolveTVShowDir(show.name);
+        const seasonDir = resolveTVSeasonDir(show.name, item.season);
 
         if (!(await fileExists(showDir))) {
           directoriesCreating.add(showDir);
@@ -82,8 +80,13 @@ export async function generatePreviewPlan(
         }
 
         for (const ep of item.episodes) {
-          const destName = buildTVEpisodeDestinationName(item.showName, item.season, ep.episode, ep.source, ep.episodeEnd);
-          const destPath = join(seasonDir, destName);
+          const { destPath } = resolveTVEpisodeDestination({
+            showName: show.name,
+            season: item.season,
+            sourcePath: ep.source,
+            episode: ep.episode,
+            episodeEnd: ep.episodeEnd,
+          });
           const willOverwrite = await fileExists(destPath);
 
           filesMoving++;
@@ -99,20 +102,17 @@ export async function generatePreviewPlan(
         const movie = await getMovieDetails(item.tmdbId, language);
         if (!movie) continue;
 
-        const folderName = getMovieFolderName(movie);
-        const movieDir = join(MEDIA_PATHS.movies, folderName);
+        const { movieDir, destPath } = resolveMovieDestination(movie, item.sourcePath);
         if (!(await fileExists(movieDir))) {
           directoriesCreating.add(movieDir);
           actions.push({ type: 'create-dir', destination: movieDir, willOverwrite: false });
         }
 
-        const ext = extname(item.sourcePath);
-        const destPath = join(movieDir, `${folderName}${ext}`);
         const willOverwrite = await fileExists(destPath);
         filesMoving++;
         actions.push({ type: 'move', source: item.sourcePath, destination: destPath, willOverwrite });
 
-        const nfoDest = destPath.replace(ext, '.nfo');
+        const nfoDest = destPath.replace(extname(destPath), '.nfo');
         const nfoOverwrite = await fileExists(nfoDest);
         if (nfoOverwrite) nfoOverwriting++;
         else nfoCreating++;

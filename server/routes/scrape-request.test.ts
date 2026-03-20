@@ -49,7 +49,7 @@ describe('scrape request parsers', () => {
       showName: 'Show',
       tmdbId: 1,
       season: 2,
-      episodes: [{ episode: 3 }],
+      episodes: [{ source: '/a', episode: 3 }],
     })).toEqual({
       ok: true,
       data: {
@@ -57,7 +57,7 @@ describe('scrape request parsers', () => {
         showName: 'Show',
         tmdbId: 1,
         season: 2,
-        episodes: [{ episode: 3 }],
+        episodes: [{ source: '/a', episode: 3 }],
         language: 'zh-CN',
       },
     });
@@ -73,11 +73,58 @@ describe('scrape request parsers', () => {
     });
   });
 
+  test('rejects malformed process and refresh bodies', () => {
+    expect(parseProcessTVBody({
+      sourcePath: '/a',
+      showName: 'Show',
+      tmdbId: 1,
+      season: 1,
+      episodes: [],
+    })).toEqual({ ok: false, error: 'Missing required parameters' });
+
+    expect(parseProcessTVBody({
+      sourcePath: '/a',
+      showName: 'Show',
+      tmdbId: 1,
+      season: 1,
+      episodes: [{ source: '/a', episode: 3, episodeEnd: 2 }],
+    })).toEqual({ ok: false, error: 'Missing required parameters' });
+
+    expect(parseProcessMovieBody({ sourcePath: '/a', tmdbId: '1' })).toEqual({ ok: false, error: 'Missing required parameters' });
+    expect(parseRefreshBody({ kind: 'unknown', path: '/a', tmdbId: 1 })).toEqual({ ok: false, error: 'Missing required parameters' });
+    expect(parseRefreshBody({ kind: 'tv', path: '/a', tmdbId: 1, season: 0 })).toEqual({ ok: false, error: 'Missing required parameters' });
+  });
+
   test('parses preview body', () => {
     expect(parsePreviewBody({ items: null })).toEqual({ ok: false, error: 'Missing items array' });
-    expect(parsePreviewBody({ items: [{ sourcePath: '/a' }] })).toEqual({
+    expect(parsePreviewBody({ items: [{ sourcePath: '/a' }] })).toEqual({ ok: false, error: 'Missing items array' });
+    expect(parsePreviewBody({ items: [{ sourcePath: '/a', kind: 'movie', tmdbId: 8 }] })).toEqual({
       ok: true,
-      data: { items: [{ sourcePath: '/a' }], language: 'zh-CN' },
+      data: { items: [{ sourcePath: '/a', kind: 'movie', tmdbId: 8 }], language: 'zh-CN' },
+    });
+
+    expect(parsePreviewBody({
+      items: [{
+        sourcePath: '/a',
+        kind: 'tv',
+        showName: 'Show',
+        tmdbId: 1,
+        season: 1,
+        episodes: [{ source: '/a', episode: 1 }],
+      }],
+    })).toEqual({
+      ok: true,
+      data: {
+        items: [{
+          sourcePath: '/a',
+          kind: 'tv',
+          showName: 'Show',
+          tmdbId: 1,
+          season: 1,
+          episodes: [{ source: '/a', episode: 1 }],
+        }],
+        language: 'zh-CN',
+      },
     });
   });
 });
