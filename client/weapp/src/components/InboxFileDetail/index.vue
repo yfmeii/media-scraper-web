@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { MediaFile } from '@media-scraper/shared/types'
+import type { MediaFile } from '@media-scraper/shared'
 import PanelContent from './PanelContent.vue'
 import PreviewPopup from './PreviewPopup.vue'
 import { useInboxFileDetail } from './useInboxFileDetail'

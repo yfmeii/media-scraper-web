@@ -1,5 +1,7 @@
-import { describe, expect, test, afterEach } from 'bun:test';
-import { calculateScore, getPosterUrl, getBackdropUrl, getSeasonDetails, type TMDBSearchResult } from './tmdb';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { getBackdropUrl, getPosterUrl, getSeasonDetails } from './tmdb-api';
+import { calculateScore, findBestMatchMixed } from './tmdb-match';
+import type { TMDBSearchResult } from './tmdb-types';
 
 const originalFetch = globalThis.fetch;
 
@@ -115,5 +117,33 @@ describe('TMDB 工具函数', () => {
     globalThis.fetch = async () => new Response('error', { status: 500 });
     const season = await getSeasonDetails(1, 1);
     expect(season).toBeNull();
+  });
+
+  test('🎬 混合匹配优先返回得分最高候选', async () => {
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      results: [
+        {
+          id: 2,
+          media_type: 'movie',
+          title: 'Arrival',
+          overview: '',
+          release_date: '2016-09-01',
+          vote_average: 8.1,
+        },
+        {
+          id: 1,
+          media_type: 'movie',
+          title: 'Arrival',
+          overview: '',
+          release_date: '2016-11-11',
+          vote_average: 7.9,
+        },
+      ],
+    }), { status: 200 });
+
+    const match = await findBestMatchMixed('Arrival', 2016);
+
+    expect(match?.result.id).toBe(2);
+    expect(match?.candidates).toHaveLength(2);
   });
 });

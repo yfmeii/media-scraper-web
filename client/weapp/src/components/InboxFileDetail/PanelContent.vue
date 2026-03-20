@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import type { MediaFile, PathRecognizeResult, SearchResult } from '@media-scraper/shared/types'
+import type { MediaFile, PathRecognizeResult, SearchResult } from '@media-scraper/shared'
 import MediaPoster from '@/components/MediaPoster/index.vue'
+import { formatFileSizeLabel, getMediaFileDisplayName } from '@/utils/display'
 
 interface CandidateCard {
   id: number
@@ -61,6 +62,7 @@ function onSelectCandidate(e: WechatMiniprogram.CustomEvent) {
   if (!Number.isInteger(id)) return
   emit('select-candidate', id)
 }
+
 </script>
 
 <template>
@@ -81,9 +83,9 @@ function onSelectCandidate(e: WechatMiniprogram.CustomEvent) {
       <view style="height: 88rpx;" />
       <view class="px-4 pt-3 pb-4 animate-fade-in-up">
         <view class="rounded-xl bg-card p-3">
-          <text class="text-sm font-medium text-foreground" style="word-break: break-all;">{{ file.name }}</text>
+          <text class="text-sm font-medium text-foreground" style="word-break: break-all;">{{ getMediaFileDisplayName(file) }}</text>
           <view class="mt-2 flex items-center gap-1.5 flex-wrap">
-            <text class="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{{ fmt.formatFileSize(file.size) }}</text>
+            <text v-if="formatFileSizeLabel(file.size)" class="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{{ formatFileSizeLabel(file.size) }}</text>
             <text v-if="file.parsed.resolution" class="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{{ file.parsed.resolution }}</text>
             <text v-if="file.parsed.codec" class="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{{ file.parsed.codec }}</text>
           </view>
@@ -114,7 +116,7 @@ function onSelectCandidate(e: WechatMiniprogram.CustomEvent) {
           </view>
         </view>
 
-        <view v-if="aiHint" class="mt-2 rounded-lg px-2.5 py-2 text-xs" :class="fmt.isWarningHint(aiHint) ? 'bg-warning/10 text-warning' : 'bg-primary/10 text-primary'">
+        <view v-if="aiHint" class="mt-2 rounded-lg px-2.5 py-2 text-xs" :class="fmt.isWarningHint(aiHint) ? 'text-warning' : 'text-primary'" :style="fmt.isWarningHint(aiHint) ? 'background: rgba(245, 158, 11, 0.1);' : 'background: rgba(59, 130, 246, 0.1);'">
           {{ aiHint }}
         </view>
 
@@ -178,7 +180,7 @@ function onSelectCandidate(e: WechatMiniprogram.CustomEvent) {
           <view v-else class="mt-2 grid grid-cols-3 gap-1.5">
             <view v-for="(c, idx) in candidateCards" :key="c.id" class="relative rounded-xl overflow-hidden border-2 bg-card animate-scale-in" :style="{ animationDelay: (idx * 50) + 'ms' }" :class="selectedCandidate && selectedCandidate.id === c.id ? 'border-primary' : 'border-transparent'" :data-id="c.id" hover-class="opacity-80" @tap="onSelectCandidate">
               <MediaPoster :src="c.posterUrl" width="100%" height="300rpx" mode="aspectFill" rounded="rounded-none" />
-              <view class="absolute top-1 left-1 rounded px-1.5 py-0.5 text-[20rpx] text-white" :class="c.mediaType === 'movie' ? 'bg-purple-500/90' : 'bg-blue-500/90'">{{ c.mediaType === 'movie' ? '电影' : '剧集' }}</view>
+              <view class="absolute top-1 left-1 rounded px-1.5 py-0.5 text-white" style="font-size: 20rpx;" :style="c.mediaType === 'movie' ? 'background: rgba(168, 85, 247, 0.9);' : 'background: rgba(59, 130, 246, 0.9);'">{{ c.mediaType === 'movie' ? '电影' : '剧集' }}</view>
               <view class="p-1.5 bg-card">
                 <text class="text-xs text-foreground" style="overflow: hidden; white-space: nowrap; text-overflow: ellipsis; display: block;">{{ c.displayName }}</text>
                 <text class="text-xs text-muted-foreground">{{ c.displayYear }}</text>

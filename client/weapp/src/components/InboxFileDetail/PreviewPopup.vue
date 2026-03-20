@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { PreviewAction, PreviewPlan } from '@media-scraper/shared/types'
+import type { PreviewAction, PreviewPlan } from '@media-scraper/shared'
 
 defineProps<{
   visible: boolean
@@ -54,7 +54,7 @@ function onVisibleChange(e: WechatMiniprogram.CustomEvent) {
               <view v-for="(action, idx) in actions" :key="`${idx}-${action.destination}`" class="rounded-xl border border-border bg-card p-3">
                 <view class="flex items-center justify-between">
                   <text class="text-xs font-medium" :class="fmt.getPreviewActionClass(action.type)">{{ fmt.getPreviewActionLabel(action.type) }}</text>
-                  <text v-if="action.willOverwrite" class="text-[20rpx] px-1.5 py-0.5 rounded bg-warning/10 text-warning">覆盖</text>
+                  <text v-if="action.willOverwrite" class="px-1.5 py-0.5 rounded text-warning" style="font-size: 20rpx; background: rgba(245, 158, 11, 0.1);">覆盖</text>
                 </view>
                 <view v-if="action.source" class="mt-1 text-xs text-muted-foreground" style="word-break: break-all; font-family: Menlo, Monaco, Consolas, monospace;">{{ action.source }}</view>
                 <view v-if="action.source" class="my-1 text-xs text-muted-foreground">↓</view>
@@ -74,7 +74,7 @@ function onVisibleChange(e: WechatMiniprogram.CustomEvent) {
             <text class="text-sm font-medium text-primary-foreground">确认执行</text>
           </view>
         </view>
-        <view class="h-[calc(12rpx+env(safe-area-inset-bottom))]"></view>
+        <view style="height: calc(12rpx + env(safe-area-inset-bottom));"></view>
       </view>
     </view>
   </t-popup>

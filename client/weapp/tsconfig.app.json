@@ -16,11 +16,20 @@
       "@/*": [
         "./src/*"
       ],
+      "@media-scraper/shared": [
+        "../../packages/shared/src/index.ts"
+      ],
+      "@media-scraper/shared/*": [
+        "../../packages/shared/src/*"
+      ],
       "weapp-vite/typed-components": [
         "./typed-components.d.ts"
       ],
       "tdesign-miniprogram/*": [
         "./node_modules/tdesign-miniprogram/miniprogram_dist/*"
+      ],
+      "bun:test": [
+        "../../node_modules/@types/bun/test.d.ts"
       ]
     },
     "resolveJsonModule": true,
@@ -66,5 +75,8 @@
     "env.d.ts",
     "components.d.ts",
     "typed-components.d.ts"
+  ],
+  "exclude": [
+    "src/**/*.test.ts"
   ]
 }

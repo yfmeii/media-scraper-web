@@ -1,7 +1,7 @@
 import {
   mapMatchResultToSelection,
-} from '@media-scraper/shared/inbox-workflow'
-import type { MediaFile, SearchResult } from '@media-scraper/shared/types'
+} from '@media-scraper/shared'
+import type { MediaFile, SearchResult } from '@media-scraper/shared'
 import { ref } from 'wevu'
 import { autoMatch, searchTMDB } from '@/utils/api'
 

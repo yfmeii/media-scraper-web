@@ -19,7 +19,8 @@ import type {
   DirectoryGroup,
   MediaFile,
 } from './types';
-import type { SearchTMDBType } from './inbox-workflow';
+
+type SearchTMDBType = 'tv' | 'movie' | 'multi';
 
 function toScrapeResult(response: ClientApiEnvelope<{ message?: string }>): ScrapeResult {
   return {

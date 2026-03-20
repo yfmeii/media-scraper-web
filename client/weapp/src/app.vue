@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onLaunch, onShow, storeToRefs } from 'wevu'
+import { onShow } from 'wevu'
 import { useServerStore } from '@/stores/server'
 
 defineAppJson({
@@ -55,13 +55,7 @@ defineAppJson({
   sitemapLocation: 'sitemap.json',
 })
 
-onLaunch(() => {
-  const serverStore = useServerStore()
-  const { isConfigured } = storeToRefs(serverStore)
-  if (!isConfigured.value) {
-    wx.redirectTo({ url: '/pages/setup/index' })
-  }
-})
+useServerStore()
 
 onShow(() => {
   console.log('[MediaScraper] app show')

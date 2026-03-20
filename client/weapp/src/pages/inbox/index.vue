@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { buildRecognizeProcessSelection, inferCandidateMediaType } from '@media-scraper/shared/inbox-workflow'
-import type { MediaFile } from '@media-scraper/shared/types'
+import { buildRecognizeProcessSelection, inferCandidateMediaType } from '@media-scraper/shared'
+import type { MediaFile } from '@media-scraper/shared'
 import { computed, nextTick, onShow, ref } from 'wevu'
 import { autoMatch, fetchInbox, recognizePath, searchTMDBByImdb } from '@/utils/api'
+import { getInboxFileMeta, getMediaFileDisplayName } from '@/utils/display'
 import { useTabStore } from '@/stores/tab'
 import { useToast } from '@/hooks/useToast'
 import { useDialog } from '@/hooks/useDialog'
@@ -238,10 +239,10 @@ async function batchAIProcess() {
   })
 }
 
+
 </script>
 
 <template>
-  <wxs module="fmt" src="../../utils/format.wxs" />
   <view style="height: 100vh; display: flex; flex-direction: column; overflow: hidden;">
     <t-navbar title="收件箱" :fixed="false" />
 
@@ -311,10 +312,10 @@ async function batchAIProcess() {
                   >
                     <view class="flex-1 min-w-0">
                       <view class="text-sm font-medium text-foreground" style="overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">
-                        {{ fmt.truncateFilename(file.name, 32) }}
+                        {{ getMediaFileDisplayName(file) }}
                       </view>
                       <view class="mt-1 flex items-center gap-1">
-                        <text class="text-xs text-muted-foreground">{{ fmt.formatFileSize(file.size) }}</text>
+                        <text class="text-xs text-muted-foreground">{{ getInboxFileMeta(file) }}</text>
                       </view>
                     </view>
                     <!-- Status indicators -->
@@ -359,7 +360,7 @@ async function batchAIProcess() {
             <text class="text-sm font-medium text-accent-foreground">AI 识别入库</text>
           </view>
         </view>
-        <view class="h-[calc(12rpx+env(safe-area-inset-bottom))]"></view>
+        <view style="height: calc(12rpx + env(safe-area-inset-bottom));"></view>
       </view>
 
       <!-- File Detail Popup -->

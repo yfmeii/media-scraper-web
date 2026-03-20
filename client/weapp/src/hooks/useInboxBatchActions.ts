@@ -1,4 +1,4 @@
-import type { MediaFile } from '@media-scraper/shared/types'
+import type { MediaFile } from '@media-scraper/shared'
 import { ref } from 'wevu'
 
 export type BatchProcessor = (

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { getShowMissingEpisodes } from '@media-scraper/shared/format'
-import type { MovieInfo, ShowInfo } from '@media-scraper/shared/types'
+import { getShowMissingEpisodes } from '@media-scraper/shared'
+import type { MovieInfo, ShowInfo } from '@media-scraper/shared'
 import { computed, onShow, ref } from 'wevu'
 import { fetchMovies, fetchTVShows } from '@/utils/api'
+import { formatVoteRating, getMovieDisplayName, getShowDisplayName } from '@/utils/display'
 import { getPosterUrl } from '@/utils/request'
 import { useTabStore } from '@/stores/tab'
 import { useToast } from '@/hooks/useToast'
@@ -31,26 +32,32 @@ const detailShow = ref<ShowInfo | null>(null)
 
 interface DisplayMovie extends MovieInfo {
   posterUrl: string
+  displayName: string
+  displayRating: string
 }
 
 interface DisplayShow extends ShowInfo {
   posterUrl: string
   supplementBadge: string
+  displayName: string
+  displayRating: string
 }
 
 const filteredMovies = computed<DisplayMovie[]>(() => {
   const list = searchKeyword.value
-    ? movies.value.filter(m => m.name.toLowerCase().includes(searchKeyword.value.toLowerCase()))
+    ? movies.value.filter(m => getMovieDisplayName(m).toLowerCase().includes(searchKeyword.value.toLowerCase()))
     : movies.value
   return list.map(m => ({
     ...m,
     posterUrl: getPosterUrl(m.posterPath),
+    displayName: getMovieDisplayName(m),
+    displayRating: formatVoteRating(m.voteAverage),
   }))
 })
 
 const filteredShows = computed<DisplayShow[]>(() => {
   const list = searchKeyword.value
-    ? tvShows.value.filter(s => s.name.toLowerCase().includes(searchKeyword.value.toLowerCase()))
+    ? tvShows.value.filter(s => getShowDisplayName(s).toLowerCase().includes(searchKeyword.value.toLowerCase()))
     : tvShows.value
   return list.map(s => {
     const missingInfo = getShowMissingEpisodes(s)
@@ -59,6 +66,8 @@ const filteredShows = computed<DisplayShow[]>(() => {
       ...s,
       posterUrl: getPosterUrl(s.posterPath),
       supplementBadge: missingCount > 0 ? `缺${missingCount}集` : '',
+      displayName: getShowDisplayName(s),
+      displayRating: formatVoteRating(s.voteAverage),
     }
   })
 })
@@ -136,6 +145,7 @@ function onSwiperAnimationFinish(e: WechatMiniprogram.CustomEvent<{ current?: nu
 
 function toggleView() {
   viewMode.value = viewMode.value === 'grid' ? 'list' : 'grid'
+  showToast(viewMode.value === 'grid' ? '已切换为海报模式' : '已切换为列表模式')
 }
 
 function onSearch(e: WechatMiniprogram.CustomEvent) {
@@ -196,10 +206,10 @@ function onRematch(e: WechatMiniprogram.CustomEvent<{ path: string, kind: 'movie
   })
 }
 
+
 </script>
 
 <template>
-  <wxs module="fmt" src="../../utils/format.wxs" />
   <view style="height: 100vh; display: flex; flex-direction: column; overflow: hidden;">
     <t-navbar title="媒体库" :fixed="false" />
 
@@ -210,12 +220,13 @@ function onRematch(e: WechatMiniprogram.CustomEvent<{ path: string, kind: 'movie
           <t-search :value="searchKeyword" placeholder="搜索媒体..." shape="square" @change="onSearch" />
         </view>
         <view
-          class="flex items-center justify-center rounded-xl bg-card"
-          style="width: var(--td-search-height, 80rpx); height: var(--td-search-height, 80rpx);"
+          class="shrink-0 flex items-center gap-1.5 rounded-xl bg-card px-3"
+          style="height: var(--td-search-height, 80rpx);"
           hover-class="opacity-70"
           @tap="toggleView"
         >
           <t-icon :name="viewMode === 'grid' ? 'view-list' : 'view-module'" size="40rpx" />
+          <text class="text-xs text-muted-foreground">{{ viewMode === 'grid' ? '列表' : '海报' }}</text>
         </view>
       </view>
     </view>
@@ -260,7 +271,7 @@ function onRematch(e: WechatMiniprogram.CustomEvent<{ path: string, kind: 'movie
           <view v-if="loading" class="px-4 pt-2 pb-4">
             <view v-if="viewMode === 'grid'" class="grid grid-cols-3 gap-2">
               <view v-for="i in 9" :key="i" class="overflow-hidden rounded-md">
-                <view class="h-[300rpx] w-full bg-muted skeleton-pulse" />
+                <view class="w-full bg-muted skeleton-pulse" style="height: 300rpx;" />
                 <view class="bg-card p-1.5">
                   <view class="h-3 w-4/5 rounded bg-muted skeleton-pulse" />
                   <view class="mt-1 h-2.5 w-1/2 rounded bg-muted skeleton-pulse" />
@@ -270,7 +281,7 @@ function onRematch(e: WechatMiniprogram.CustomEvent<{ path: string, kind: 'movie
             <view v-else class="rounded-md bg-card">
               <view v-for="i in 6" :key="i">
                 <view class="p-2.5 flex gap-2.5">
-                  <view class="h-[160rpx] w-[110rpx] shrink-0 rounded bg-muted skeleton-pulse" />
+                  <view class="shrink-0 rounded bg-muted skeleton-pulse" style="height: 160rpx; width: 110rpx;" />
                   <view class="flex-1 py-1">
                     <view class="h-3.5 w-3/5 rounded bg-muted skeleton-pulse" />
                     <view class="mt-2 h-2.5 w-2/5 rounded bg-muted skeleton-pulse" />
@@ -298,7 +309,7 @@ function onRematch(e: WechatMiniprogram.CustomEvent<{ path: string, kind: 'movie
                   <MediaPoster :src="movie.posterUrl" width="100%" height="100%" mode="aspectFill" />
                 </view>
                 <view class="p-1.5">
-                  <view class="truncate text-xs font-medium text-foreground">{{ movie.name }}</view>
+                  <view class="truncate text-xs font-medium text-foreground">{{ movie.displayName }}</view>
                   <view v-if="movie.year" class="text-xs text-muted-foreground">{{ movie.year }}</view>
                 </view>
               </view>
@@ -314,11 +325,11 @@ function onRematch(e: WechatMiniprogram.CustomEvent<{ path: string, kind: 'movie
                 >
                   <MediaPoster :src="movie.posterUrl" width="110rpx" height="160rpx" rounded="rounded" class="shrink-0" />
                   <view class="flex-1 min-w-0">
-                    <view class="text-sm font-medium text-foreground">{{ movie.name }}</view>
+                    <view class="text-sm font-medium text-foreground">{{ movie.displayName }}</view>
                     <view v-if="movie.year" class="mt-0.5 text-xs text-muted-foreground">{{ movie.year }}</view>
-                    <view v-if="movie.voteAverage" class="mt-1 flex items-center gap-1">
+                    <view v-if="movie.displayRating" class="mt-1 flex items-center gap-1">
                       <t-icon name="star-filled" size="24rpx" color="var(--color-warning)" />
-                      <text class="text-xs text-foreground">{{ fmt.formatRating(movie.voteAverage) }}</text>
+                      <text class="text-xs text-foreground">{{ movie.displayRating }}</text>
                     </view>
                   </view>
                   <t-icon name="chevron-right" size="36rpx" color="var(--color-muted-foreground)" />
@@ -341,7 +352,7 @@ function onRematch(e: WechatMiniprogram.CustomEvent<{ path: string, kind: 'movie
           <view v-if="loading" class="px-4 pt-2 pb-4">
             <view v-if="viewMode === 'grid'" class="grid grid-cols-3 gap-2">
               <view v-for="i in 9" :key="i" class="overflow-hidden rounded-md">
-                <view class="h-[300rpx] w-full bg-muted skeleton-pulse" />
+                <view class="w-full bg-muted skeleton-pulse" style="height: 300rpx;" />
                 <view class="bg-card p-1.5">
                   <view class="h-3 w-4/5 rounded bg-muted skeleton-pulse" />
                   <view class="mt-1 h-2.5 w-1/2 rounded bg-muted skeleton-pulse" />
@@ -351,7 +362,7 @@ function onRematch(e: WechatMiniprogram.CustomEvent<{ path: string, kind: 'movie
             <view v-else class="rounded-md bg-card">
               <view v-for="i in 6" :key="i">
                 <view class="p-2.5 flex gap-2.5">
-                  <view class="h-[160rpx] w-[110rpx] shrink-0 rounded bg-muted skeleton-pulse" />
+                  <view class="shrink-0 rounded bg-muted skeleton-pulse" style="height: 160rpx; width: 110rpx;" />
                   <view class="flex-1 py-1">
                     <view class="h-3.5 w-3/5 rounded bg-muted skeleton-pulse" />
                     <view class="mt-2 h-2.5 w-2/5 rounded bg-muted skeleton-pulse" />
@@ -379,7 +390,7 @@ function onRematch(e: WechatMiniprogram.CustomEvent<{ path: string, kind: 'movie
                   <MediaPoster :src="show.posterUrl" :badge="show.supplementBadge" width="100%" height="100%" mode="aspectFill" />
                 </view>
                 <view class="p-1.5">
-                  <view class="truncate text-xs font-medium text-foreground">{{ show.name }}</view>
+                  <view class="truncate text-xs font-medium text-foreground">{{ show.displayName }}</view>
                   <view class="text-xs text-muted-foreground">{{ show.seasons.length }} 季</view>
                 </view>
               </view>
@@ -395,13 +406,13 @@ function onRematch(e: WechatMiniprogram.CustomEvent<{ path: string, kind: 'movie
                 >
                   <MediaPoster :src="show.posterUrl" :badge="show.supplementBadge" width="110rpx" height="160rpx" rounded="rounded" class="shrink-0" />
                   <view class="flex-1 min-w-0">
-                    <view class="text-sm font-medium text-foreground">{{ show.name }}</view>
+                    <view class="text-sm font-medium text-foreground">{{ show.displayName }}</view>
                     <view class="mt-0.5 text-xs text-muted-foreground">
                       {{ show.seasons.length }} 季{{ show.year ? ` · ${show.year}` : '' }}
                     </view>
-                    <view v-if="show.voteAverage" class="mt-1 flex items-center gap-1">
+                    <view v-if="show.displayRating" class="mt-1 flex items-center gap-1">
                       <t-icon name="star-filled" size="24rpx" color="var(--color-warning)" />
-                      <text class="text-xs text-foreground">{{ fmt.formatRating(show.voteAverage) }}</text>
+                      <text class="text-xs text-foreground">{{ show.displayRating }}</text>
                     </view>
                   </view>
                   <t-icon name="chevron-right" size="36rpx" color="var(--color-muted-foreground)" />

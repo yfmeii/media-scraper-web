@@ -28,4 +28,30 @@ describe('共享客户端 API 工厂', () => {
     expect(calls[3]).toBe('GET:/media/movies/detail?path=%2Fmovie%2FArrival');
     expect(result.success).toBe(true);
   });
+
+  test('列表与详情接口保留契约路径', async () => {
+    const calls: string[] = [];
+    const api = createClientApi({
+      async get<T = unknown>(path: string) {
+        calls.push(`GET:${path}`);
+        return { success: true, data: [] as unknown as T };
+      },
+      async post<T = unknown>(path: string) {
+        calls.push(`POST:${path}`);
+        return { success: true, data: {} as T };
+      },
+    });
+
+    await api.fetchInbox();
+    await api.fetchInboxByDirectory();
+    await api.fetchTVShows(true, 'summary');
+    await api.fetchMovies(true, 'full');
+
+    expect(calls).toEqual([
+      'GET:/media/inbox',
+      'GET:/media/inbox?view=dir',
+      'GET:/media/tv?include=assets&group=status&detail=summary',
+      'GET:/media/movies?include=assets&detail=summary',
+    ]);
+  });
 });

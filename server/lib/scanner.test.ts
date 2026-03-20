@@ -10,6 +10,7 @@ import {
   scanInboxByDirectory,
   detectSupplementFiles,
 } from './scanner';
+import { buildDirectorySummary, getSidecarPath, inferMediaKind } from './scanner-files';
 
 let tempRoot = '';
 
@@ -118,6 +119,17 @@ describe('文件名解析', () => {
     await writeFile(nfoPath, '<tvshow><tmdbid>123</tmdbid></tvshow>', 'utf-8');
     const tmdbId = await extractTmdbIdFromNfo(nfoPath);
     expect(tmdbId).toBe(123);
+  });
+
+  test('🧮 scanner helper 会推断媒体类型和目录摘要', () => {
+    expect(inferMediaKind({ title: 'Show', season: 1 })).toBe('tv');
+    expect(inferMediaKind({ title: 'Movie' })).toBe('movie');
+    expect(getSidecarPath('/tmp/Movie.MP4', '.nfo')).toBe('/tmp/Movie.nfo');
+    expect(buildDirectorySummary([
+      { kind: 'tv' },
+      { kind: 'movie' },
+      { kind: 'movie' },
+    ] as any)).toEqual({ total: 3, tv: 1, movie: 2, unknown: 0 });
   });
 
   test('📂 扫描目录识别视频文件', async () => {

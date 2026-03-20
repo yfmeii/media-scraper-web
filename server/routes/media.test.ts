@@ -131,4 +131,97 @@ describe('media routes', () => {
     const res = await mediaRoutes.request('/movies/detail?path=%2Fmedia%2Fmovies%2Fa');
     expect(await res.json()).toEqual({ success: true, data: { path: '/media/movies/a', name: 'Arrival', detailLoaded: true } });
   });
+
+  test('returns inbox files with shared media file shape', async () => {
+    scanInboxImpl = async (path) => {
+      expect(path).toBe('/media/inbox');
+      return [
+        {
+          path: '/media/inbox/F1.mkv',
+          name: 'F1.mkv',
+          relativePath: 'F1.mkv',
+          size: 123,
+          kind: 'movie',
+          parsed: { title: 'F1', year: 2025 },
+          hasNfo: false,
+          isProcessed: false,
+        },
+      ];
+    };
+
+    const res = await mediaRoutes.request('/inbox');
+    expect(await res.json()).toEqual({
+      success: true,
+      data: [
+        {
+          path: '/media/inbox/F1.mkv',
+          name: 'F1.mkv',
+          relativePath: 'F1.mkv',
+          size: 123,
+          kind: 'movie',
+          parsed: { title: 'F1', year: 2025 },
+          hasNfo: false,
+          isProcessed: false,
+        },
+      ],
+      total: 1,
+    });
+  });
+
+  test('returns full tv detail with episode media file fields', async () => {
+    scanTVShowsWithAssetsImpl = async (_path, detail) => {
+      expect(detail).toBe('full');
+      return [
+        {
+          path: '/media/tv/For All Mankind',
+          name: 'For All Mankind',
+          detailLoaded: true,
+          seasons: [
+            {
+              season: 1,
+              episodes: [
+                {
+                  path: '/media/tv/For All Mankind/Season 01/For All Mankind - S01E01.mkv',
+                  name: 'For All Mankind - S01E01.mkv',
+                  relativePath: 'Season 01/For All Mankind - S01E01.mkv',
+                  size: 1024,
+                  kind: 'tv',
+                  parsed: { title: 'For All Mankind', season: 1, episode: 1 },
+                  hasNfo: true,
+                  isProcessed: true,
+                },
+              ],
+            },
+          ],
+        },
+      ];
+    };
+
+    const res = await mediaRoutes.request('/tv/detail?path=%2Fmedia%2Ftv%2FFor%20All%20Mankind');
+    expect(await res.json()).toEqual({
+      success: true,
+      data: {
+        path: '/media/tv/For All Mankind',
+        name: 'For All Mankind',
+        detailLoaded: true,
+        seasons: [
+          {
+            season: 1,
+            episodes: [
+              {
+                path: '/media/tv/For All Mankind/Season 01/For All Mankind - S01E01.mkv',
+                name: 'For All Mankind - S01E01.mkv',
+                relativePath: 'Season 01/For All Mankind - S01E01.mkv',
+                size: 1024,
+                kind: 'tv',
+                parsed: { title: 'For All Mankind', season: 1, episode: 1 },
+                hasNfo: true,
+                isProcessed: true,
+              },
+            ],
+          },
+        ],
+      },
+    });
+  });
 });

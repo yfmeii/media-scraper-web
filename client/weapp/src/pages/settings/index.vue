@@ -62,18 +62,24 @@ function onDisconnect() {
       if (res.confirm) {
         serverStore.clear()
         showToast('已断开')
-        wx.redirectTo({ url: '/pages/setup/index' })
+        setTimeout(() => {
+          wx.reLaunch({ url: '/pages/setup/index' })
+        }, 0)
       }
     },
   })
 }
 
 function onChangeServer() {
-  wx.navigateTo({ url: '/pages/setup/index' })
+  wx.navigateTo({ url: '/pages/setup/index?mode=edit' })
 }
 
 function onToggleProxy() {
-  proxyEnabled.value = !proxyEnabled.value
+  const nextEnabled = !proxyEnabled.value
+  proxyEnabled.value = nextEnabled
+  if (!isConfigured.value) return
+  serverStore.saveImageProxy(nextEnabled, proxyUrl.value)
+  showToast(nextEnabled ? '已开启图片代理' : '已关闭图片代理')
 }
 
 function onProxyUrlInput(e: WechatMiniprogram.CustomEvent) {
@@ -83,6 +89,9 @@ function onProxyUrlInput(e: WechatMiniprogram.CustomEvent) {
 function onResetProxy() {
   proxyEnabled.value = true
   proxyUrl.value = DEFAULT_IMAGE_PROXY_URL
+  if (!isConfigured.value) return
+  serverStore.saveImageProxy(true, DEFAULT_IMAGE_PROXY_URL)
+  showToast('已恢复默认图片代理')
 }
 
 function onSaveProxy() {
@@ -109,6 +118,7 @@ const statusColor = computed(() => {
   if (status === 'offline') return 'var(--color-destructive)'
   return 'var(--color-muted-foreground)'
 })
+
 </script>
 
 <template>

@@ -1,26 +1,20 @@
 import {
-  buildAiRecognizeMessage,
-  buildPreviewItemFromSelection,
-  extractPreviewTargetPath,
-  getInboxRecognizeInput,
   getInboxSearchKeyword,
   inferCandidateMediaType,
-  resolveRecognizeCandidates,
-} from '@media-scraper/shared/inbox-workflow'
+} from '@media-scraper/shared'
 import type {
   MediaFile,
-  PathRecognizeResult,
-  PreviewAction,
-  PreviewItem,
-  PreviewPlan,
-  SearchResult,
-} from '@media-scraper/shared/types'
-import { computed, ref, watch } from 'wevu'
-import { previewPlan, recognizePath, searchTMDB, searchTMDBByImdb } from '@/utils/api'
+} from '@media-scraper/shared'
+import { computed, watch } from 'wevu'
+import { previewPlan } from '@/utils/api'
+import { normalizeText } from '@/utils/display'
 import { getPosterUrl } from '@/utils/request'
 import { useToast } from '@/hooks/useToast'
 import { useMediaMatch } from '@/hooks/useMediaMatch'
 import { processMedia } from '@/hooks/useMediaProcess'
+import { runInboxAiRecognize } from './detail-actions'
+import { useInboxTargetPreview } from './detail-preview'
+import { createInboxDetailState, resetInboxDetailState } from './detail-state'
 
 export interface CandidateCard {
   id: number
@@ -28,12 +22,6 @@ export interface CandidateCard {
   displayYear: string
   posterUrl: string
   mediaType: 'tv' | 'movie'
-}
-
-function toPositiveInt(value: unknown): number | null {
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed) || parsed < 1) return null
-  return Math.floor(parsed)
 }
 
 function sanitizeStepperValue(value: unknown, fallback: number, max: number): number {
@@ -62,130 +50,60 @@ export function useInboxFileDetail(options: {
   } = useMediaMatch()
 
   const currentFile = computed(() => options.getFile())
-  const localVisible = ref(false)
-  const processing = ref(false)
-  const aiLoading = ref(false)
-  const previewVisible = ref(false)
-  const previewLoading = ref(false)
-  const previewActions = ref<PreviewAction[]>([])
-  const previewSummary = ref<PreviewPlan['impactSummary'] | null>(null)
-  const searchQuery = ref('')
-  const season = ref(1)
-  const episode = ref(1)
-  const aiResult = ref<PathRecognizeResult | null>(null)
-  const aiHint = ref('')
-  const autoMatchTried = ref(false)
-  const targetPreviewPath = ref('')
-  const targetPreviewLoading = ref(false)
-  let targetPreviewSeq = 0
-
-  function syncTvEpisodeByCandidate(
-    candidate: { mediaType?: 'tv' | 'movie', firstAirDate?: string, releaseDate?: string } | null,
-    preferAI = false,
-  ) {
-    if (!candidate || inferCandidateMediaType(candidate) !== 'tv') return
-
-    const file = currentFile.value
-    const aiSeason = toPositiveInt(aiResult.value?.season)
-    const aiEpisode = toPositiveInt(aiResult.value?.episode)
-    const parsedSeason = toPositiveInt(file?.parsed.season)
-    const parsedEpisode = toPositiveInt(file?.parsed.episode)
-
-    season.value = preferAI
-      ? (aiSeason || parsedSeason || season.value || 1)
-      : (parsedSeason || aiSeason || season.value || 1)
-    episode.value = preferAI
-      ? (aiEpisode || parsedEpisode || episode.value || 1)
-      : (parsedEpisode || aiEpisode || episode.value || 1)
-  }
+  const state = createInboxDetailState()
+  const {
+    localVisible,
+    processing,
+    aiLoading,
+    previewVisible,
+    previewLoading,
+    previewActions,
+    previewSummary,
+    searchQuery,
+    season,
+    episode,
+    aiResult,
+    aiHint,
+    autoMatchTried,
+    targetPreviewPath,
+    targetPreviewLoading,
+  } = state
 
   const candidateCards = computed<CandidateCard[]>(() =>
     candidates.value.map(candidate => ({
       id: candidate.id,
-      displayName: candidate.name || candidate.title || '未知',
+      displayName: normalizeText(candidate.name) || normalizeText(candidate.title) || '未知',
       displayYear: (candidate.releaseDate || candidate.firstAirDate || '').slice(0, 4),
       posterUrl: getPosterUrl(candidate.posterPath),
       mediaType: inferCandidateMediaType(candidate),
     })),
   )
 
-  const selectedMediaType = computed<'tv' | 'movie'>(() => {
-    const mediaType = selectedCandidate.value?.mediaType
-    if (mediaType === 'tv' || mediaType === 'movie') return mediaType
-    const aiType = aiResult.value?.media_type
-    if (aiType === 'tv' || aiType === 'movie') return aiType
-    if (currentFile.value?.parsed.season || currentFile.value?.parsed.episode) return 'tv'
-    return 'movie'
+  const {
+    selectedMediaType,
+    buildPreviewItem,
+    resetTargetPreview,
+    syncTvEpisodeByCandidate,
+  } = useInboxTargetPreview({
+    currentFile,
+    selectedCandidate,
+    aiResult,
+    localVisible,
+    season,
+    episode,
+    targetPreviewPath,
+    targetPreviewLoading,
   })
 
-  function buildPreviewItem(): PreviewItem | null {
-    const file = currentFile.value
-    if (!file || !selectedCandidate.value) return null
-    return buildPreviewItemFromSelection({
-      file,
-      candidate: selectedCandidate.value,
-      season: season.value,
-      episode: episode.value,
-      fallbackKind: selectedMediaType.value,
-    })
-  }
-
-  async function refreshTargetPreviewPath() {
-    const item = buildPreviewItem()
-    if (!item || !localVisible.value) {
-      targetPreviewPath.value = ''
-      targetPreviewLoading.value = false
-      return
-    }
-
-    const currentSeq = ++targetPreviewSeq
-    targetPreviewLoading.value = true
-    try {
-      const plan = await previewPlan([item])
-      if (currentSeq !== targetPreviewSeq) return
-      targetPreviewPath.value = extractPreviewTargetPath(plan, item.sourcePath)
-    }
-    catch {
-      if (currentSeq !== targetPreviewSeq) return
-      targetPreviewPath.value = ''
-    }
-    finally {
-      if (currentSeq === targetPreviewSeq) {
-        targetPreviewLoading.value = false
-      }
-    }
-  }
-
   function resetPopupState() {
-    processing.value = false
-    aiLoading.value = false
-    previewVisible.value = false
-    previewLoading.value = false
-    previewActions.value = []
-    previewSummary.value = null
-    searchQuery.value = ''
-    season.value = 1
-    episode.value = 1
-    aiResult.value = null
-    aiHint.value = ''
-    autoMatchTried.value = false
-    targetPreviewPath.value = ''
-    targetPreviewLoading.value = false
-    targetPreviewSeq++
+    resetInboxDetailState(state)
+    resetTargetPreview()
     resetMatch()
   }
 
   watch(() => options.getVisible(), (value) => {
     localVisible.value = value
   }, { immediate: true })
-
-  watch(
-    () => `${localVisible.value ? 1 : 0}|${currentFile.value?.path || ''}|${selectedCandidate.value?.id || ''}|${selectedMediaType.value}|${season.value}|${episode.value}`,
-    () => {
-      if (!localVisible.value) return
-      void refreshTargetPreviewPath()
-    },
-  )
 
   async function handleAutoMatch(silent = false) {
     const file = currentFile.value
@@ -236,61 +154,23 @@ export function useInboxFileDetail(options: {
   async function handleAIRecognize() {
     const file = currentFile.value
     if (!file || aiLoading.value || searching.value || matchLoading.value) return
-
-    cancelPending()
-    aiLoading.value = true
-    aiResult.value = null
-    aiHint.value = ''
-
-    try {
-      const recognizeInput = getInboxRecognizeInput(file)
-      const result = await recognizePath(recognizeInput)
-      if (!result || (!result.tmdb_id && !result.imdb_id)) {
-        showToast('AI 识别失败', 'warning')
-        return
-      }
-
-      aiResult.value = result
-      searchQuery.value = result.tmdb_name || result.title || searchQuery.value
-
-      aiHint.value = buildAiRecognizeMessage(result)
-
-      if (result.season !== null && result.season > 0) {
-        season.value = result.season
-      }
-      if (result.episode !== null && result.episode > 0) {
-        episode.value = result.episode
-      }
-      const backendCandidates = result.candidates || []
-      let imdbResults: SearchResult[] = []
-      let nameResults: SearchResult[] = []
-      if (!backendCandidates.length) {
-        imdbResults = result.imdb_id ? await searchTMDBByImdb(result.imdb_id) : []
-        nameResults = (result.tmdb_name || result.title)
-          ? await searchTMDB(result.tmdb_name || result.title)
-          : []
-      }
-
-      const resolved = resolveRecognizeCandidates(result, {
-        backendCandidates,
-        imdbResults,
-        nameResults,
-      })
-      candidates.value = resolved.candidates
-      selectedCandidate.value = resolved.selectedCandidate
-      syncTvEpisodeByCandidate(resolved.selectedCandidate, true)
-      autoMatchTried.value = true
-
-      if (!resolved.candidates.length) {
-        showToast('未找到匹配结果', 'warning')
-      }
-    }
-    catch {
-      showToast('AI 识别失败', 'error')
-    }
-    finally {
-      aiLoading.value = false
-    }
+    await runInboxAiRecognize({
+      file,
+      searchQuery,
+      aiResult,
+      aiHint,
+      aiLoading,
+      candidates,
+      selectedCandidate,
+      autoMatchTried,
+      syncTvEpisodeByCandidate,
+      showToast,
+      cancelPending,
+      season,
+      episode,
+      searching,
+      matchLoading,
+    })
   }
 
   async function handlePreviewPlan() {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'wevu'
+import { onLoad, onShow, ref, storeToRefs } from 'wevu'
 import { testConnection } from '@/utils/request'
 import { useServerStore } from '@/stores/server'
 import { useToast } from '@/hooks/useToast'
@@ -7,12 +7,36 @@ import { useToast } from '@/hooks/useToast'
 definePageJson({ disableScroll: true })
 
 const serverStore = useServerStore()
+const { isConfigured, serverUrl: savedServerUrl } = storeToRefs(serverStore)
 const { showToast } = useToast()
 
 const serverUrl = ref('')
 const apiKey = ref('')
 const loading = ref(false)
 const errorMsg = ref('')
+const allowEditMode = ref(false)
+
+onLoad((query) => {
+  allowEditMode.value = query?.mode === 'edit'
+})
+
+onShow(() => {
+  if (!isConfigured.value || allowEditMode.value) {
+    if (!serverUrl.value && savedServerUrl.value) {
+      serverUrl.value = savedServerUrl.value
+    }
+    return
+  }
+  if (!serverUrl.value && savedServerUrl.value) {
+    serverUrl.value = savedServerUrl.value
+  }
+  setTimeout(() => {
+    const current = getCurrentPages()[getCurrentPages().length - 1]?.route
+    if (current === 'pages/setup/index') {
+      wx.switchTab({ url: '/pages/index/index' })
+    }
+  }, 0)
+})
 
 async function onConnect() {
   const url = serverUrl.value.trim()
@@ -54,11 +78,12 @@ function onUrlInput(e: WechatMiniprogram.CustomEvent) {
 function onKeyInput(e: WechatMiniprogram.CustomEvent) {
   apiKey.value = e.detail.value
 }
+
 </script>
 
 <template>
   <view style="height: 100vh; display: flex; flex-direction: column; overflow: hidden;">
-    <t-navbar title="连接服务器" :fixed="false" />
+    <t-navbar :title="allowEditMode ? '更换服务器' : '连接服务器'" :left-arrow="allowEditMode" :fixed="false" />
 
     <scroll-view scroll-y style="flex: 1; min-height: 0;">
       <!-- Logo Area -->
@@ -75,10 +100,25 @@ function onKeyInput(e: WechatMiniprogram.CustomEvent) {
         <view class="pl-1 text-xs font-medium text-muted-foreground mb-1">🔗 连接信息</view>
         <view class="mt-2 rounded-xl bg-card p-3">
           <view class="text-xs text-muted-foreground mb-1">服务器地址</view>
-          <t-input :value="serverUrl" placeholder="http://192.168.1.10:3000" clearable @change="onUrlInput" />
+          <input
+            :value="serverUrl"
+            class="rounded-lg px-3 text-sm"
+            style="width: 100%; box-sizing: border-box; height: 76rpx; border: 1rpx solid var(--color-border); color: var(--color-foreground); background: var(--color-background);"
+            placeholder="http://192.168.1.10:3000"
+            placeholder-style="color: var(--color-muted-foreground);"
+            @input="onUrlInput"
+          />
           <view class="h-px bg-border my-3"></view>
           <view class="text-xs text-muted-foreground mb-1">API Key (可选)</view>
-          <t-input :value="apiKey" placeholder="留空则不使用" type="password" clearable @change="onKeyInput" />
+          <input
+            :value="apiKey"
+            password
+            class="rounded-lg px-3 text-sm"
+            style="width: 100%; box-sizing: border-box; height: 76rpx; border: 1rpx solid var(--color-border); color: var(--color-foreground); background: var(--color-background);"
+            placeholder="留空则不使用"
+            placeholder-style="color: var(--color-muted-foreground);"
+            @input="onKeyInput"
+          />
         </view>
 
         <view v-if="errorMsg" class="mt-2 pl-1 text-xs text-destructive">{{ errorMsg }}</view>

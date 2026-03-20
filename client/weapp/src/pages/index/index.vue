@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Stats } from '@media-scraper/shared/types'
+import type { Stats } from '@media-scraper/shared'
 import { onShow, ref, storeToRefs } from 'wevu'
 import { fetchStats } from '@/utils/api'
 import { useTabStore } from '@/stores/tab'
@@ -16,10 +16,20 @@ const { showToast } = useToast()
 const stats = ref<Stats | null>(null)
 const loading = ref(true)
 const refreshing = ref(false)
+const initialized = ref(false)
+
+function goSetup() {
+  setTimeout(() => {
+    const current = getCurrentPages()[getCurrentPages().length - 1]?.route
+    if (current === 'pages/index/index') {
+      wx.redirectTo({ url: '/pages/setup/index' })
+    }
+  }, 0)
+}
 
 async function loadStats() {
   if (!isConfigured.value) {
-    wx.redirectTo({ url: '/pages/setup/index' })
+    goSetup()
     return
   }
   loading.value = true
@@ -34,11 +44,12 @@ async function loadStats() {
   }
 }
 
-// Initial data load (runs once during setup)
-loadStats()
-
 onShow(() => {
   tabStore.setActive(0)
+  if (!initialized.value) {
+    initialized.value = true
+  }
+  loadStats()
 })
 
 async function onRefresh() {

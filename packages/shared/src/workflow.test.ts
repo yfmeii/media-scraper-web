@@ -61,6 +61,30 @@ describe('共享工作流辅助函数', () => {
     expect(resolved.selectedCandidate?.id).toBe(2);
   });
 
+  test('resolveRecognizeCandidates 会为缺失的偏好候选补回退项', () => {
+    const result: PathRecognizeResult = {
+      path: 'foo',
+      title: 'Missing Candidate',
+      media_type: 'movie',
+      year: 2023,
+      season: null,
+      episode: null,
+      imdb_id: null,
+      tmdb_id: 9,
+      tmdb_name: 'Missing Candidate',
+      confidence: 0.82,
+      reason: 'fallback',
+    };
+
+    const resolved = resolveRecognizeCandidates(result, {
+      backendCandidates: [{ id: 1, title: 'Other' }],
+      preferredId: 9,
+    });
+
+    expect(resolved.candidates[0]?.id).toBe(9);
+    expect(resolved.selectedCandidate?.title).toBe('Missing Candidate');
+  });
+
   test('mapMatchResultToSelection 映射匹配结果到统一 SearchResult', () => {
     const mapped = mapMatchResultToSelection({
       matched: true,
@@ -167,5 +191,15 @@ describe('共享工作流辅助函数', () => {
     });
     expect(preview.previewActions).toHaveLength(1);
     expect(preview.previewSummary).toEqual(createEmptyPreviewPlan().impactSummary);
+  });
+
+  test('buildPreviewItemFromSelection 为电影保留 movie 类型且不附带剧集信息', () => {
+    const preview = buildPreviewItemFromSelection({
+      file: { path: '/inbox/Movie.mkv', name: 'Movie.mkv', parsed: { title: 'Movie' } },
+      candidate: { id: 5, title: 'Movie', mediaType: 'movie' },
+    });
+
+    expect(preview.kind).toBe('movie');
+    expect(preview.episodes).toBeUndefined();
   });
 });

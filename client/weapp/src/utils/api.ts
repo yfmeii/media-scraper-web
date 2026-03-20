@@ -1,4 +1,4 @@
-import { createClientApi } from '@media-scraper/shared/client-api'
+import { createClientApi } from '@media-scraper/shared'
 import { get, post } from './request'
 
 export type {
@@ -18,7 +18,7 @@ export type {
   Stats,
   TaskItem,
   TaskStats,
-} from '@media-scraper/shared/types'
+} from '@media-scraper/shared'
 
 const api = createClientApi({ get, post })
 

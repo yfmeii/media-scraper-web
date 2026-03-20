@@ -17,7 +17,7 @@ export {
   formatSeason,
   formatEpisode,
   formatSeasonEpisode,
-} from '@media-scraper/shared/format'
+} from '@media-scraper/shared'
 
 export function truncateFilename(name: string, maxLen = 28): string {
   if (name.length <= maxLen) return name

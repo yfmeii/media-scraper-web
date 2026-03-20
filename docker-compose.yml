@@ -9,6 +9,7 @@ services:
       - ${MOVIES_PATH:-./movies}:/media/movies
     environment:
       - TMDB_API_KEY=
-      - DIFY_API_KEY=
+      - DIFY_PATH_RECOGNIZER_KEY=
       - DIFY_URL=
+      - FILE_OPS_MODE=rename
     restart: unless-stopped

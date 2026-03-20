@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import type { MatchResult, SearchResult } from '@media-scraper/shared/types'
+import type { MatchResult, SearchResult } from '@media-scraper/shared'
 import { computed, onLoad, ref } from 'wevu'
 import { autoMatch, processMovie, processTV, refreshMetadata, searchTMDB } from '@/utils/api'
+import { normalizeText } from '@/utils/display'
 import { getPosterUrl } from '@/utils/request'
 import { useToast } from '@/hooks/useToast'
 import { useDialog } from '@/hooks/useDialog'
@@ -54,8 +55,8 @@ const searchResultCards = computed<SearchResultCard[]>(() =>
   searchResults.value.map((result, index) => ({
     ...result,
     posterUrl: getPosterUrl(result.posterPath),
-    displayName: result.title || result.name || '未知',
-    displayDate: result.releaseDate || result.firstAirDate || '',
+    displayName: normalizeText(result.title) || normalizeText(result.name) || '未知',
+    displayDate: normalizeText(result.releaseDate) || normalizeText(result.firstAirDate) || '',
     selected: selectedResult.value?.id === result.id,
     index,
     isLast: index === searchResults.value.length - 1,
@@ -193,6 +194,7 @@ async function onProcess() {
     processing.value = false
   }
 }
+
 
 </script>
 
@@ -337,7 +339,7 @@ async function onProcess() {
           <text>{{ processButtonText }}</text>
         </view>
       </view>
-      <view class="h-[calc(20rpx+env(safe-area-inset-bottom))]"></view>
+      <view style="height: calc(20rpx + env(safe-area-inset-bottom));"></view>
     </view>
 
     <t-dialog id="t-dialog" />
