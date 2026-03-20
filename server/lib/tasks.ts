@@ -1,8 +1,8 @@
 // 任务中心管理模块
 
-import type { TaskStatus, TaskType, TaskItem, TaskStats, ScrapePlan, ScrapePlanAction } from '@media-scraper/shared';
+import type { TaskStatus, TaskType, TaskItem, TaskStats, ScrapePlan, ScrapePlanAction } from '@media-scraper/shared/types';
 
-export type { TaskStatus, TaskType, TaskItem, TaskStats, ScrapePlan, ScrapePlanAction } from '@media-scraper/shared';
+export type { TaskStatus, TaskType, TaskItem, TaskStats, ScrapePlan, ScrapePlanAction } from '@media-scraper/shared/types';
 
 export interface ScrapeStatus {
   total: number;

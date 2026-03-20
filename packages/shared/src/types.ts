@@ -1,0 +1,246 @@
+export type MediaKind = 'tv' | 'movie' | 'unknown';
+
+export interface ParsedInfo {
+  title: string;
+  year?: number;
+  season?: number;
+  episode?: number;
+  episodeEnd?: number;
+  resolution?: string;
+  source?: string;
+  codec?: string;
+}
+
+export interface MediaFile {
+  path: string;
+  name: string;
+  relativePath: string;
+  size: number;
+  kind: MediaKind;
+  parsed: ParsedInfo;
+  hasNfo: boolean;
+  isProcessed: boolean;
+}
+
+export interface AssetFlags {
+  hasPoster: boolean;
+  hasNfo: boolean;
+  hasFanart?: boolean;
+}
+
+export interface SeasonInfo {
+  season: number;
+  episodes: MediaFile[];
+  hasNfo?: boolean;
+  assets?: AssetFlags;
+}
+
+export interface ShowInfo {
+  path: string;
+  name: string;
+  year?: number;
+  seasons: SeasonInfo[];
+  seasonCount?: number;
+  episodeCount?: number;
+  hasNfo: boolean;
+  isProcessed: boolean;
+  posterPath?: string;
+  overview?: string;
+  status?: string;
+  backdropPath?: string;
+  voteAverage?: number;
+  assets?: AssetFlags;
+  tmdbId?: number;
+  groupStatus?: 'scraped' | 'unscraped' | 'supplement';
+  supplementCount?: number;
+  detailLoaded?: boolean;
+}
+
+export interface MovieInfo {
+  path: string;
+  name: string;
+  year?: number;
+  file?: MediaFile;
+  hasNfo: boolean;
+  isProcessed: boolean;
+  posterPath?: string;
+  overview?: string;
+  tagline?: string;
+  runtime?: number;
+  backdropPath?: string;
+  voteAverage?: number;
+  assets?: AssetFlags;
+  tmdbId?: number;
+  detailLoaded?: boolean;
+}
+
+export interface DirectoryGroup {
+  path: string;
+  name: string;
+  files: MediaFile[];
+  summary: {
+    total: number;
+    tv: number;
+    movie: number;
+    unknown: number;
+  };
+}
+
+export type TaskStatus = 'pending' | 'running' | 'success' | 'failed' | 'cancelled';
+export type TaskType = 'scrape' | 'process' | 'refresh' | 'supplement' | 'fix-assets';
+
+export interface TaskItem {
+  id: string;
+  type: TaskType;
+  target: string;
+  status: TaskStatus;
+  progress: number;
+  message?: string;
+  eta?: number;
+  logs: string[];
+  createdAt: number;
+  startedAt?: number;
+  finishedAt?: number;
+  error?: string;
+}
+
+export interface TaskStats {
+  pending: number;
+  running: number;
+  success: number;
+  failed: number;
+  total: number;
+  cancelled?: number;
+}
+
+export interface ScrapePlanAction {
+  type: 'move' | 'create-nfo' | 'download-poster' | 'create-dir';
+  source?: string;
+  destination: string;
+  willOverwrite: boolean;
+}
+
+export interface ScrapePlan {
+  actions: ScrapePlanAction[];
+  impactSummary: {
+    filesMoving: number;
+    nfoCreating: number;
+    nfoOverwriting: number;
+    postersDownloading: number;
+    directoriesCreating: string[];
+  };
+}
+
+export type PreviewAction = ScrapePlanAction;
+export type PreviewPlan = ScrapePlan;
+
+export interface Stats {
+  tvShows: number;
+  tvEpisodes: number;
+  tvProcessed: number;
+  movies: number;
+  moviesProcessed: number;
+  inbox: number;
+}
+
+export interface SearchResult {
+  id: number;
+  mediaType?: 'tv' | 'movie';
+  name?: string;
+  title?: string;
+  originalName?: string;
+  originalTitle?: string;
+  overview?: string;
+  releaseDate?: string;
+  firstAirDate?: string;
+  voteAverage?: number;
+  posterPath?: string;
+}
+
+export interface ScrapeResult {
+  success: boolean;
+  message?: string;
+  taskId?: string;
+}
+
+export interface MatchResult {
+  matched: boolean;
+  result?: {
+    id: number;
+    name: string;
+    mediaType?: 'tv' | 'movie';
+    originalName?: string;
+    date?: string;
+    posterPath?: string;
+    score: number;
+  };
+  candidates: Array<{
+    id: number;
+    name: string;
+    mediaType?: 'tv' | 'movie';
+    originalName?: string;
+    date?: string;
+    posterPath?: string;
+    overview?: string;
+  }>;
+  ambiguous?: boolean;
+}
+
+export interface PathRecognizeResult {
+  path: string;
+  title: string;
+  media_type: 'tv' | 'movie';
+  year: number | null;
+  season: number | null;
+  episode: number | null;
+  imdb_id: string | null;
+  tmdb_id: number | null;
+  tmdb_name: string | null;
+  preferred_tmdb_id?: number | null;
+  candidates?: SearchResult[];
+  confidence: number;
+  reason: string;
+}
+
+export interface ProcessTVParams {
+  sourcePath: string;
+  showName: string;
+  tmdbId: number;
+  season: number;
+  episodes: Array<{ source: string; episode: number; episodeEnd?: number }>;
+  language?: string;
+}
+
+export interface ProcessMovieParams {
+  sourcePath: string;
+  tmdbId: number;
+  language?: string;
+}
+
+export interface PreviewItem {
+  sourcePath: string;
+  kind: 'tv' | 'movie';
+  tmdbId?: number;
+  showName?: string;
+  season?: number;
+  episodes?: Array<{ source: string; episode: number; episodeEnd?: number }>;
+}
+
+export interface SeasonMissingInfo {
+  season: number;
+  missing: number[];
+}
+
+export interface ClientApiEnvelope<T = unknown> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  stats?: unknown;
+  taskId?: string;
+  message?: string;
+}
+
+export interface ClientApiTransport {
+  get<T = unknown>(path: string): Promise<ClientApiEnvelope<T>>;
+  post<T = unknown>(path: string, payload?: Record<string, unknown>): Promise<ClientApiEnvelope<T>>;
+}

@@ -1,17 +1,10 @@
 import { Hono } from 'hono';
-import { 
-  scanTVShows, 
-  scanMovies, 
-  scanInbox, 
-  scanInboxByDirectory, 
-  scanTVShowsWithAssets,
-  scanMoviesWithAssets,
-  type ShowInfo, 
-  type MovieInfo, 
-  type MediaFile,
-  type DirectoryGroup 
-} from '../lib/scanner';
+import type { DirectoryGroup, MediaFile, MovieInfo, ShowInfo } from '@media-scraper/shared/types';
+import { scanInbox, scanInboxByDirectory } from '../lib/scanner-files';
+import { scanMovies, scanMoviesWithAssets, scanTVShows, scanTVShowsWithAssets } from '../lib/scanner-library';
 import { MEDIA_PATHS } from '../lib/config';
+import { buildCollectionResponse, buildDetailResponse, buildInboxDirectoryResponse, buildStatsResponse, buildStatusGroups } from './media-response';
+import { badRequest } from './route-utils';
 
 export const mediaRoutes = new Hono();
 
@@ -21,44 +14,52 @@ export const mediaRoutes = new Hono();
 mediaRoutes.get('/tv', async (c) => {
   const includeAssets = c.req.query('include') === 'assets';
   const group = c.req.query('group');
+  const detail = c.req.query('detail') === 'full' ? 'full' : 'summary';
   
   const shows = includeAssets 
-    ? await scanTVShowsWithAssets(MEDIA_PATHS.tv)
+    ? await scanTVShowsWithAssets(MEDIA_PATHS.tv, detail)
     : await scanTVShows(MEDIA_PATHS.tv);
   
-  // 分组统计
-  let groups: { scraped: number; unscraped: number; supplement: number } | undefined;
-  if (group === 'status' && includeAssets) {
-    const showsWithAssets = shows as (ShowInfo & { groupStatus?: string; supplementCount?: number })[];
-    groups = {
-      scraped: showsWithAssets.filter(s => s.groupStatus === 'scraped').length,
-      unscraped: showsWithAssets.filter(s => s.groupStatus === 'unscraped').length,
-      supplement: showsWithAssets.filter(s => s.groupStatus === 'supplement').length,
-    };
-  }
-  
-  return c.json({
-    success: true,
-    data: shows,
-    total: shows.length,
-    groups,
-  });
+  const groups = group === 'status' && includeAssets
+    ? buildStatusGroups(shows as (ShowInfo & { groupStatus?: string })[])
+    : undefined;
+
+  return c.json(buildCollectionResponse(shows, groups));
+});
+
+mediaRoutes.get('/tv/detail', async (c) => {
+  const path = c.req.query('path');
+  if (!path) return badRequest(c, 'Missing path');
+
+  const shows = await scanTVShowsWithAssets(MEDIA_PATHS.tv, 'full');
+  const show = shows.find(item => item.path === path);
+  if (!show) return c.json({ success: false, error: 'Show not found' }, 404);
+
+  return c.json(buildDetailResponse(show));
 });
 
 // Get all movies
 // ?include=assets 返回资产完整性标记
 mediaRoutes.get('/movies', async (c) => {
   const includeAssets = c.req.query('include') === 'assets';
+  const detail = c.req.query('detail') === 'full' ? 'full' : 'summary';
   
   const movies = includeAssets
-    ? await scanMoviesWithAssets(MEDIA_PATHS.movies)
+    ? await scanMoviesWithAssets(MEDIA_PATHS.movies, detail)
     : await scanMovies(MEDIA_PATHS.movies);
   
-  return c.json({
-    success: true,
-    data: movies,
-    total: movies.length,
-  });
+  return c.json(buildCollectionResponse(movies));
+});
+
+mediaRoutes.get('/movies/detail', async (c) => {
+  const path = c.req.query('path');
+  if (!path) return badRequest(c, 'Missing path');
+
+  const movies = await scanMoviesWithAssets(MEDIA_PATHS.movies, 'full');
+  const movie = movies.find(item => item.path === path);
+  if (!movie) return c.json({ success: false, error: 'Movie not found' }, 404);
+
+  return c.json(buildDetailResponse(movie));
 });
 
 // Get inbox (unorganized) files
@@ -68,47 +69,22 @@ mediaRoutes.get('/inbox', async (c) => {
   
   if (view === 'dir') {
     const directories = await scanInboxByDirectory(MEDIA_PATHS.inbox);
-    return c.json({
-      success: true,
-      data: directories,
-      total: directories.reduce((sum, d) => sum + d.files.length, 0),
-      directories: directories.length,
-    });
+    return c.json(buildInboxDirectoryResponse(directories));
   }
   
   const files = await scanInbox(MEDIA_PATHS.inbox);
-  return c.json({
-    success: true,
-    data: files,
-    total: files.length,
-  });
+  return c.json(buildCollectionResponse(files));
 });
 
 // Get statistics
 mediaRoutes.get('/stats', async (c) => {
   const [shows, movies, inbox] = await Promise.all([
-    scanTVShows(MEDIA_PATHS.tv),
-    scanMovies(MEDIA_PATHS.movies),
+    scanTVShowsWithAssets(MEDIA_PATHS.tv, 'summary'),
+    scanMoviesWithAssets(MEDIA_PATHS.movies, 'summary'),
     scanInbox(MEDIA_PATHS.inbox),
   ]);
   
-  const tvEpisodes = shows.reduce((sum, show) => 
-    sum + show.seasons.reduce((sSum, season) => sSum + season.episodes.length, 0), 0);
-  
-  const processedTV = shows.filter(s => s.isProcessed).length;
-  const processedMovies = movies.filter(m => m.isProcessed).length;
-  
-  return c.json({
-    success: true,
-    data: {
-      tvShows: shows.length,
-      tvEpisodes,
-      tvProcessed: processedTV,
-      movies: movies.length,
-      moviesProcessed: processedMovies,
-      inbox: inbox.length,
-    },
-  });
+  return c.json(buildStatsResponse(shows, movies, inbox));
 });
 
 // Serve poster images

@@ -4,7 +4,13 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./types": "./src/types.ts",
+    "./constants": "./src/constants.ts",
+    "./defaults": "./src/defaults.ts",
+    "./format": "./src/format.ts",
+    "./inbox-workflow": "./src/inbox-workflow.ts",
+    "./client-api": "./src/client-api.ts"
   },
   "types": "./src/index.ts",
   "files": [

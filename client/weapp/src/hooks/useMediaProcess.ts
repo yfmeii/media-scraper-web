@@ -1,4 +1,4 @@
-import type { MediaFile, SearchResult } from '@media-scraper/shared'
+import type { MediaFile, SearchResult } from '@media-scraper/shared/types'
 import { processMovie, processTV } from '@/utils/api'
 
 export interface ProcessOptions {

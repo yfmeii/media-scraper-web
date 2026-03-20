@@ -14,19 +14,21 @@
   },
   "dependencies": {
     "@media-scraper/shared": "workspace:*",
-    "tdesign-miniprogram": "^1.12.3"
+    "tdesign-miniprogram": "^1.13.0"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.1.18",
-    "miniprogram-api-typings": "^5.0.0",
-    "postcss": "^8.5.6",
-    "sass": "^1.97.3",
-    "tailwindcss": "^4.1.18",
+    "@babel/preset-env": "^7.29.2",
+    "@babel/preset-typescript": "^7.28.5",
+    "@tailwindcss/postcss": "^4.2.2",
+    "miniprogram-api-typings": "^5.1.2",
+    "postcss": "^8.5.8",
+    "sass": "^1.98.0",
+    "tailwindcss": "^4.2.2",
     "typescript": "^5.9.3",
-    "vite-plugin-static-copy": "^3.2.0",
-    "vue-tsc": "^3.2.4",
-    "weapp-tailwindcss": "^4.9.8",
-    "weapp-vite": "^6.5.3",
-    "wevu": "^2.1.7"
+    "vite-plugin-static-copy": "^3.3.0",
+    "vue-tsc": "^3.2.6",
+    "weapp-tailwindcss": "^4.10.3",
+    "weapp-vite": "^6.10.2",
+    "wevu": "^6.10.2"
   }
 }

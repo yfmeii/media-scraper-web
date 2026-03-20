@@ -5,7 +5,7 @@
   
   let {
     show = false,
-    type: initialType = 'tv',
+    type: searchType = 'tv',
     initialQuery = '',
     onSelect,
     onClose
@@ -17,12 +17,15 @@
     onClose?: () => void;
   } = $props();
   
-  let type = $state<'tv' | 'movie'>(initialType);
+  let type = $state<'tv' | 'movie'>('tv');
   let query = $state('');
   let results = $state<SearchResult[]>([]);
   let isSearching = $state(false);
   
   $effect(() => {
+    if (show) {
+      type = searchType;
+    }
     if (show && initialQuery) {
       query = initialQuery;
       void handleSearch();
@@ -70,6 +73,7 @@
     onkeydown={handleKeydown}
     role="dialog"
     aria-modal="true"
+    tabindex="-1"
   >
     <div 
       class="bg-card rounded-lg shadow-lg w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col"

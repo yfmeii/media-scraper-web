@@ -3,13 +3,27 @@
   import { fly } from 'svelte/transition';
   import { flip } from 'svelte/animate';
   import { quintOut, cubicOut } from 'svelte/easing';
-  import { fetchMovies, refreshMetadata, type MovieInfo, type SearchResult } from '$lib/api';
+  import { fetchMovieDetail, fetchMovies, refreshMetadata, type MovieInfo, type SearchResult } from '$lib/api';
   import { handleItemClick, toggleAllSelection } from '$lib/selection';
   import { formatFileSize, getGroupStatusBadge } from '$lib/format';
   import { TMDBSearchModal, BatchActionBar, TableSkeleton, PosterThumbnail, AssetIndicators, StatusBadge, SearchToolbar, MediaDetailHeader, MediaOverview, MediaDetailActions, DetailDrawer } from '$lib/components';
   import type { ActionButton } from '$lib/components/mediaDetailActions';
   import { copyPath, detailDelay, getFanartUrl } from '$lib/mediaDetail';
-  import { runBatchRefresh } from '$lib/batchRefresh';
+  import { buildMovieMetaItems, countMoviesByProcessed, filterMovies } from '$lib/moviePage';
+  import {
+    buildBatchRefreshPlan,
+    buildMissingTmdbMessage,
+    buildRefreshCompletedMessage,
+    executeBatchRefresh,
+  } from '$lib/libraryBatch';
+  import {
+    buildErrorMessage,
+    buildMatchFailureMessage,
+    buildMatchStartMessage,
+    buildRefreshResultMessage,
+    reloadLibraryItems,
+    withClearedMessage,
+  } from '$lib/libraryDetailOps';
   
   let movies = $state<MovieInfo[]>([]);
   let loading = $state(true);
@@ -54,9 +68,9 @@
     selectedMovies = toggleAllSelection(selectedMovies, filteredMovies, m => m.path);
   }
   
-  function handleRowDoubleClick(movie: MovieInfo) {
+  async function handleRowDoubleClick(movie: MovieInfo) {
     overviewExpanded = false;
-    selectedMovieForDetail = movie;
+    selectedMovieForDetail = movie.detailLoaded ? movie : (await fetchMovieDetail(movie.path)) || movie;
     showDetailDrawer = true;
   }
   
@@ -77,7 +91,7 @@
     const moviePath = selectedMovieForDetail.path;
     showSearchModal = false;
     isOperating = true;
-    operationMessage = `正在匹配 ${result.title || result.name}...`;
+    operationMessage = buildMatchStartMessage(result);
     
     try {
       const res = await refreshMetadata('movie', moviePath, result.id);
@@ -86,65 +100,48 @@
         operationMessage = '匹配成功，已创建元数据';
         loading = true;
         movies = [];
-        const newMovies = await fetchMovies();
-        movies = [...newMovies];
+        movies = await reloadLibraryItems(fetchMovies);
         loading = false;
       } else {
-        operationMessage = `匹配失败: ${res.message}`;
+        operationMessage = buildMatchFailureMessage(res.message);
       }
     } catch (e) {
-      operationMessage = `错误: ${e}`;
+      operationMessage = buildErrorMessage(e);
     }
     
     isOperating = false;
     
-    setTimeout(() => { operationMessage = ''; }, 3000);
+    withClearedMessage(() => { operationMessage = ''; });
   }
   
   // Batch operations - 批量刷新元数据
   async function batchRefreshMetadata() {
     if (isOperating) return;
-    
-    const paths = Array.from(selectedMovies);
-    const selectedMoviesList = paths.map(p => movies.find(m => m.path === p)).filter((m): m is MovieInfo => m !== undefined);
-    
-    // Check if any movies don't have TMDB ID
-    const needsMatching = selectedMoviesList.filter(m => !m.tmdbId);
-    if (needsMatching.length > 0) {
-      operationMessage = `${needsMatching.length} 部电影没有 TMDB ID，请先手动匹配`;
-      setTimeout(() => { operationMessage = ''; }, 3000);
+
+    const plan = buildBatchRefreshPlan(movies, selectedMovies);
+    if (plan.missingTmdbCount > 0) {
+      operationMessage = buildMissingTmdbMessage(plan.missingTmdbCount, '部电影');
+      withClearedMessage(() => { operationMessage = ''; });
       return;
     }
-    
+
     isOperating = true;
     operationMessage = '正在刷新元数据...';
 
-    const targets = selectedMoviesList.map(movie => ({
-      path: movie.path,
-      name: movie.name,
-      tmdbId: movie.tmdbId!,
-    }));
-
-    batchProgress = { current: 0, total: targets.length };
-    const { successCount, failCount } = await runBatchRefresh(
-      'movie',
-      targets,
-      refreshMetadata,
-      ({ current, total, target }) => {
-        operationMessage = `正在刷新 (${current}/${total}): ${target.name}`;
-        batchProgress = { current, total };
-      },
-    );
+    batchProgress = { current: 0, total: plan.targets.length };
+    const { successCount, failCount } = await executeBatchRefresh('movie', plan.targets, refreshMetadata, ({ current, total, message }) => {
+      operationMessage = message;
+      batchProgress = { current, total };
+    });
     
     // Refresh data
-    const updatedMovies = await fetchMovies();
-    movies = [...updatedMovies];
+    movies = await reloadLibraryItems(fetchMovies);
     
-    operationMessage = `完成: ${successCount} 成功, ${failCount} 失败`;
+    operationMessage = buildRefreshCompletedMessage(successCount, failCount);
     isOperating = false;
     selectedMovies = new Set();
     
-    setTimeout(() => { 
+    withClearedMessage(() => { 
       operationMessage = '';
       batchProgress = null;
     }, 2000);
@@ -164,7 +161,7 @@
     
     if (!movie.tmdbId) {
       operationMessage = '未刮削电影需要先匹配 TMDB，请点击"重新匹配"';
-      setTimeout(() => { operationMessage = ''; }, 5000);
+      withClearedMessage(() => { operationMessage = ''; }, 5000);
       return;
     }
     
@@ -173,31 +170,23 @@
     
     try {
       const result = await refreshMetadata('movie', movie.path, movie.tmdbId);
-      operationMessage = result.success ? '刷新成功' : `失败: ${result.message}`;
+      operationMessage = buildRefreshResultMessage(result, '刷新成功');
       
-      const newMovies = await fetchMovies();
-      movies = [...newMovies];
+      movies = await reloadLibraryItems(fetchMovies);
     } catch (e) {
-      operationMessage = `错误: ${e}`;
+      operationMessage = buildErrorMessage(e);
     }
     
     isOperating = false;
-    setTimeout(() => { operationMessage = ''; }, 3000);
+    withClearedMessage(() => { operationMessage = ''; });
   }
   
   
   // Filtered movies
-  const filteredMovies = $derived.by(() => (
-    movies.filter(movie => {
-      if (activeTab === 'scraped' && !movie.isProcessed) return false;
-      if (activeTab === 'unscraped' && movie.isProcessed) return false;
-      if (searchQuery && !movie.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-      return true;
-    })
-  ));
-  
-  const scrapedCount = $derived.by(() => movies.filter(m => m.isProcessed).length);
-  const unscrapedCount = $derived.by(() => movies.filter(m => !m.isProcessed).length);
+  const filteredMovies = $derived.by(() => filterMovies(movies, activeTab, searchQuery));
+  const movieCounts = $derived.by(() => countMoviesByProcessed(movies));
+  const scrapedCount = $derived.by(() => movieCounts.scraped);
+  const unscrapedCount = $derived.by(() => movieCounts.unscraped);
 
   const movieStatusBadge = $derived.by(() => 
     getGroupStatusBadge(selectedMovieForDetail?.isProcessed ? 'scraped' : 'unscraped')
@@ -207,21 +196,7 @@
     getFanartUrl(selectedMovieForDetail?.path, selectedMovieForDetail?.assets?.hasFanart)
   );
 
-  const movieMetaItems = $derived.by(() => {
-    if (!selectedMovieForDetail) return [];
-    const items: string[] = [];
-    if (typeof selectedMovieForDetail.voteAverage === 'number') {
-      items.push(`评分 ${selectedMovieForDetail.voteAverage.toFixed(1)}`);
-    }
-    if (selectedMovieForDetail.year) items.push(String(selectedMovieForDetail.year));
-    if (typeof selectedMovieForDetail.runtime === 'number' && selectedMovieForDetail.runtime > 0) {
-      items.push(`${selectedMovieForDetail.runtime} 分钟`);
-    }
-    if (selectedMovieForDetail.file?.parsed?.resolution) items.push(selectedMovieForDetail.file.parsed.resolution);
-    if (selectedMovieForDetail.file?.parsed?.codec) items.push(selectedMovieForDetail.file.parsed.codec);
-    if (selectedMovieForDetail.file?.parsed?.source) items.push(selectedMovieForDetail.file.parsed.source);
-    return items;
-  });
+  const movieMetaItems = $derived.by(() => buildMovieMetaItems(selectedMovieForDetail));
 
   const movieOverview = $derived.by(() => selectedMovieForDetail?.overview?.trim() || '');
   
@@ -465,12 +440,13 @@
         </div>
       </section>
 
-      <section class="space-y-3" in:fly={{ y: 18, duration: 300, delay: detailDelay(3), easing: quintOut }}>
-        <h3 class="text-sm font-semibold">文件技术信息</h3>
-        <div class="rounded-lg border border-border/60 bg-muted/30 p-4 space-y-3">
-          <div>
-            <p class="text-xs text-muted-foreground">文件</p>
-            <p class="mt-1 text-sm font-medium break-all">{selectedMovieForDetail.file.name}</p>
+      {#if selectedMovieForDetail.file}
+        <section class="space-y-3" in:fly={{ y: 18, duration: 300, delay: detailDelay(3), easing: quintOut }}>
+          <h3 class="text-sm font-semibold">文件技术信息</h3>
+          <div class="rounded-lg border border-border/60 bg-muted/30 p-4 space-y-3">
+            <div>
+              <p class="text-xs text-muted-foreground">文件</p>
+              <p class="mt-1 text-sm font-medium break-all">{selectedMovieForDetail.file.name}</p>
           </div>
           <div class="flex flex-wrap gap-2">
             {#if selectedMovieForDetail.file.parsed.resolution}
@@ -491,9 +467,10 @@
             <span class="rounded-md border border-green-500/20 bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-500">
               {formatFileSize(selectedMovieForDetail.file.size)}
             </span>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      {/if}
     </div>
 
     {#snippet footer()}

@@ -6,7 +6,7 @@
  */
 import { readdir, rmdir } from 'fs/promises';
 import { extname } from 'path';
-import { VIDEO_EXTS } from '@media-scraper/shared';
+import { VIDEO_EXTS } from '@media-scraper/shared/constants';
 import { MEDIA_PATHS } from './config';
 
 // ── Filesystem abstraction ──

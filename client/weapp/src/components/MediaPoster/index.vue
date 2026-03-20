@@ -4,27 +4,23 @@ import MsImage from '@/components/MsImage/index.vue'
 
 defineComponentJson({ styleIsolation: 'apply-shared' })
 
-const props = defineProps({
-  /** 封面图 URL（允许任意类型，内部统一兜底为字符串） */
-  src: {
-    type: null,
-    default: '',
-  },
-  /** 宽度，默认 100% */
-  width: String,
-  /** 高度，默认 300rpx */
-  height: String,
-  /** 图片模式，默认 aspectFill */
-  mode: String,
-  /** 圆角 class，默认 rounded-md */
-  rounded: String,
-  /** 右上角徽章文字 */
-  badge: String,
-  /** 是否懒加载，默认 true */
-  lazyLoad: {
-    type: Boolean,
-    default: true,
-  },
+type MediaPosterProps = {
+  src?: string | number | null
+  width?: string
+  height?: string
+  mode?: string
+  rounded?: string
+  badge?: string
+  lazyLoad?: boolean
+}
+
+const props = withDefaults(defineProps<MediaPosterProps>(), {
+  src: '',
+  width: '100%',
+  height: '300rpx',
+  mode: 'aspectFill',
+  rounded: 'rounded-md',
+  lazyLoad: true,
 })
 
 const safeSrc = computed(() => {
@@ -33,17 +29,24 @@ const safeSrc = computed(() => {
   if (value == null) return ''
   return String(value)
 })
+
+const wrapperStyle = computed(() =>
+  `width:${props.width || '100%'};height:${props.height || '300rpx'};`,
+)
 </script>
 
 <template>
-  <view class="relative overflow-hidden" :class="props.rounded || 'rounded-md'">
+  <view class="relative overflow-hidden" :class="props.rounded || 'rounded-md'" :style="wrapperStyle">
     <MsImage
-      :src="safeSrc"
+      :src="safeSrc || ''"
       :mode="props.mode || 'aspectFill'"
-      :width="props.width || '100%'"
-      :height="props.height || '300rpx'"
+      width="100%"
+      height="100%"
+      style="width: 100%; height: 100%; display: block;"
       class="bg-muted"
       :lazy-load="props.lazyLoad !== false"
+      :show-menu-by-longpress="false"
+      :fade-in="false"
     />
     <view
       v-if="props.badge"

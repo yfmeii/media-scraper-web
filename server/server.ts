@@ -35,5 +35,6 @@ console.log(`🎬 媒体刮削服务运行在 http://localhost:${port}`);
 
 export default {
   port,
+  idleTimeout: 0,
   fetch: app.fetch,
 };

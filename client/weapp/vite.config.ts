@@ -5,6 +5,11 @@ import { TDesignResolver } from 'weapp-vite/auto-import-components/resolvers'
 import { defineConfig } from 'weapp-vite/config'
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@': resolve(import.meta.dirname, 'src'),
+    },
+  },
   weapp: {
     srcRoot: 'src',
     autoImportComponents: {

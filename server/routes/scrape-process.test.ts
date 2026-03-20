@@ -1,0 +1,195 @@
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { Hono } from 'hono';
+
+class MockMoveToInboxError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+let processTVShowImpl: (...args: any[]) => Promise<any>;
+let processMovieImpl: (...args: any[]) => Promise<any>;
+let refreshMetadataImpl: (...args: any[]) => Promise<any>;
+let generatePreviewPlanImpl: (...args: any[]) => Promise<any>;
+let moveMediaToInboxImpl: (...args: any[]) => Promise<any>;
+
+mock.module('../lib/scraper/process', () => ({
+  processTVShow: (...args: any[]) => processTVShowImpl(...args),
+  processMovie: (...args: any[]) => processMovieImpl(...args),
+}));
+
+mock.module('../lib/scraper/refresh', () => ({
+  refreshMetadata: (...args: any[]) => refreshMetadataImpl(...args),
+}));
+
+mock.module('../lib/scraper/preview', () => ({
+  generatePreviewPlan: (...args: any[]) => generatePreviewPlanImpl(...args),
+}));
+
+mock.module('../lib/move-to-inbox', () => ({
+  MoveToInboxError: MockMoveToInboxError,
+  moveMediaToInbox: (...args: any[]) => moveMediaToInboxImpl(...args),
+}));
+
+const {
+  handleMoveToInbox,
+  handlePreview,
+  handleProcessMovie,
+  handleProcessTV,
+  handleRefresh,
+} = await import('./scrape-process');
+
+function createApp() {
+  const app = new Hono();
+  app.post('/process/tv', handleProcessTV);
+  app.post('/process/movie', handleProcessMovie);
+  app.post('/move-to-inbox', handleMoveToInbox);
+  app.post('/refresh', handleRefresh);
+  app.post('/preview', handlePreview);
+  return app;
+}
+
+beforeEach(() => {
+  processTVShowImpl = async () => ({ success: true, message: 'tv ok' });
+  processMovieImpl = async () => ({ success: true, message: 'movie ok' });
+  refreshMetadataImpl = async () => ({ success: true, message: 'refresh ok' });
+  generatePreviewPlanImpl = async () => ({ actions: [], impactSummary: { filesMoving: 0, nfoCreating: 0, nfoOverwriting: 0, postersDownloading: 0, directoriesCreating: [] } });
+  moveMediaToInboxImpl = async () => ({ success: true, message: 'moved' });
+});
+
+describe('scrape-process routes', () => {
+  test('validates required tv processing parameters', async () => {
+    const app = createApp();
+    const res = await app.request('/process/tv', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourcePath: '/inbox/a.mkv' }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ success: false, error: 'Missing required parameters' });
+  });
+
+  test('passes tv processing request through with default language', async () => {
+    processTVShowImpl = async (sourcePath, showName, tmdbId, season, episodes, language) => {
+      expect({ sourcePath, showName, tmdbId, season, episodes, language }).toEqual({
+        sourcePath: '/inbox/andor.mkv',
+        showName: 'Andor',
+        tmdbId: 101,
+        season: 1,
+        episodes: [{ source: '/inbox/andor.mkv', episode: 1 }],
+        language: 'zh-CN',
+      });
+      return { success: true, message: 'tv ok' };
+    };
+
+    const app = createApp();
+    const res = await app.request('/process/tv', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sourcePath: '/inbox/andor.mkv',
+        showName: 'Andor',
+        tmdbId: 101,
+        season: 1,
+        episodes: [{ source: '/inbox/andor.mkv', episode: 1 }],
+      }),
+    });
+
+    expect(await res.json()).toEqual({ success: true, message: 'tv ok' });
+  });
+
+  test('passes movie processing request through', async () => {
+    processMovieImpl = async (sourcePath, tmdbId, language) => {
+      expect({ sourcePath, tmdbId, language }).toEqual({
+        sourcePath: '/inbox/arrival.mkv',
+        tmdbId: 202,
+        language: 'en-US',
+      });
+      return { success: true, message: 'movie ok' };
+    };
+
+    const app = createApp();
+    const res = await app.request('/process/movie', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourcePath: '/inbox/arrival.mkv', tmdbId: 202, language: 'en-US' }),
+    });
+
+    expect(await res.json()).toEqual({ success: true, message: 'movie ok' });
+  });
+
+  test('returns custom status for MoveToInboxError', async () => {
+    moveMediaToInboxImpl = async () => {
+      throw new MockMoveToInboxError('protected path', 409);
+    };
+
+    const app = createApp();
+    const res = await app.request('/move-to-inbox', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourcePath: '/tv/Andor' }),
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ success: false, error: 'protected path' });
+  });
+
+  test('refresh validates required params and passes optional season episode', async () => {
+    const app = createApp();
+    const badRes = await app.request('/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'tv', path: '/tv/Andor' }),
+    });
+
+    expect(badRes.status).toBe(400);
+
+    refreshMetadataImpl = async (kind, path, tmdbId, season, episode, language) => {
+      expect({ kind, path, tmdbId, season, episode, language }).toEqual({
+        kind: 'tv',
+        path: '/tv/Andor',
+        tmdbId: 303,
+        season: 2,
+        episode: 5,
+        language: 'zh-CN',
+      });
+      return { success: true, message: 'refresh ok' };
+    };
+
+    const res = await app.request('/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'tv', path: '/tv/Andor', tmdbId: 303, season: 2, episode: 5 }),
+    });
+
+    expect(await res.json()).toEqual({ success: true, message: 'refresh ok' });
+  });
+
+  test('preview validates items array and returns wrapped plan', async () => {
+    const app = createApp();
+    const badRes = await app.request('/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: null }),
+    });
+    expect(badRes.status).toBe(400);
+
+    generatePreviewPlanImpl = async (items, language) => {
+      expect(language).toBe('zh-CN');
+      expect(items).toEqual([{ sourcePath: '/inbox/a.mkv', kind: 'movie', tmdbId: 9 }]);
+      return { actions: [{ type: 'move', source: '/inbox/a.mkv', destination: '/movies/A.mkv', willOverwrite: false }], impactSummary: { filesMoving: 1, nfoCreating: 1, nfoOverwriting: 0, postersDownloading: 1, directoriesCreating: ['/movies'] } };
+    };
+
+    const res = await app.request('/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: [{ sourcePath: '/inbox/a.mkv', kind: 'movie', tmdbId: 9 }] }),
+    });
+
+    expect(await res.json()).toMatchObject({ success: true, data: { actions: [{ type: 'move' }] } });
+  });
+});

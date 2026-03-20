@@ -1,0 +1,445 @@
+import {
+  buildAiRecognizeMessage,
+  buildPreviewItemFromSelection,
+  extractPreviewTargetPath,
+  getInboxRecognizeInput,
+  getInboxSearchKeyword,
+  inferCandidateMediaType,
+  resolveRecognizeCandidates,
+} from '@media-scraper/shared/inbox-workflow'
+import type {
+  MediaFile,
+  PathRecognizeResult,
+  PreviewAction,
+  PreviewItem,
+  PreviewPlan,
+  SearchResult,
+} from '@media-scraper/shared/types'
+import { computed, ref, watch } from 'wevu'
+import { previewPlan, recognizePath, searchTMDB, searchTMDBByImdb } from '@/utils/api'
+import { getPosterUrl } from '@/utils/request'
+import { useToast } from '@/hooks/useToast'
+import { useMediaMatch } from '@/hooks/useMediaMatch'
+import { processMedia } from '@/hooks/useMediaProcess'
+
+export interface CandidateCard {
+  id: number
+  displayName: string
+  displayYear: string
+  posterUrl: string
+  mediaType: 'tv' | 'movie'
+}
+
+function toPositiveInt(value: unknown): number | null {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 1) return null
+  return Math.floor(parsed)
+}
+
+function sanitizeStepperValue(value: unknown, fallback: number, max: number): number {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback
+  return Math.min(Math.floor(parsed), max)
+}
+
+export function useInboxFileDetail(options: {
+  getVisible: () => boolean
+  getFile: () => MediaFile | null
+  emitClose: () => void
+  emitProcessed: () => void
+}) {
+  const { showToast } = useToast()
+  const {
+    matchLoading,
+    searching,
+    candidates,
+    selectedCandidate,
+    doAutoMatch,
+    doSearch,
+    selectCandidate,
+    cancelPending,
+    reset: resetMatch,
+  } = useMediaMatch()
+
+  const currentFile = computed(() => options.getFile())
+  const localVisible = ref(false)
+  const processing = ref(false)
+  const aiLoading = ref(false)
+  const previewVisible = ref(false)
+  const previewLoading = ref(false)
+  const previewActions = ref<PreviewAction[]>([])
+  const previewSummary = ref<PreviewPlan['impactSummary'] | null>(null)
+  const searchQuery = ref('')
+  const season = ref(1)
+  const episode = ref(1)
+  const aiResult = ref<PathRecognizeResult | null>(null)
+  const aiHint = ref('')
+  const autoMatchTried = ref(false)
+  const targetPreviewPath = ref('')
+  const targetPreviewLoading = ref(false)
+  let targetPreviewSeq = 0
+
+  function syncTvEpisodeByCandidate(
+    candidate: { mediaType?: 'tv' | 'movie', firstAirDate?: string, releaseDate?: string } | null,
+    preferAI = false,
+  ) {
+    if (!candidate || inferCandidateMediaType(candidate) !== 'tv') return
+
+    const file = currentFile.value
+    const aiSeason = toPositiveInt(aiResult.value?.season)
+    const aiEpisode = toPositiveInt(aiResult.value?.episode)
+    const parsedSeason = toPositiveInt(file?.parsed.season)
+    const parsedEpisode = toPositiveInt(file?.parsed.episode)
+
+    season.value = preferAI
+      ? (aiSeason || parsedSeason || season.value || 1)
+      : (parsedSeason || aiSeason || season.value || 1)
+    episode.value = preferAI
+      ? (aiEpisode || parsedEpisode || episode.value || 1)
+      : (parsedEpisode || aiEpisode || episode.value || 1)
+  }
+
+  const candidateCards = computed<CandidateCard[]>(() =>
+    candidates.value.map(candidate => ({
+      id: candidate.id,
+      displayName: candidate.name || candidate.title || '未知',
+      displayYear: (candidate.releaseDate || candidate.firstAirDate || '').slice(0, 4),
+      posterUrl: getPosterUrl(candidate.posterPath),
+      mediaType: inferCandidateMediaType(candidate),
+    })),
+  )
+
+  const selectedMediaType = computed<'tv' | 'movie'>(() => {
+    const mediaType = selectedCandidate.value?.mediaType
+    if (mediaType === 'tv' || mediaType === 'movie') return mediaType
+    const aiType = aiResult.value?.media_type
+    if (aiType === 'tv' || aiType === 'movie') return aiType
+    if (currentFile.value?.parsed.season || currentFile.value?.parsed.episode) return 'tv'
+    return 'movie'
+  })
+
+  function buildPreviewItem(): PreviewItem | null {
+    const file = currentFile.value
+    if (!file || !selectedCandidate.value) return null
+    return buildPreviewItemFromSelection({
+      file,
+      candidate: selectedCandidate.value,
+      season: season.value,
+      episode: episode.value,
+      fallbackKind: selectedMediaType.value,
+    })
+  }
+
+  async function refreshTargetPreviewPath() {
+    const item = buildPreviewItem()
+    if (!item || !localVisible.value) {
+      targetPreviewPath.value = ''
+      targetPreviewLoading.value = false
+      return
+    }
+
+    const currentSeq = ++targetPreviewSeq
+    targetPreviewLoading.value = true
+    try {
+      const plan = await previewPlan([item])
+      if (currentSeq !== targetPreviewSeq) return
+      targetPreviewPath.value = extractPreviewTargetPath(plan, item.sourcePath)
+    }
+    catch {
+      if (currentSeq !== targetPreviewSeq) return
+      targetPreviewPath.value = ''
+    }
+    finally {
+      if (currentSeq === targetPreviewSeq) {
+        targetPreviewLoading.value = false
+      }
+    }
+  }
+
+  function resetPopupState() {
+    processing.value = false
+    aiLoading.value = false
+    previewVisible.value = false
+    previewLoading.value = false
+    previewActions.value = []
+    previewSummary.value = null
+    searchQuery.value = ''
+    season.value = 1
+    episode.value = 1
+    aiResult.value = null
+    aiHint.value = ''
+    autoMatchTried.value = false
+    targetPreviewPath.value = ''
+    targetPreviewLoading.value = false
+    targetPreviewSeq++
+    resetMatch()
+  }
+
+  watch(() => options.getVisible(), (value) => {
+    localVisible.value = value
+  }, { immediate: true })
+
+  watch(
+    () => `${localVisible.value ? 1 : 0}|${currentFile.value?.path || ''}|${selectedCandidate.value?.id || ''}|${selectedMediaType.value}|${season.value}|${episode.value}`,
+    () => {
+      if (!localVisible.value) return
+      void refreshTargetPreviewPath()
+    },
+  )
+
+  async function handleAutoMatch(silent = false) {
+    const file = currentFile.value
+    if (matchLoading.value || searching.value || aiLoading.value || !file) return
+
+    const ok = await doAutoMatch(
+      file,
+      searchQuery.value.trim() || undefined,
+      file.parsed.year,
+    )
+    if (ok) {
+      const currentId = selectedCandidate.value?.id
+      const resolved = (currentId
+        ? candidates.value.find(item => item.id === currentId)
+        : null) || candidates.value[0] || null
+      selectedCandidate.value = resolved
+      syncTvEpisodeByCandidate(resolved, false)
+    }
+    autoMatchTried.value = true
+    if (!ok && !silent) {
+      showToast('未找到匹配结果', 'warning')
+    }
+  }
+
+  async function handleManualSearch() {
+    if (searching.value || matchLoading.value || aiLoading.value) return
+    const query = searchQuery.value.trim()
+    if (!query) {
+      showToast('请输入搜索关键词', 'warning')
+      return
+    }
+
+    const ok = await doSearch(query)
+    if (!ok) {
+      showToast('搜索失败', 'error')
+      return
+    }
+
+    const first = candidates.value[0] || null
+    selectedCandidate.value = first
+    syncTvEpisodeByCandidate(first, true)
+    autoMatchTried.value = true
+    if (!candidates.value.length) {
+      showToast('未找到匹配结果', 'warning')
+    }
+  }
+
+  async function handleAIRecognize() {
+    const file = currentFile.value
+    if (!file || aiLoading.value || searching.value || matchLoading.value) return
+
+    cancelPending()
+    aiLoading.value = true
+    aiResult.value = null
+    aiHint.value = ''
+
+    try {
+      const recognizeInput = getInboxRecognizeInput(file)
+      const result = await recognizePath(recognizeInput)
+      if (!result || (!result.tmdb_id && !result.imdb_id)) {
+        showToast('AI 识别失败', 'warning')
+        return
+      }
+
+      aiResult.value = result
+      searchQuery.value = result.tmdb_name || result.title || searchQuery.value
+
+      aiHint.value = buildAiRecognizeMessage(result)
+
+      if (result.season !== null && result.season > 0) {
+        season.value = result.season
+      }
+      if (result.episode !== null && result.episode > 0) {
+        episode.value = result.episode
+      }
+      const backendCandidates = result.candidates || []
+      let imdbResults: SearchResult[] = []
+      let nameResults: SearchResult[] = []
+      if (!backendCandidates.length) {
+        imdbResults = result.imdb_id ? await searchTMDBByImdb(result.imdb_id) : []
+        nameResults = (result.tmdb_name || result.title)
+          ? await searchTMDB(result.tmdb_name || result.title)
+          : []
+      }
+
+      const resolved = resolveRecognizeCandidates(result, {
+        backendCandidates,
+        imdbResults,
+        nameResults,
+      })
+      candidates.value = resolved.candidates
+      selectedCandidate.value = resolved.selectedCandidate
+      syncTvEpisodeByCandidate(resolved.selectedCandidate, true)
+      autoMatchTried.value = true
+
+      if (!resolved.candidates.length) {
+        showToast('未找到匹配结果', 'warning')
+      }
+    }
+    catch {
+      showToast('AI 识别失败', 'error')
+    }
+    finally {
+      aiLoading.value = false
+    }
+  }
+
+  async function handlePreviewPlan() {
+    if (previewLoading.value || processing.value) return
+    const item = buildPreviewItem()
+    if (!item) {
+      showToast('请先选择匹配结果', 'warning')
+      return
+    }
+
+    previewVisible.value = true
+    previewLoading.value = true
+    previewActions.value = []
+    previewSummary.value = null
+    try {
+      const plan = await previewPlan([item])
+      previewActions.value = plan.actions || []
+      previewSummary.value = plan.impactSummary || null
+    }
+    catch {
+      showToast('预览失败', 'error')
+    }
+    finally {
+      previewLoading.value = false
+    }
+  }
+
+  async function handleProcess() {
+    const file = currentFile.value
+    if (!file || !selectedCandidate.value || processing.value) return
+
+    processing.value = true
+    try {
+      const result = await processMedia({
+        file,
+        candidate: selectedCandidate.value,
+        type: selectedMediaType.value,
+        season: season.value,
+        episode: episode.value,
+      })
+      if (result.success) {
+        showToast('入库成功', 'success')
+        wx.vibrateShort({ type: 'medium' })
+        closePopup()
+        options.emitProcessed()
+      }
+      else {
+        showToast(result.message || '入库失败', 'error')
+      }
+    }
+    catch {
+      showToast('入库失败', 'error')
+    }
+    finally {
+      processing.value = false
+    }
+  }
+
+  function onVisibleChange(e: WechatMiniprogram.CustomEvent) {
+    if (e?.detail?.visible === false && localVisible.value) {
+      localVisible.value = false
+      resetPopupState()
+      options.emitClose()
+    }
+  }
+
+  function onPreviewVisibleChange(visible: boolean) {
+    previewVisible.value = visible
+  }
+
+  function onSearchInput(value: string) {
+    searchQuery.value = value
+  }
+
+  function onSeasonChange(value: string) {
+    season.value = sanitizeStepperValue(value, season.value, 99)
+  }
+
+  function onEpisodeChange(value: string) {
+    episode.value = sanitizeStepperValue(value, episode.value, 999)
+  }
+
+  function closePopup() {
+    localVisible.value = false
+    resetPopupState()
+    options.emitClose()
+  }
+
+  function onSelectCandidate(id: number) {
+    const candidate = candidates.value.find(item => item.id === id)
+    if (!candidate) return
+    selectCandidate(candidate)
+    syncTvEpisodeByCandidate(candidate, true)
+  }
+
+  async function executeFromPreview() {
+    if (previewLoading.value || !previewActions.value.length) return
+    previewVisible.value = false
+    await handleProcess()
+  }
+
+  function closePreview() {
+    previewVisible.value = false
+  }
+
+  async function initForFile(file: MediaFile) {
+    resetPopupState()
+    searchQuery.value = getInboxSearchKeyword(file)
+    season.value = file.parsed.season || 1
+    episode.value = file.parsed.episode || 1
+    await handleAutoMatch(true)
+  }
+
+  return {
+    localVisible,
+    processing,
+    aiLoading,
+    previewVisible,
+    previewLoading,
+    previewActions,
+    previewSummary,
+    searchQuery,
+    season,
+    episode,
+    aiResult,
+    aiHint,
+    autoMatchTried,
+    targetPreviewPath,
+    targetPreviewLoading,
+    matchLoading,
+    searching,
+    candidates,
+    selectedCandidate,
+    candidateCards,
+    selectedMediaType,
+    onVisibleChange,
+    onPreviewVisibleChange,
+    onSearchInput,
+    onSeasonChange,
+    onEpisodeChange,
+    closePopup,
+    onSelectCandidate,
+    handleAutoMatch,
+    handleManualSearch,
+    handleAIRecognize,
+    handlePreviewPlan,
+    handleProcess,
+    executeFromPreview,
+    closePreview,
+    initForFile,
+  }
+}

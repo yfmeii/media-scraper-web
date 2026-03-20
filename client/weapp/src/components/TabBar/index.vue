@@ -38,20 +38,22 @@ function onTabTap(e: WechatMiniprogram.CustomEvent) {
 
 <template>
   <view class="tab-bar-root">
-    <view class="h-px bg-border"></view>
     <view class="tab-bar-inner">
       <view
         v-for="(tab, index) in tabs"
         :key="tab.key"
         class="tab-item"
         :data-index="index"
+        hover-class="active-scale"
         @tap="onTabTap"
       >
-        <t-icon
-          :name="tab.icon"
-          size="40rpx"
-          :color="activeIndex === index ? 'var(--color-primary)' : 'var(--color-muted-foreground)'"
-        />
+        <view class="tab-icon-wrapper" :class="{ 'active': activeIndex === index }">
+          <t-icon
+            :name="tab.icon"
+            size="40rpx"
+            :color="activeIndex === index ? 'var(--color-primary)' : 'var(--color-muted-foreground)'"
+          />
+        </view>
         <view
           class="tab-label"
           :class="activeIndex === index ? 'tab-label-active' : ''"
@@ -66,6 +68,7 @@ function onTabTap(e: WechatMiniprogram.CustomEvent) {
 .tab-bar-root {
   background-color: var(--color-card, #ffffff);
   flex-shrink: 0;
+  border-top: 1rpx solid var(--color-border);
 }
 .tab-bar-inner {
   display: flex;
@@ -79,9 +82,19 @@ function onTabTap(e: WechatMiniprogram.CustomEvent) {
   justify-content: center;
   gap: 4rpx;
 }
+.tab-icon-wrapper {
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tab-icon-wrapper.active {
+  transform: scale(1.15);
+}
 .tab-label {
   font-size: 20rpx;
   color: var(--color-muted-foreground, #737373);
+  transition: color 0.2s;
 }
 .tab-label-active {
   color: var(--color-primary, #7C3AED);

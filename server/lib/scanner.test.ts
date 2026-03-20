@@ -2,7 +2,14 @@ import { describe, expect, test, afterAll } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { parseFilename, parseFromPath, extractTmdbIdFromNfo, scanDirectory } from './scanner';
+import {
+  parseFilename,
+  parseFromPath,
+  extractTmdbIdFromNfo,
+  scanDirectory,
+  scanInboxByDirectory,
+  detectSupplementFiles,
+} from './scanner';
 
 let tempRoot = '';
 
@@ -124,5 +131,50 @@ describe('文件名解析', () => {
     expect(files.length).toBe(1);
     expect(files[0].kind).toBe('tv');
     expect(files[0].name).toContain('Show.S01E01.mkv');
+  });
+
+  test('🗃️ 收件箱目录分组包含根目录文件与子目录摘要', async () => {
+    const root = await ensureTempRoot();
+    const inbox = join(root, 'inbox-groups');
+    const subDir = join(inbox, 'Show Folder');
+    await mkdir(subDir, { recursive: true });
+    await writeFile(join(inbox, 'Movie.2024.mkv'), 'movie');
+    await writeFile(join(subDir, 'Show.S01E02.mkv'), 'episode');
+
+    const groups = await scanInboxByDirectory(inbox);
+    expect(groups).toHaveLength(2);
+
+    const rootGroup = groups.find(group => group.name === '根目录');
+    const folderGroup = groups.find(group => group.name === 'Show Folder');
+
+    expect(rootGroup?.summary).toMatchObject({ total: 1, movie: 1, tv: 0 });
+    expect(rootGroup?.files[0]?.relativePath).toBe('Movie.2024.mkv');
+    expect(folderGroup?.summary).toMatchObject({ total: 1, movie: 0, tv: 1 });
+    expect(folderGroup?.files[0]?.relativePath).toBe('Show Folder/Show.S01E02.mkv');
+  });
+
+  test('🩹 detectSupplementFiles only returns episodes missing NFO', async () => {
+    const root = await ensureTempRoot();
+    const showDir = join(root, 'supplement-show');
+    const seasonDir = join(showDir, 'Season 01');
+    await mkdir(seasonDir, { recursive: true });
+
+    const missingNfoEpisode = join(seasonDir, 'Demo.Show.S01E03.mkv');
+    const completeEpisode = join(seasonDir, 'Demo.Show.S01E04.mkv');
+    await writeFile(missingNfoEpisode, 'episode-3');
+    await writeFile(completeEpisode, 'episode-4');
+    await writeFile(completeEpisode.replace('.mkv', '.nfo'), '<episodedetails />');
+
+    const supplementFiles = await detectSupplementFiles(showDir);
+    expect(supplementFiles).toHaveLength(1);
+    expect(supplementFiles[0]).toMatchObject({
+      name: 'Demo.Show.S01E03.mkv',
+      kind: 'tv',
+      hasNfo: false,
+      isProcessed: false,
+    });
+    expect(supplementFiles[0]?.relativePath).toBe('Season 01/Demo.Show.S01E03.mkv');
+    expect(supplementFiles[0]?.parsed.season).toBe(1);
+    expect(supplementFiles[0]?.parsed.episode).toBe(3);
   });
 });

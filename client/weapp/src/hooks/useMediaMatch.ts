@@ -1,4 +1,7 @@
-import type { MatchResult, MediaFile, SearchResult } from '@media-scraper/shared'
+import {
+  mapMatchResultToSelection,
+} from '@media-scraper/shared/inbox-workflow'
+import type { MediaFile, SearchResult } from '@media-scraper/shared/types'
 import { ref } from 'wevu'
 import { autoMatch, searchTMDB } from '@/utils/api'
 
@@ -11,46 +14,6 @@ export function useMediaMatch() {
   const candidates = ref<SearchResult[]>([])
   const selectedCandidate = ref<SearchResult | null>(null)
   let requestSeq = 0
-
-  function mapToSearchResult(
-    item: {
-      id: number
-      mediaType?: 'tv' | 'movie'
-      name?: string
-      title?: string
-      date?: string
-      releaseDate?: string
-      firstAirDate?: string
-      posterPath?: string
-      overview?: string
-    },
-  ): SearchResult {
-    const name = item.name || item.title || ''
-    const date = item.releaseDate || item.firstAirDate || item.date
-    return {
-      id: item.id,
-      mediaType: item.mediaType,
-      name,
-      title: name,
-      posterPath: item.posterPath,
-      overview: item.overview,
-      releaseDate: date,
-      firstAirDate: date,
-    }
-  }
-
-  function pickMatchedResult(result: MatchResult, list: SearchResult[]): SearchResult | null {
-    if (!result.matched || !result.result) return null
-    const matched = list.find(item => item.id === result.result?.id)
-    if (matched) return matched
-    return mapToSearchResult({
-      id: result.result.id,
-      mediaType: result.result.mediaType,
-      name: result.result.name,
-      date: result.result.date,
-      posterPath: result.result.posterPath,
-    })
-  }
 
   async function doAutoMatch(
     file: MediaFile,
@@ -67,18 +30,10 @@ export function useMediaMatch() {
       )
       if (seq !== requestSeq) return false
 
-      const mappedCandidates = (result?.candidates || []).map(item => mapToSearchResult({
-        id: item.id,
-        mediaType: item.mediaType,
-        name: item.name,
-        date: item.date,
-        posterPath: item.posterPath,
-        overview: item.overview,
-      }))
-
-      candidates.value = mappedCandidates
-      selectedCandidate.value = pickMatchedResult(result, mappedCandidates)
-      return mappedCandidates.length > 0
+      const mapped = mapMatchResultToSelection(result)
+      candidates.value = mapped.candidates
+      selectedCandidate.value = mapped.selectedCandidate
+      return mapped.candidates.length > 0
     }
     catch {
       if (seq !== requestSeq) return false

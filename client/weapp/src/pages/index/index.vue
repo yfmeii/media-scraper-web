@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Stats } from '@media-scraper/shared'
+import type { Stats } from '@media-scraper/shared/types'
 import { onShow, ref, storeToRefs } from 'wevu'
 import { fetchStats } from '@/utils/api'
 import { useTabStore } from '@/stores/tab'

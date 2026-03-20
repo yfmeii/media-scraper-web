@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { MovieInfo, ShowInfo } from '@media-scraper/shared'
-import { getShowMissingEpisodes } from '@media-scraper/shared'
+import { getShowMissingEpisodes } from '@media-scraper/shared/format'
+import type { MovieInfo, ShowInfo } from '@media-scraper/shared/types'
 import { computed, onShow, ref } from 'wevu'
 import { fetchMovies, fetchTVShows } from '@/utils/api'
 import { getPosterUrl } from '@/utils/request'
@@ -17,7 +17,7 @@ const tabStore = useTabStore()
 const { showToast } = useToast()
 const refreshing = ref(false)
 
-const activeTab = ref<'movie' | 'tv'>('movie')
+const swiperCurrent = ref(0)
 const movies = ref<MovieInfo[]>([])
 const tvShows = ref<ShowInfo[]>([])
 const loading = ref(true)
@@ -96,14 +96,42 @@ async function onRefresh() {
 }
 
 function switchTab(tab: 'movie' | 'tv') {
-  activeTab.value = tab
+  swiperCurrent.value = tab === 'movie' ? 0 : 1
 }
+
+const activeTabIndex = computed(() => swiperCurrent.value)
+
+const movieTabStyle = computed(() =>
+  swiperCurrent.value === 0
+    ? 'background: var(--color-primary); color: var(--color-primary-foreground); box-shadow: 0 6rpx 20rpx rgba(124,58,237,0.22); border: 1rpx solid var(--color-primary);'
+    : 'background: var(--color-card); color: var(--color-muted-foreground); border: 1rpx solid var(--color-border);',
+)
+
+const tvTabStyle = computed(() =>
+  swiperCurrent.value === 1
+    ? 'background: var(--color-primary); color: var(--color-primary-foreground); box-shadow: 0 6rpx 20rpx rgba(124,58,237,0.22); border: 1rpx solid var(--color-primary);'
+    : 'background: var(--color-card); color: var(--color-muted-foreground); border: 1rpx solid var(--color-border);',
+)
 
 function onSwitchTabTap(e: WechatMiniprogram.CustomEvent) {
   const tab = (e.currentTarget as { dataset?: { tab?: string } })?.dataset?.tab
   if (tab === 'movie' || tab === 'tv') {
     switchTab(tab)
   }
+}
+
+function onSwiperChange(e: WechatMiniprogram.CustomEvent<{ current?: number }>) {
+  const current = Number(e.detail?.current)
+  if (!Number.isInteger(current)) return
+  if (current !== 0 && current !== 1) return
+  swiperCurrent.value = current
+}
+
+function onSwiperAnimationFinish(e: WechatMiniprogram.CustomEvent<{ current?: number }>) {
+  const current = Number(e.detail?.current)
+  if (!Number.isInteger(current)) return
+  if (current !== 0 && current !== 1) return
+  swiperCurrent.value = current
 }
 
 function toggleView() {
@@ -197,145 +225,194 @@ function onRematch(e: WechatMiniprogram.CustomEvent<{ path: string, kind: 'movie
       <view class="flex gap-2">
         <view
           class="flex-1 py-2 text-center text-sm font-medium rounded-xl"
-          :class="activeTab === 'movie' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'"
+          :style="movieTabStyle"
+          hover-class="opacity-80 active-scale"
           data-tab="movie"
           @tap="onSwitchTabTap"
         >电影 ({{ movies.length }})</view>
         <view
           class="flex-1 py-2 text-center text-sm font-medium rounded-xl"
-          :class="activeTab === 'tv' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'"
+          :style="tvTabStyle"
+          hover-class="opacity-80 active-scale"
           data-tab="tv"
           @tap="onSwitchTabTap"
         >剧集 ({{ tvShows.length }})</view>
       </view>
     </view>
 
-    <!-- Content (scrollable) -->
-    <scroll-view
-      scroll-y
+    <!-- Content (swiper + scrollable) -->
+    <swiper
       style="flex: 1; min-height: 0;"
-      :refresher-enabled="true"
-      :refresher-triggered="refreshing"
-      @refresherrefresh="onRefresh"
+      :current="activeTabIndex"
+      :duration="260"
+      :skip-hidden-item-layout="true"
+      @change="onSwiperChange"
+      @animationfinish="onSwiperAnimationFinish"
     >
-      <!-- Loading Skeleton -->
-      <view v-if="loading" class="px-4 pt-2 pb-4">
-        <view v-if="viewMode === 'grid'" class="grid grid-cols-3 gap-2">
-          <view v-for="i in 9" :key="i" class="overflow-hidden rounded-md">
-            <view class="h-[300rpx] w-full bg-muted skeleton-pulse" />
-            <view class="bg-card p-1.5">
-              <view class="h-3 w-4/5 rounded bg-muted skeleton-pulse" />
-              <view class="mt-1 h-2.5 w-1/2 rounded bg-muted skeleton-pulse" />
-            </view>
-          </view>
-        </view>
-        <view v-else class="rounded-md bg-card">
-          <view v-for="i in 6" :key="i">
-            <view class="p-2.5 flex gap-2.5">
-              <view class="h-[160rpx] w-[110rpx] shrink-0 rounded bg-muted skeleton-pulse" />
-              <view class="flex-1 py-1">
-                <view class="h-3.5 w-3/5 rounded bg-muted skeleton-pulse" />
-                <view class="mt-2 h-2.5 w-2/5 rounded bg-muted skeleton-pulse" />
-                <view class="mt-2 h-2.5 w-1/4 rounded bg-muted skeleton-pulse" />
-              </view>
-            </view>
-            <view v-if="i < 6" class="h-px bg-border mx-2.5" />
-          </view>
-        </view>
-      </view>
-
-      <!-- Movies Tab -->
-      <view v-else-if="activeTab === 'movie'" class="px-4 pt-2 pb-4">
-        <EmptyState v-if="filteredMovies.length === 0" title="暂无电影" />
-
-        <view v-else-if="viewMode === 'grid'" class="grid grid-cols-3 gap-2">
-          <view
-            v-for="(movie, movieIndex) in filteredMovies"
-            :key="movie.path"
-            class="overflow-hidden rounded-md bg-card"
-            hover-class="opacity-70"
-            :data-index="movieIndex"
-            @tap="onOpenMovieDetailTap"
-          >
-            <MediaPoster :src="movie.posterUrl" />
-            <view class="p-1.5">
-              <view class="truncate text-xs font-medium text-foreground">{{ movie.name }}</view>
-              <view v-if="movie.year" class="text-xs text-muted-foreground">{{ movie.year }}</view>
-            </view>
-          </view>
-        </view>
-
-        <view v-else class="rounded-md bg-card">
-          <view v-for="(movie, idx) in filteredMovies" :key="movie.path">
-            <view
-              class="p-2.5 flex items-center gap-2.5"
-              hover-class="opacity-70"
-              :data-index="idx"
-              @tap="onOpenMovieDetailTap"
-            >
-              <MediaPoster :src="movie.posterUrl" width="110rpx" height="160rpx" rounded="rounded" class="shrink-0" />
-              <view class="flex-1 min-w-0">
-                <view class="text-sm font-medium text-foreground">{{ movie.name }}</view>
-                <view v-if="movie.year" class="mt-0.5 text-xs text-muted-foreground">{{ movie.year }}</view>
-                <view v-if="movie.voteAverage" class="mt-1 flex items-center gap-1">
-                  <t-icon name="star-filled" size="24rpx" color="var(--color-warning)" />
-                  <text class="text-xs text-foreground">{{ fmt.formatRating(movie.voteAverage) }}</text>
+      <swiper-item>
+        <scroll-view
+          scroll-y
+          style="height: 100%;"
+          :refresher-enabled="true"
+          :refresher-triggered="refreshing"
+          @refresherrefresh="onRefresh"
+        >
+          <view v-if="loading" class="px-4 pt-2 pb-4">
+            <view v-if="viewMode === 'grid'" class="grid grid-cols-3 gap-2">
+              <view v-for="i in 9" :key="i" class="overflow-hidden rounded-md">
+                <view class="h-[300rpx] w-full bg-muted skeleton-pulse" />
+                <view class="bg-card p-1.5">
+                  <view class="h-3 w-4/5 rounded bg-muted skeleton-pulse" />
+                  <view class="mt-1 h-2.5 w-1/2 rounded bg-muted skeleton-pulse" />
                 </view>
               </view>
-              <t-icon name="chevron-right" size="36rpx" color="var(--color-muted-foreground)" />
             </view>
-            <view v-if="idx < filteredMovies.length - 1" class="h-px bg-border mx-2.5" />
-          </view>
-        </view>
-      </view>
-
-      <!-- TV Shows Tab -->
-      <view v-else class="px-4 pt-2 pb-4">
-        <EmptyState v-if="filteredShows.length === 0" title="暂无剧集" />
-
-        <view v-else-if="viewMode === 'grid'" class="grid grid-cols-3 gap-2">
-          <view
-            v-for="(show, showIndex) in filteredShows"
-            :key="show.path"
-            class="overflow-hidden rounded-md bg-card"
-            hover-class="opacity-70"
-            :data-index="showIndex"
-            @tap="onOpenShowDetailTap"
-          >
-            <MediaPoster :src="show.posterUrl" :badge="show.supplementBadge" />
-            <view class="p-1.5">
-              <view class="truncate text-xs font-medium text-foreground">{{ show.name }}</view>
-              <view class="text-xs text-muted-foreground">{{ show.seasons.length }} 季</view>
-            </view>
-          </view>
-        </view>
-
-        <view v-else class="rounded-md bg-card">
-          <view v-for="(show, idx) in filteredShows" :key="show.path">
-            <view
-              class="p-2.5 flex items-center gap-2.5"
-              hover-class="opacity-70"
-              :data-index="idx"
-              @tap="onOpenShowDetailTap"
-            >
-              <MediaPoster :src="show.posterUrl" :badge="show.supplementBadge" width="110rpx" height="160rpx" rounded="rounded" class="shrink-0" />
-              <view class="flex-1 min-w-0">
-                <view class="text-sm font-medium text-foreground">{{ show.name }}</view>
-                <view class="mt-0.5 text-xs text-muted-foreground">
-                  {{ show.seasons.length }} 季{{ show.year ? ` · ${show.year}` : '' }}
+            <view v-else class="rounded-md bg-card">
+              <view v-for="i in 6" :key="i">
+                <view class="p-2.5 flex gap-2.5">
+                  <view class="h-[160rpx] w-[110rpx] shrink-0 rounded bg-muted skeleton-pulse" />
+                  <view class="flex-1 py-1">
+                    <view class="h-3.5 w-3/5 rounded bg-muted skeleton-pulse" />
+                    <view class="mt-2 h-2.5 w-2/5 rounded bg-muted skeleton-pulse" />
+                    <view class="mt-2 h-2.5 w-1/4 rounded bg-muted skeleton-pulse" />
+                  </view>
                 </view>
-                <view v-if="show.voteAverage" class="mt-1 flex items-center gap-1">
-                  <t-icon name="star-filled" size="24rpx" color="var(--color-warning)" />
-                  <text class="text-xs text-foreground">{{ fmt.formatRating(show.voteAverage) }}</text>
+                <view v-if="i < 6" class="h-px bg-border mx-2.5" />
+              </view>
+            </view>
+          </view>
+
+          <view v-else class="px-4 pt-2 pb-4 animate-fade-in">
+            <EmptyState v-if="filteredMovies.length === 0" title="暂无电影" />
+
+            <view v-else-if="viewMode === 'grid'" class="grid grid-cols-3 gap-2">
+              <view
+                v-for="(movie, movieIndex) in filteredMovies"
+                :key="movie.path"
+                class="overflow-hidden rounded-md bg-card animate-scale-in"
+                hover-class="opacity-70"
+                :data-index="movieIndex"
+                @tap="onOpenMovieDetailTap"
+              >
+                <view style="height: 300rpx;">
+                  <MediaPoster :src="movie.posterUrl" width="100%" height="100%" mode="aspectFill" />
+                </view>
+                <view class="p-1.5">
+                  <view class="truncate text-xs font-medium text-foreground">{{ movie.name }}</view>
+                  <view v-if="movie.year" class="text-xs text-muted-foreground">{{ movie.year }}</view>
                 </view>
               </view>
-              <t-icon name="chevron-right" size="36rpx" color="var(--color-muted-foreground)" />
             </view>
-            <view v-if="idx < filteredShows.length - 1" class="h-px bg-border mx-2.5" />
+
+            <view v-else class="rounded-md bg-card">
+              <view v-for="(movie, idx) in filteredMovies" :key="movie.path">
+                <view
+                  class="p-2.5 flex items-center gap-2.5"
+                  hover-class="opacity-70 active-scale"
+                  :data-index="idx"
+                  @tap="onOpenMovieDetailTap"
+                >
+                  <MediaPoster :src="movie.posterUrl" width="110rpx" height="160rpx" rounded="rounded" class="shrink-0" />
+                  <view class="flex-1 min-w-0">
+                    <view class="text-sm font-medium text-foreground">{{ movie.name }}</view>
+                    <view v-if="movie.year" class="mt-0.5 text-xs text-muted-foreground">{{ movie.year }}</view>
+                    <view v-if="movie.voteAverage" class="mt-1 flex items-center gap-1">
+                      <t-icon name="star-filled" size="24rpx" color="var(--color-warning)" />
+                      <text class="text-xs text-foreground">{{ fmt.formatRating(movie.voteAverage) }}</text>
+                    </view>
+                  </view>
+                  <t-icon name="chevron-right" size="36rpx" color="var(--color-muted-foreground)" />
+                </view>
+                <view v-if="idx < filteredMovies.length - 1" class="h-px bg-border mx-2.5" />
+              </view>
+            </view>
           </view>
-        </view>
-      </view>
-    </scroll-view>
+        </scroll-view>
+      </swiper-item>
+
+      <swiper-item>
+        <scroll-view
+          scroll-y
+          style="height: 100%;"
+          :refresher-enabled="true"
+          :refresher-triggered="refreshing"
+          @refresherrefresh="onRefresh"
+        >
+          <view v-if="loading" class="px-4 pt-2 pb-4">
+            <view v-if="viewMode === 'grid'" class="grid grid-cols-3 gap-2">
+              <view v-for="i in 9" :key="i" class="overflow-hidden rounded-md">
+                <view class="h-[300rpx] w-full bg-muted skeleton-pulse" />
+                <view class="bg-card p-1.5">
+                  <view class="h-3 w-4/5 rounded bg-muted skeleton-pulse" />
+                  <view class="mt-1 h-2.5 w-1/2 rounded bg-muted skeleton-pulse" />
+                </view>
+              </view>
+            </view>
+            <view v-else class="rounded-md bg-card">
+              <view v-for="i in 6" :key="i">
+                <view class="p-2.5 flex gap-2.5">
+                  <view class="h-[160rpx] w-[110rpx] shrink-0 rounded bg-muted skeleton-pulse" />
+                  <view class="flex-1 py-1">
+                    <view class="h-3.5 w-3/5 rounded bg-muted skeleton-pulse" />
+                    <view class="mt-2 h-2.5 w-2/5 rounded bg-muted skeleton-pulse" />
+                    <view class="mt-2 h-2.5 w-1/4 rounded bg-muted skeleton-pulse" />
+                  </view>
+                </view>
+                <view v-if="i < 6" class="h-px bg-border mx-2.5" />
+              </view>
+            </view>
+          </view>
+
+          <view v-else class="px-4 pt-2 pb-4 animate-fade-in">
+            <EmptyState v-if="filteredShows.length === 0" title="暂无剧集" />
+
+            <view v-else-if="viewMode === 'grid'" class="grid grid-cols-3 gap-2">
+              <view
+                v-for="(show, showIndex) in filteredShows"
+                :key="show.path"
+                class="overflow-hidden rounded-md bg-card animate-scale-in"
+                hover-class="opacity-70"
+                :data-index="showIndex"
+                @tap="onOpenShowDetailTap"
+              >
+                <view style="height: 300rpx;">
+                  <MediaPoster :src="show.posterUrl" :badge="show.supplementBadge" width="100%" height="100%" mode="aspectFill" />
+                </view>
+                <view class="p-1.5">
+                  <view class="truncate text-xs font-medium text-foreground">{{ show.name }}</view>
+                  <view class="text-xs text-muted-foreground">{{ show.seasons.length }} 季</view>
+                </view>
+              </view>
+            </view>
+
+            <view v-else class="rounded-md bg-card">
+              <view v-for="(show, idx) in filteredShows" :key="show.path">
+                <view
+                  class="p-2.5 flex items-center gap-2.5"
+                  hover-class="opacity-70 active-scale"
+                  :data-index="idx"
+                  @tap="onOpenShowDetailTap"
+                >
+                  <MediaPoster :src="show.posterUrl" :badge="show.supplementBadge" width="110rpx" height="160rpx" rounded="rounded" class="shrink-0" />
+                  <view class="flex-1 min-w-0">
+                    <view class="text-sm font-medium text-foreground">{{ show.name }}</view>
+                    <view class="mt-0.5 text-xs text-muted-foreground">
+                      {{ show.seasons.length }} 季{{ show.year ? ` · ${show.year}` : '' }}
+                    </view>
+                    <view v-if="show.voteAverage" class="mt-1 flex items-center gap-1">
+                      <t-icon name="star-filled" size="24rpx" color="var(--color-warning)" />
+                      <text class="text-xs text-foreground">{{ fmt.formatRating(show.voteAverage) }}</text>
+                    </view>
+                  </view>
+                  <t-icon name="chevron-right" size="36rpx" color="var(--color-muted-foreground)" />
+                </view>
+                <view v-if="idx < filteredShows.length - 1" class="h-px bg-border mx-2.5" />
+              </view>
+            </view>
+          </view>
+        </scroll-view>
+      </swiper-item>
+    </swiper>
 
     <!-- Detail Bottom Sheet -->
     <MediaDetail

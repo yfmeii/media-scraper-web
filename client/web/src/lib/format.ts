@@ -4,8 +4,8 @@
  * Common formatting utilities are re-exported from @media-scraper/shared.
  * Only web-specific helpers (task UI styles, etc.) are defined here.
  */
-import { TASK_STATUS_LABELS, TASK_TYPE_LABELS } from '@media-scraper/shared';
-import type { TaskStatus, TaskType } from '@media-scraper/shared';
+import { TASK_STATUS_LABELS, TASK_TYPE_LABELS } from '@media-scraper/shared/constants';
+import type { TaskStatus, TaskType } from '@media-scraper/shared/types';
 
 // Re-export shared formatting utilities so existing import paths continue to work
 export {
@@ -18,7 +18,7 @@ export {
   formatRuntime,
   getMediaKindLabel,
   normalizeMediaKind,
-} from '@media-scraper/shared';
+} from '@media-scraper/shared/format';
 
 const TASK_STATUS_STYLES: Record<TaskStatus, { icon: string; class: string }> = {
   success: { icon: '✅', class: 'text-green-500' },

@@ -1,4 +1,5 @@
-import { DEFAULT_LANGUAGE, type PathRecognizeResult } from '@media-scraper/shared';
+import { DEFAULT_LANGUAGE } from '@media-scraper/shared/constants';
+import type { PathRecognizeResult } from '@media-scraper/shared/types';
 import { DIFY_PATH_RECOGNIZER_KEY, DIFY_BASE_URL } from './config';
 import { findByImdbId } from './tmdb';
 

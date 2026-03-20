@@ -2,7 +2,7 @@ import {
   VIDEO_EXTS as VIDEO_EXTS_LIST,
   SUB_EXTS as SUB_EXTS_LIST,
   NFO_EXTS as NFO_EXTS_LIST,
-} from '@media-scraper/shared';
+} from '@media-scraper/shared/constants';
 
 // Media file extensions (Sets for fast lookup)
 export const VIDEO_EXTS = new Set(VIDEO_EXTS_LIST);

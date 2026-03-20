@@ -1,4 +1,4 @@
-import { DEFAULT_LANGUAGE } from '@media-scraper/shared';
+import { DEFAULT_LANGUAGE } from '@media-scraper/shared/constants';
 import { TMDB_API_KEY } from './config';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';

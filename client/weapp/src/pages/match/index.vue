@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { MatchResult, SearchResult } from '@media-scraper/shared'
+import type { MatchResult, SearchResult } from '@media-scraper/shared/types'
 import { computed, onLoad, ref } from 'wevu'
 import { autoMatch, processMovie, processTV, refreshMetadata, searchTMDB } from '@/utils/api'
 import { getPosterUrl } from '@/utils/request'
