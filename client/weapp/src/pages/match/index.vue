@@ -101,10 +101,17 @@ async function doAutoMatch() {
 
 async function onSearch() {
   const q = searchQuery.value.trim()
-  if (!q) return
+  if (!q) {
+    showToast('请输入搜索关键词', 'warning')
+    return
+  }
   searching.value = true
   try {
     searchResults.value = await searchTMDB(searchType.value, q)
+    selectedResult.value = searchResults.value[0] || null
+    if (!searchResults.value.length) {
+      showToast('未找到匹配结果', 'warning')
+    }
   }
   catch {
     showToast('搜索失败', 'error')
@@ -134,7 +141,7 @@ function setSearchTypeTV() {
 }
 
 function onSearchInput(e: WechatMiniprogram.CustomEvent) {
-  searchQuery.value = e.detail.value
+  searchQuery.value = e.detail?.value ?? e.detail ?? ''
 }
 
 function onSeasonInput(e: WechatMiniprogram.CustomEvent) {
@@ -250,7 +257,7 @@ async function onProcess() {
         <view class="pl-1 text-xs font-medium text-muted-foreground mt-6 mb-1">🔍 手动搜索</view>
         <view class="mt-2 flex gap-2">
           <view class="flex-1">
-            <t-input :value="searchQuery" placeholder="输入标题搜索 TMDB" clearable @change="onSearchInput" />
+            <t-input :value="searchQuery" placeholder="输入标题搜索 TMDB" clearable @input="onSearchInput" @enter="onSearch" />
           </view>
           <t-button theme="primary" size="medium" :loading="searching" @tap="onSearch">搜索</t-button>
         </view>

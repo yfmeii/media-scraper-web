@@ -6,6 +6,17 @@ import { useToast } from '@/hooks/useToast'
 import { moveToInbox, refreshMetadata } from '@/utils/api'
 import { normalizeText } from '@/utils/display'
 import { getPosterUrl } from '@/utils/request'
+import {
+  buildEpisodePathMap,
+  buildExpandedMap,
+  buildFlatMissingEpisodes,
+  getDatasetNumber,
+  getDatasetPath,
+  openEpisodeActionSheet,
+  runMediaDetailRefresh,
+  runMoveToInbox,
+  toggleExpandedSeason,
+} from './mediaDetailActions'
 
 interface MediaDetailProps {
   visible: boolean
@@ -32,13 +43,7 @@ export function useMediaDetail(options: {
     scrollTop.value = 0
   }
 
-  const expandedMap = computed<Record<number, boolean>>(() => {
-    const map: Record<number, boolean> = {}
-    for (const season of expandedSeasons.value) {
-      map[season] = true
-    }
-    return map
-  })
+  const expandedMap = computed<Record<number, boolean>>(() => buildExpandedMap(expandedSeasons.value))
 
   const topBarOpacity = computed(() => Math.min(scrollTop.value / 60, 1))
   const titleOpacity = computed(() => Math.max(0, Math.min((scrollTop.value - 30) / 50, 1)))
@@ -68,15 +73,7 @@ export function useMediaDetail(options: {
   const assets = computed(() => options.props.movie?.assets || options.props.show?.assets)
   const seasons = computed<SeasonInfo[]>(() => options.props.show?.seasons || [])
   const totalEpisodes = computed(() => seasons.value.reduce((sum, season) => sum + season.episodes.length, 0))
-  const episodePathMap = computed<Record<string, MediaFile>>(() => {
-    const map: Record<string, MediaFile> = {}
-    for (const season of seasons.value) {
-      for (const ep of season.episodes) {
-        map[ep.path] = ep
-      }
-    }
-    return map
-  })
+  const episodePathMap = computed<Record<string, MediaFile>>(() => buildEpisodePathMap(seasons.value))
 
   const missingEpisodes = computed<SeasonMissingInfo[]>(() => {
     if (!options.props.show) return []
@@ -87,15 +84,7 @@ export function useMediaDetail(options: {
     missingEpisodes.value.reduce((sum, season) => sum + season.missing.length, 0),
   )
 
-  const flatMissingEpisodes = computed(() => {
-    const result: Array<{ season: number, ep: number }> = []
-    for (const item of missingEpisodes.value) {
-      for (const ep of item.missing) {
-        result.push({ season: item.season, ep })
-      }
-    }
-    return result
-  })
+  const flatMissingEpisodes = computed(() => buildFlatMissingEpisodes(missingEpisodes.value))
 
   const seasonMissingMap = computed<Record<number, number[]>>(() => {
     if (!options.props.show) return {}
@@ -130,46 +119,29 @@ export function useMediaDetail(options: {
   }
 
   function toggleSeason(season: number) {
-    const exists = expandedSeasons.value.includes(season)
-    expandedSeasons.value = exists
-      ? expandedSeasons.value.filter(item => item !== season)
-      : [...expandedSeasons.value, season]
+    expandedSeasons.value = toggleExpandedSeason(expandedSeasons.value, season)
   }
 
   function onSeasonTap(e: WechatMiniprogram.CustomEvent) {
-    const season = Number((e.currentTarget as { dataset?: { season?: number | string } })?.dataset?.season)
-    if (!Number.isInteger(season)) return
+    const season = getDatasetNumber(e, 'season')
+    if (season === null) return
     toggleSeason(season)
   }
 
   async function runRefresh(params?: { season?: number, episode?: number }, successMessage?: string, closeAfterSuccess = false) {
-    if (!tmdbId.value) {
-      showToast('无 TMDB ID，请先匹配', 'warning')
-      return
-    }
-
-    operationLoading.value = true
-    try {
-      const result = await refreshMetadata(kind.value, path.value, tmdbId.value, params)
-      if (!result.success) {
-        showToast(result.message || '刷新失败', 'error')
-        return
-      }
-
-      showToast(successMessage || '刷新成功')
-      if (closeAfterSuccess) {
-        emitClosedRefresh()
-      }
-      else {
-        options.emitRefresh()
-      }
-    }
-    catch {
-      showToast('刷新失败', 'error')
-    }
-    finally {
-      operationLoading.value = false
-    }
+    await runMediaDetailRefresh({
+      tmdbId: tmdbId.value,
+      kind: kind.value,
+      path: path.value,
+      params,
+      successMessage,
+      closeAfterSuccess,
+      setLoading: value => (operationLoading.value = value),
+      showToast,
+      refreshMetadata,
+      emitRefresh: options.emitRefresh,
+      emitClosedRefresh,
+    })
   }
 
   async function handleRefreshMetadata() {
@@ -191,8 +163,8 @@ export function useMediaDetail(options: {
   }
 
   function onRefreshSeasonTap(e: WechatMiniprogram.CustomEvent) {
-    const seasonNo = Number((e.currentTarget as { dataset?: { season?: number | string } })?.dataset?.season)
-    if (!Number.isInteger(seasonNo)) return
+    const seasonNo = getDatasetNumber(e, 'season')
+    if (seasonNo === null) return
     const season = seasons.value.find(item => item.season === seasonNo)
     if (!season) return
     handleRefreshSeason(season)
@@ -206,70 +178,42 @@ export function useMediaDetail(options: {
   }
 
   async function handleMoveToInbox(sourcePath: string, isMovie = false) {
-    const label = isMovie ? '电影' : '集'
-    const confirmed = await confirm({
-      title: '移回收件箱',
-      content: `将该${label}及关联字幕移回收件箱，并删除对应的 NFO 文件。确定继续？`,
-      confirmBtn: '移回',
+    await runMoveToInbox({
+      sourcePath,
+      isMovie,
+      setLoading: value => (operationLoading.value = value),
+      showToast,
+      confirm,
+      moveToInbox,
+      closeDetail,
+      emitRefresh: options.emitRefresh,
     })
-    if (!confirmed) return
-
-    operationLoading.value = true
-    try {
-      const result = await moveToInbox(sourcePath)
-      if (!result.success) {
-        showToast(result.message || '操作失败', 'error')
-        return
-      }
-
-      showToast('已移回收件箱')
-      if (isMovie) {
-        closeDetail()
-      }
-      options.emitRefresh()
-    }
-    catch {
-      showToast('操作失败', 'error')
-    }
-    finally {
-      operationLoading.value = false
-    }
   }
 
   async function onEpisodeTap(ep: MediaFile) {
-    const items: string[] = []
-    const actions: Array<() => void> = []
-
-    if (options.props.show?.tmdbId && ep.parsed) {
-      items.push('刷新元数据')
-      actions.push(() => handleRefreshEpisode(ep.parsed.season || 0, ep.parsed.episode || 0))
-    }
-
-    items.push('移回收件箱')
-    actions.push(() => handleMoveToInbox(ep.path))
-
-    try {
-      const res = await new Promise<WechatMiniprogram.ShowActionSheetSuccessCallbackResult>((resolve, reject) => {
-        wx.showActionSheet({ itemList: items, success: resolve, fail: reject })
-      })
-      actions[res.tapIndex]?.()
-    }
-    catch {
-      // user cancelled
-    }
+    await openEpisodeActionSheet({
+      episode: ep,
+      showTmdbId: options.props.show?.tmdbId,
+      onRefreshEpisode: (season, episode) => {
+        void handleRefreshEpisode(season, episode)
+      },
+      onMoveToInbox: (sourcePath) => {
+        void handleMoveToInbox(sourcePath)
+      },
+    })
   }
 
   function onEpisodeItemTap(e: WechatMiniprogram.CustomEvent) {
-    const episodePath = (e.currentTarget as { dataset?: { path?: string } })?.dataset?.path
+    const episodePath = getDatasetPath(e, 'path')
     if (!episodePath) return
     const episode = episodePathMap.value[episodePath]
     if (!episode) return
-    onEpisodeTap(episode)
+    void onEpisodeTap(episode)
   }
 
   function onMoveMovieTap() {
     if (!options.props.movie?.file) return
-    handleMoveToInbox(options.props.movie.file.path, true)
+    void handleMoveToInbox(options.props.movie.file.path, true)
   }
 
   function onVisibleChange(e: WechatMiniprogram.CustomEvent) {
