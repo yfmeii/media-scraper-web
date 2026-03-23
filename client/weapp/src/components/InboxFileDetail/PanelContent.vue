@@ -11,6 +11,18 @@ interface CandidateCard {
   mediaType: 'tv' | 'movie'
 }
 
+interface AiCandidateCard {
+  id: number
+  tmdbId: number | null
+  displayName: string
+  mediaType: 'tv' | 'movie'
+  yearText: string
+  seasonEpisodeText: string
+  confidenceText: string
+  reason: string
+  isPreferred: boolean
+}
+
 defineProps<{
   file: MediaFile
   selectedCandidate: SearchResult | null
@@ -18,6 +30,8 @@ defineProps<{
   targetPreviewLoading: boolean
   aiResult: PathRecognizeResult | null
   aiHint: string
+  aiCandidateCards: AiCandidateCard[]
+  selectedAiCandidateId: number | null
   searchQuery: string
   selectedMediaType: 'tv' | 'movie'
   season: number
@@ -40,6 +54,7 @@ const emit = defineEmits<{
   (e: 'manual-search'): void
   (e: 'auto-match'): void
   (e: 'ai-recognize'): void
+  (e: 'select-ai-candidate', id: number): void
   (e: 'select-candidate', id: number): void
   (e: 'preview'): void
   (e: 'process'): void
@@ -61,6 +76,12 @@ function onSelectCandidate(e: WechatMiniprogram.CustomEvent) {
   const id = Number((e.currentTarget as { dataset?: { id?: number | string } })?.dataset?.id)
   if (!Number.isInteger(id)) return
   emit('select-candidate', id)
+}
+
+function onSelectAiCandidate(e: WechatMiniprogram.CustomEvent) {
+  const id = Number((e.currentTarget as { dataset?: { id?: number | string } })?.dataset?.id)
+  if (!Number.isInteger(id)) return
+  emit('select-ai-candidate', id)
 }
 
 </script>
@@ -118,6 +139,43 @@ function onSelectCandidate(e: WechatMiniprogram.CustomEvent) {
 
         <view v-if="aiHint" class="mt-2 rounded-lg px-2.5 py-2 text-xs" :class="fmt.isWarningHint(aiHint) ? 'text-warning' : 'text-primary'" :style="fmt.isWarningHint(aiHint) ? 'background: rgba(245, 158, 11, 0.1);' : 'background: rgba(59, 130, 246, 0.1);'">
           {{ aiHint }}
+        </view>
+
+        <view v-if="aiCandidateCards.length" class="mt-3 rounded-xl bg-card p-3">
+          <view class="flex items-center justify-between">
+            <text class="text-xs font-medium text-muted-foreground">AI 识别候选</text>
+            <text class="text-xs text-muted-foreground">{{ aiCandidateCards.length }} 条</text>
+          </view>
+          <view class="mt-2 flex flex-col gap-2">
+            <view
+              v-for="candidate in aiCandidateCards"
+              :key="candidate.id"
+              class="rounded-xl border px-3 py-2.5"
+              :class="selectedAiCandidateId === candidate.id ? 'border-primary bg-muted' : 'border-border bg-background'"
+              :data-id="candidate.id"
+              hover-class="opacity-80"
+              @tap="onSelectAiCandidate"
+            >
+              <view class="flex items-start gap-2">
+                <view class="flex-1 min-w-0">
+                  <view class="flex items-center gap-1.5 flex-wrap">
+                    <text class="text-sm font-medium text-foreground">{{ candidate.displayName }}</text>
+                    <text class="text-[20rpx] px-1.5 py-0.5 rounded text-white" :style="candidate.mediaType === 'movie' ? 'background: rgba(249, 115, 22, 0.9);' : 'background: rgba(37, 99, 235, 0.9);'">{{ candidate.mediaType === 'movie' ? '电影' : '剧集' }}</text>
+                    <text v-if="candidate.isPreferred" class="text-[20rpx] px-1.5 py-0.5 rounded bg-primary text-primary-foreground">首选</text>
+                  </view>
+                  <view class="mt-1 flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
+                    <text v-if="candidate.yearText">{{ candidate.yearText }}</text>
+                    <text v-if="candidate.seasonEpisodeText">{{ candidate.seasonEpisodeText }}</text>
+                    <text>置信度 {{ candidate.confidenceText }}</text>
+                    <text v-if="candidate.tmdbId">TMDB {{ candidate.tmdbId }}</text>
+                  </view>
+                  <text v-if="candidate.reason" class="mt-1 text-xs text-muted-foreground" style="display: block; word-break: break-word;">{{ candidate.reason }}</text>
+                </view>
+                <t-icon v-if="selectedAiCandidateId === candidate.id" name="check-circle-filled" size="34rpx" color="var(--color-primary)" />
+              </view>
+            </view>
+          </view>
+          <text class="mt-2 text-xs text-muted-foreground" style="display: block;">先选 AI 候选，再在下方确认最终 TMDB 条目</text>
         </view>
 
         <view class="mt-3">

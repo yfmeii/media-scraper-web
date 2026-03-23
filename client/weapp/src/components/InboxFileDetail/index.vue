@@ -37,6 +37,8 @@ const {
   candidates,
   selectedCandidate,
   candidateCards,
+  aiCandidateCards,
+  selectedAiCandidateId,
   selectedMediaType,
   onVisibleChange,
   onPreviewVisibleChange,
@@ -45,6 +47,7 @@ const {
   onEpisodeChange,
   closePopup,
   onSelectCandidate,
+  onSelectAiCandidate,
   handleAutoMatch,
   handleManualSearch,
   handleAIRecognize,
@@ -79,6 +82,8 @@ defineExpose({ initForFile })
       :target-preview-loading="targetPreviewLoading"
       :ai-result="aiResult"
       :ai-hint="aiHint"
+      :ai-candidate-cards="aiCandidateCards"
+      :selected-ai-candidate-id="selectedAiCandidateId"
       :search-query="searchQuery"
       :selected-media-type="selectedMediaType"
       :season="season"
@@ -98,6 +103,7 @@ defineExpose({ initForFile })
       @manual-search="handleManualSearch"
       @auto-match="handleAutoMatch"
       @ai-recognize="handleAIRecognize"
+      @select-ai-candidate="onSelectAiCandidate"
       @select-candidate="onSelectCandidate"
       @preview="handlePreviewPlan"
       @process="handleProcess"

@@ -22,6 +22,24 @@ import type {
 
 type SearchTMDBType = 'tv' | 'movie' | 'multi';
 
+function encodeQueryValue(value: string | number): string {
+  return encodeURIComponent(String(value)).replace(/%20/g, '+');
+}
+
+function buildQueryString(params: Record<string, string | number | undefined | null>): string {
+  const entries = Object.entries(params)
+    .filter(([, value]) => value !== undefined && value !== null && value !== '');
+  return entries
+    .map(([key, value]) => `${encodeQueryValue(key)}=${encodeQueryValue(value)}`)
+    .join('&');
+}
+
+function appendQuery(path: string, params: Record<string, string | number | undefined | null>): string {
+  const query = buildQueryString(params);
+  if (!query) return path;
+  return `${path}?${query}`;
+}
+
 function toScrapeResult(response: ClientApiEnvelope<{ message?: string }>): ScrapeResult {
   return {
     success: response.success,
@@ -78,8 +96,7 @@ export function createClientApi(transport: ClientApiTransport) {
   }
 
   async function fetchTVShowDetail(path: string): Promise<ShowInfo | null> {
-    const params = new URLSearchParams({ path });
-    const res = await transport.get<ShowInfo>(`${CLIENT_API_ENDPOINTS.fetchTVShowDetail}?${params}`);
+    const res = await transport.get<ShowInfo>(appendQuery(CLIENT_API_ENDPOINTS.fetchTVShowDetail, { path }));
     return res.data || null;
   }
 
@@ -89,8 +106,7 @@ export function createClientApi(transport: ClientApiTransport) {
   }
 
   async function fetchMovieDetail(path: string): Promise<MovieInfo | null> {
-    const params = new URLSearchParams({ path });
-    const res = await transport.get<MovieInfo>(`${CLIENT_API_ENDPOINTS.fetchMovieDetail}?${params}`);
+    const res = await transport.get<MovieInfo>(appendQuery(CLIENT_API_ENDPOINTS.fetchMovieDetail, { path }));
     return res.data || null;
   }
 
@@ -113,17 +129,14 @@ export function createClientApi(transport: ClientApiTransport) {
   ): Promise<SearchResult[]> {
     const { type, query, year } = resolveSearchTMDBArgs(typeOrQuery, queryOrYear, maybeYear);
     if (!query.trim()) return [];
-    const params = new URLSearchParams({ q: query });
-    if (year) params.set('year', year.toString());
-    const res = await transport.get<SearchResult[]>(`${CLIENT_API_ENDPOINTS.searchTMDBBase}/${type}?${params}`);
+    const res = await transport.get<SearchResult[]>(appendQuery(`${CLIENT_API_ENDPOINTS.searchTMDBBase}/${type}`, { q: query, year }));
     return res.data || [];
   }
 
   async function searchTMDBByImdb(imdbId: string, language = DEFAULT_LANGUAGE): Promise<SearchResult[]> {
     const normalized = imdbId.trim();
     if (!normalized) return [];
-    const params = new URLSearchParams({ imdb_id: normalized, language });
-    const res = await transport.get<SearchResult[]>(`${CLIENT_API_ENDPOINTS.searchTMDBByImdb}?${params}`);
+    const res = await transport.get<SearchResult[]>(appendQuery(CLIENT_API_ENDPOINTS.searchTMDBByImdb, { imdb_id: normalized, language }));
     return res.data || [];
   }
 

@@ -10,6 +10,7 @@ import {
   createInboxPreviewState,
   createEmptyPreviewPlan,
   extractPreviewTargetPath,
+  getPreferredRecognizeCandidate,
   getInboxRecognizeInput,
   getInboxSearchKeyword,
   inferCandidateMediaType,
@@ -155,6 +156,60 @@ describe('共享工作流辅助函数', () => {
     });
     expect(selection.tmdbId).toBe(12);
     expect(selection.mediaType).toBe('movie');
+  });
+
+  test('getPreferredRecognizeCandidate 和 buildRecognizeProcessSelection 支持多候选 AI 结果', () => {
+    const result: PathRecognizeResult = {
+      path: 'foo',
+      title: 'Andor',
+      media_type: 'tv',
+      year: 2022,
+      season: 1,
+      episode: 1,
+      imdb_id: null,
+      tmdb_id: 100,
+      tmdb_name: 'Andor',
+      preferred_tmdb_id: 200,
+      recognize_candidates: [
+        {
+          title: 'Andor Backup',
+          media_type: 'movie',
+          year: 2024,
+          season: null,
+          episode: null,
+          imdb_id: null,
+          tmdb_id: 100,
+          tmdb_name: 'Andor Backup',
+          confidence: 0.3,
+          reason: 'weak',
+        },
+        {
+          title: 'Andor',
+          media_type: 'tv',
+          year: 2022,
+          season: 3,
+          episode: 7,
+          imdb_id: null,
+          tmdb_id: 200,
+          tmdb_name: 'Andor',
+          preferred_tmdb_id: 200,
+          confidence: 0.9,
+          reason: 'strong',
+        },
+      ],
+      confidence: 0.9,
+      reason: 'multi',
+    };
+
+    expect(getPreferredRecognizeCandidate(result)?.tmdb_id).toBe(200);
+    const selection = buildRecognizeProcessSelection({
+      file: { name: 'Andor.S03E07.mkv', parsed: { title: 'Andor', season: 1, episode: 1 } },
+      result,
+    });
+    expect(selection.tmdbId).toBe(200);
+    expect(selection.mediaType).toBe('tv');
+    expect(selection.season).toBe(3);
+    expect(selection.episode).toBe(7);
   });
 
   test('buildAiRecognizeMessage 和 applyAiRecognizeState 生成提示与应用状态', () => {

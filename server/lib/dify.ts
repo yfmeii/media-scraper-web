@@ -1,7 +1,47 @@
 import { DEFAULT_LANGUAGE } from '@media-scraper/shared/constants';
-import type { PathRecognizeResult } from '@media-scraper/shared/types';
+import type { PathRecognizeResult, RecognizeCandidate } from '@media-scraper/shared/types';
 import { DIFY_PATH_RECOGNIZER_KEY, DIFY_BASE_URL } from './config';
 import { findByImdbId } from './tmdb';
+
+function toNumberOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function toStringOrNull(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+async function normalizeRecognizeCandidate(raw: any, fallbackTitle: string): Promise<RecognizeCandidate> {
+  const mediaTypeRaw = raw?.media_type ?? raw?.mediaType ?? raw?.type;
+  const mediaType = mediaTypeRaw === 'movie' ? 'movie' : 'tv';
+  const imdbId = toStringOrNull(raw?.imdb_id ?? raw?.imdbId ?? raw?.imdbID ?? raw?.imdb);
+  let tmdbId = toNumberOrNull(raw?.tmdb_id ?? raw?.tmdbId ?? raw?.tmdbID);
+  let tmdbName = toStringOrNull(raw?.tmdb_name ?? raw?.tmdbName ?? raw?.name);
+  const title = toStringOrNull(raw?.title) || tmdbName || fallbackTitle;
+
+  if (imdbId) {
+    const matched = await findByImdbId(imdbId, DEFAULT_LANGUAGE, mediaType);
+    if (matched) {
+      tmdbId = matched.id;
+      tmdbName = matched.name || matched.title || tmdbName;
+    }
+  }
+
+  return {
+    title,
+    media_type: mediaType,
+    year: toNumberOrNull(raw?.year),
+    season: toNumberOrNull(raw?.season),
+    episode: toNumberOrNull(raw?.episode),
+    imdb_id: imdbId,
+    tmdb_id: tmdbId,
+    tmdb_name: tmdbName,
+    preferred_tmdb_id: toNumberOrNull(raw?.preferred_tmdb_id ?? raw?.preferredTmdbId) ?? tmdbId,
+    candidates: Array.isArray(raw?.candidates) ? raw.candidates : undefined,
+    confidence: typeof raw?.confidence === 'number' ? raw.confidence : 0,
+    reason: typeof raw?.reason === 'string' ? raw.reason : '',
+  };
+}
 
 function extractStreamingAnswer(text: string): string | null {
   const answerParts: string[] = [];
@@ -76,35 +116,36 @@ export async function recognizePath(filePath: string): Promise<PathRecognizeResu
       return null;
     }
 
-    const mediaTypeRaw = parsed.media_type ?? parsed.mediaType ?? parsed.type;
-    const mediaType = mediaTypeRaw === 'movie' ? 'movie' : 'tv';
-    const imdbRaw = parsed.imdb_id ?? parsed.imdbId ?? parsed.imdbID ?? parsed.imdb ?? null;
-    const imdbId = typeof imdbRaw === 'string' ? imdbRaw.trim() : null;
-    let tmdbId = parsed.tmdb_id ?? parsed.tmdbId ?? parsed.tmdbID ?? null;
-    let tmdbName = parsed.tmdb_name ?? parsed.tmdbName ?? parsed.name ?? null;
-    const title = parsed.title ?? tmdbName ?? parsed.name ?? '';
+    const title = toStringOrNull(parsed.title ?? parsed.tmdb_name ?? parsed.tmdbName ?? parsed.name) || '';
+    const recognizeCandidatesRaw = Array.isArray(parsed.recognize_candidates)
+      ? parsed.recognize_candidates
+      : Array.isArray(parsed.candidates)
+        ? parsed.candidates.filter((item: any) => item && (item.media_type || item.mediaType || item.type || item.tmdb_id || item.imdb_id))
+        : [];
 
-    // Prefer exact TMDB mapping resolved from IMDb ID when available.
-    if (imdbId) {
-      const matched = await findByImdbId(imdbId, DEFAULT_LANGUAGE, mediaType);
-      if (matched) {
-        tmdbId = matched.id;
-        tmdbName = matched.name || matched.title || tmdbName;
-      }
-    }
+    const normalizedCandidates = recognizeCandidatesRaw.length
+      ? await Promise.all(recognizeCandidatesRaw.map((item: any) => normalizeRecognizeCandidate(item, title)))
+      : [];
+
+    const primaryCandidate = normalizedCandidates[0] || await normalizeRecognizeCandidate(parsed, title);
+    const preferredTmdbId = toNumberOrNull(parsed.preferred_tmdb_id ?? parsed.preferredTmdbId)
+      ?? primaryCandidate.preferred_tmdb_id
+      ?? primaryCandidate.tmdb_id;
 
     const normalized: PathRecognizeResult = {
       path: parsed.path || filePath,
-      title,
-      media_type: mediaType,
-      year: parsed.year ?? null,
-      season: parsed.season ?? null,
-      episode: parsed.episode ?? null,
-      imdb_id: imdbId || null,
-      tmdb_id: tmdbId,
-      tmdb_name: tmdbName,
-      confidence: parsed.confidence ?? 0,
-      reason: parsed.reason ?? '',
+      title: primaryCandidate.title || title,
+      media_type: primaryCandidate.media_type,
+      year: primaryCandidate.year,
+      season: primaryCandidate.season,
+      episode: primaryCandidate.episode,
+      imdb_id: primaryCandidate.imdb_id,
+      tmdb_id: primaryCandidate.tmdb_id,
+      tmdb_name: primaryCandidate.tmdb_name,
+      preferred_tmdb_id: preferredTmdbId,
+      recognize_candidates: normalizedCandidates.length ? normalizedCandidates : undefined,
+      confidence: primaryCandidate.confidence,
+      reason: primaryCandidate.reason,
     };
 
     return normalized;

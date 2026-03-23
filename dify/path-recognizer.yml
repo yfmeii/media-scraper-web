@@ -153,6 +153,9 @@ workflow:
             1. Output only one name, nothing else
             2. Extract from first directory level or filename
             3. Remove special chars, encoding info, resolution tags
+            4. For anime releases, remove fansub group tags like [MAI], [LoliHouse], [SubsPlease]
+            5. Keep arc or subtitle names that are part of the actual title, such as "JoJo's Bizarre Adventure - Diamond is Unbreakable"
+            6. Ignore anime special markers like NCOP, NCED, OP, ED, SP, OVA, OAD, PV, CM when extracting the title
 
             Examples:
             - "Swallowed Star/T S-X/207 4K.mkv" -> Swallowed Star
@@ -160,6 +163,8 @@ workflow:
             - "Avatar (2009)/Avatar.2009.BluRay.mkv" -> Avatar
             - "My Show/Season 01/12.mp4" -> My Show
             - "Inception.2010.1080p.BluRay.mkv" -> Inception
+            - "[CZ&MAI] JoJo's Bizarre Adventure - Diamond is Unbreakable [30][Ma10p_2160p][x265].mkv" -> JoJo's Bizarre Adventure Diamond is Unbreakable
+            - "[MAI] JoJo's Bizarre Adventure [NCED02][Ma10p_2160p][x265_flac].mkv" -> JoJo's Bizarre Adventure
         - id: user-input
           role: user
           text: '{{#sys.query#}}'
@@ -189,7 +194,7 @@ workflow:
             frequency_penalty: 0.5
             json_schema: |
               {
-                "name": "MatchResult",
+                "name": "PathRecognizeResult",
                 "schema": {
                   "type": "object",
                   "additionalProperties": false,
@@ -200,12 +205,36 @@ workflow:
                     "year": {"type": ["integer", "null"]},
                     "season": {"type": ["integer", "null"]},
                     "episode": {"type": ["integer", "null"]},
+                    "imdb_id": {"type": ["string", "null"]},
                     "tmdb_id": {"type": ["integer", "null"]},
                     "tmdb_name": {"type": ["string", "null"]},
+                    "preferred_tmdb_id": {"type": ["integer", "null"]},
                     "confidence": {"type": "number"},
-                    "reason": {"type": "string"}
+                    "reason": {"type": "string"},
+                    "recognize_candidates": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "title": {"type": "string"},
+                          "media_type": {"type": "string", "enum": ["tv", "movie"]},
+                          "year": {"type": ["integer", "null"]},
+                          "season": {"type": ["integer", "null"]},
+                          "episode": {"type": ["integer", "null"]},
+                          "imdb_id": {"type": ["string", "null"]},
+                          "tmdb_id": {"type": ["integer", "null"]},
+                          "tmdb_name": {"type": ["string", "null"]},
+                          "preferred_tmdb_id": {"type": ["integer", "null"]},
+                          "confidence": {"type": "number"},
+                          "reason": {"type": "string"}
+                        },
+                        "required": ["title", "media_type", "year", "season", "episode", "imdb_id", "tmdb_id", "tmdb_name", "preferred_tmdb_id", "confidence", "reason"]
+                      }
+                    }
                   },
-                  "required": ["path", "title", "media_type", "year", "season", "episode", "tmdb_id", "tmdb_name", "confidence", "reason"]
+                  "required": ["path", "title", "media_type", "year", "season", "episode", "imdb_id", "tmdb_id", "tmdb_name", "preferred_tmdb_id", "confidence", "reason", "recognize_candidates"]
                 },
                 "strict": true
               }
@@ -224,7 +253,9 @@ workflow:
             Tasks:
             1. Determine if this is a movie or TV show
             2. Parse relevant info from original path
-            3. Select best match from TMDB results
+            3. Evaluate TMDB results
+            4. Produce multiple ranked recognition candidates
+            5. Mark one preferred candidate when possible
 
             Media type rules:
             - Movie: contains year like "(2020)", single video file, no season/episode
@@ -232,20 +263,36 @@ workflow:
 
             Path parsing rules:
             - year: extract year, e.g. "(2020)" -> 2020
-            - season: from "Season XX", "SXX", null for movie, 1 for TV if missing
-            - episode: from filename, e.g. "207 4K.mkv" -> 207, null for movie
+            - season: from "Season XX", "SXX", null for movie, 1 for TV only when strongly implied and missing
+            - episode: from filename only when clearly an episode number, null for movie
+            - imdb_id: include only when explicitly known from the provided results, otherwise null
+            - anime episode markers may appear as `[12]`, `[12-13]`, `12v2`, `第12话`, `第12話`, or `EP12`
+            - anime special markers like `NCOP`, `NCED`, `OP`, `ED`, `SP`, `SPECIAL`, `OVA`, `OAD`, `PV`, `CM` are not regular episodes; when those markers appear, prefer `episode = null` unless the path clearly identifies a normal episode separately
+            - fansub or release group tags such as `[MAI]`, `[LoliHouse]`, `[SubsPlease]` are not part of the title
+            - preserve arc/subseries titles when they distinguish the correct TMDB season, for example `JoJo's Bizarre Adventure - Diamond is Unbreakable`
+            - when an anime subtitle clearly maps to a known season or cour, return that season instead of defaulting to 1; for example `JoJo's Bizarre Adventure - Diamond is Unbreakable` should map to season 3
+            - if the file looks like an anime special or bonus video rather than a regular episode, do not force a TV episode number just because a small number appears in the filename
+
+            Candidate rules:
+            - Return 1-5 items in recognize_candidates, best first
+            - Each candidate must be a plausible interpretation of the path
+            - Prefer matches that fit title, year, media type, season or episode patterns, and path structure
+            - If only one result is plausible, still return it as a single-item array
+            - Set preferred_tmdb_id to the TMDB ID of the best candidate when available, otherwise null
+            - For anime, prefer candidates whose season naming or localized title matches the parsed arc/subtitle
+            - If the path is likely a special (NCOP/NCED/OVA/SP/PV/etc.), keep the franchise title but avoid inventing a normal episode number
 
             Output:
-            - path: original file path (return as-is)
-            - title: extracted title
-            - media_type: "tv" or "movie"
-            - year: year (optional)
-            - season: season number (null for movie)
-            - episode: episode number (null for movie)
-            - tmdb_id: selected TMDB ID (null if no match)
-            - tmdb_name: selected TMDB name
-            - confidence: confidence score (0-1)
-            - reason: selection reason
+            - Return a single JSON object only, with no extra text
+            - path must be the original file path as-is
+            - Root fields title, media_type, year, season, episode, imdb_id, tmdb_id, tmdb_name, confidence, and reason must summarize the preferred candidate
+            - recognize_candidates must contain the ranked candidate list
+            - The preferred candidate should also appear in recognize_candidates
+            - Use null instead of guessing when information is unknown
+
+            Examples:
+            - `[CZ&MAI] JoJo's Bizarre Adventure - Diamond is Unbreakable [30][Ma10p_2160p][x265].mkv` -> title `JoJo's Bizarre Adventure Diamond is Unbreakable`, media_type `tv`, season `3`, episode `30`
+            - `[MAI] JoJo's Bizarre Adventure [NCED02][Ma10p_2160p][x265_flac].mkv` -> title `JoJo's Bizarre Adventure`, media_type `tv`, season `null`, episode `null`
         - id: user-input
           role: user
           text: |
@@ -255,6 +302,11 @@ workflow:
 
             TMDB search results (JSON array, movies and TV shows):
             {{#1770180990557.json#}}
+
+            Return a single JSON object containing:
+            - the preferred recognition at the root
+            - preferred_tmdb_id
+            - recognize_candidates as a ranked array of plausible matches
         selected: false
         title: AI 匹配
         type: llm

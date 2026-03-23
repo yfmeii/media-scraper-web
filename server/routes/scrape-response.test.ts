@@ -51,9 +51,23 @@ describe('scrape response builders', () => {
       },
       candidates: [],
       preferredTmdbId: 55,
+      recognizeCandidates: [{
+        title: 'Andor',
+        media_type: 'tv',
+        year: 2022,
+        season: 1,
+        episode: 1,
+        imdb_id: null,
+        tmdb_id: 55,
+        tmdb_name: 'Andor',
+        preferred_tmdb_id: 55,
+        confidence: 0.8,
+        reason: 'match',
+      }],
     });
 
     expect(response.data.preferred_tmdb_id).toBe(55);
     expect(response.data.candidates[0]?.id).toBe(55);
+    expect(response.data.recognize_candidates?.[0]?.tmdb_id).toBe(55);
   });
 });

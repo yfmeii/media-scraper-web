@@ -42,15 +42,17 @@ export async function handleRecognize(c: Context) {
 
   let candidates = [];
   let preferredTmdbId: number | null = result.tmdb_id;
+  let recognizeCandidates = result.recognize_candidates;
   try {
     const enriched = await enrichRecognizeCandidates(result, language);
     candidates = enriched.candidates;
     preferredTmdbId = enriched.preferredTmdbId;
+    recognizeCandidates = enriched.recognizeCandidates || recognizeCandidates;
   } catch (error) {
     console.error('[recognize] Enrich candidates failed:', error);
   }
 
   console.log('[recognize] Result:', result);
 
-  return c.json(buildRecognizeResponse({ result, candidates, preferredTmdbId }));
+  return c.json(buildRecognizeResponse({ result, candidates, preferredTmdbId, recognizeCandidates }));
 }

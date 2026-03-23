@@ -1,8 +1,18 @@
 import { getInboxSearchKeyword, inferCandidateMediaType, inferMediaTypeFromParsed, mergeSearchResults, moveSearchResultToFront } from './inbox-common';
-import type { MediaFile, PathRecognizeResult, SearchResult } from './types';
+import type { MediaFile, PathRecognizeResult, RecognizeCandidate, SearchResult } from './types';
+
+export function getPreferredRecognizeCandidate(result: PathRecognizeResult): RecognizeCandidate | null {
+  if (!result.recognize_candidates?.length) return null;
+  const preferredId = result.preferred_tmdb_id ?? result.tmdb_id ?? null;
+  if (preferredId) {
+    const matched = result.recognize_candidates.find(item => (item.preferred_tmdb_id ?? item.tmdb_id ?? null) === preferredId || item.tmdb_id === preferredId);
+    if (matched) return matched;
+  }
+  return result.recognize_candidates[0] || null;
+}
 
 export function buildRecognizeFallbackCandidate(
-  result: PathRecognizeResult,
+  result: PathRecognizeResult | RecognizeCandidate,
   tmdbId = result.tmdb_id,
 ): SearchResult | null {
   if (!tmdbId) return null;
@@ -43,9 +53,17 @@ export function resolveRecognizeCandidates(
   const backendCandidates = options?.backendCandidates || result.candidates || [];
   const imdbResults = options?.imdbResults || [];
   const nameResults = options?.nameResults || [];
-  const preferredId = options?.preferredId || result.preferred_tmdb_id || result.tmdb_id || imdbResults[0]?.id || null;
+  const preferredRecognizeCandidate = getPreferredRecognizeCandidate(result);
+  const preferredId = options?.preferredId
+    || preferredRecognizeCandidate?.preferred_tmdb_id
+    || preferredRecognizeCandidate?.tmdb_id
+    || result.preferred_tmdb_id
+    || result.tmdb_id
+    || imdbResults[0]?.id
+    || null;
   const merged = mergeSearchResults(backendCandidates, imdbResults, nameResults);
-  const fallbackCandidate = buildRecognizeFallbackCandidate(result, preferredId);
+  const fallbackSource = preferredRecognizeCandidate || result;
+  const fallbackCandidate = buildRecognizeFallbackCandidate(fallbackSource, preferredId);
   const withFallback = preferredId && fallbackCandidate && !merged.some(item => item.id === preferredId)
     ? [fallbackCandidate, ...merged]
     : merged;
@@ -94,12 +112,17 @@ export function buildRecognizeProcessSelection(params: {
   imdbMatched?: SearchResult | null;
 }) {
   const { file, result, imdbMatched } = params;
-  const tmdbId = result.tmdb_id ?? imdbMatched?.id ?? null;
+  const preferredRecognizeCandidate = getPreferredRecognizeCandidate(result);
+  const tmdbId = preferredRecognizeCandidate?.tmdb_id ?? result.tmdb_id ?? imdbMatched?.id ?? null;
   const mediaType = inferCandidateMediaType(
     imdbMatched || {
-      mediaType: result.media_type,
-      firstAirDate: result.media_type === 'tv' && result.year ? `${result.year}-01-01` : undefined,
-      releaseDate: result.media_type === 'movie' && result.year ? `${result.year}-01-01` : undefined,
+      mediaType: preferredRecognizeCandidate?.media_type || result.media_type,
+      firstAirDate: (preferredRecognizeCandidate?.media_type || result.media_type) === 'tv' && (preferredRecognizeCandidate?.year ?? result.year)
+        ? `${preferredRecognizeCandidate?.year ?? result.year}-01-01`
+        : undefined,
+      releaseDate: (preferredRecognizeCandidate?.media_type || result.media_type) === 'movie' && (preferredRecognizeCandidate?.year ?? result.year)
+        ? `${preferredRecognizeCandidate?.year ?? result.year}-01-01`
+        : undefined,
     },
     inferMediaTypeFromParsed(file.parsed),
   );
@@ -107,8 +130,8 @@ export function buildRecognizeProcessSelection(params: {
   return {
     tmdbId,
     mediaType,
-    displayName: imdbMatched?.name || imdbMatched?.title || result.tmdb_name || result.title || fallbackName,
-    season: result.season || file.parsed.season || 1,
-    episode: result.episode || file.parsed.episode || 1,
+    displayName: imdbMatched?.name || imdbMatched?.title || preferredRecognizeCandidate?.tmdb_name || result.tmdb_name || preferredRecognizeCandidate?.title || result.title || fallbackName,
+    season: preferredRecognizeCandidate?.season || result.season || file.parsed.season || 1,
+    episode: preferredRecognizeCandidate?.episode || result.episode || file.parsed.episode || 1,
   };
 }

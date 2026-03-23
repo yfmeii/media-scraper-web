@@ -186,6 +186,21 @@ export interface MatchResult {
   ambiguous?: boolean;
 }
 
+export interface RecognizeCandidate {
+  title: string;
+  media_type: 'tv' | 'movie';
+  year: number | null;
+  season: number | null;
+  episode: number | null;
+  imdb_id: string | null;
+  tmdb_id: number | null;
+  tmdb_name: string | null;
+  preferred_tmdb_id?: number | null;
+  candidates?: SearchResult[];
+  confidence: number;
+  reason: string;
+}
+
 export interface PathRecognizeResult {
   path: string;
   title: string;
@@ -198,6 +213,7 @@ export interface PathRecognizeResult {
   tmdb_name: string | null;
   preferred_tmdb_id?: number | null;
   candidates?: SearchResult[];
+  recognize_candidates?: RecognizeCandidate[];
   confidence: number;
   reason: string;
 }

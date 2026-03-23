@@ -1,5 +1,5 @@
 import { buildRecognizeFallbackCandidate } from '@media-scraper/shared/inbox-workflow';
-import type { PathRecognizeResult, SearchResult } from '@media-scraper/shared/types';
+import type { PathRecognizeResult, RecognizeCandidate, SearchResult } from '@media-scraper/shared/types';
 import { mapSearchResult, type SearchKind } from './scrape-helpers';
 
 export function buildSearchResponse(kind: SearchKind, results: any[]) {
@@ -39,6 +39,7 @@ export function buildRecognizeResponse(params: {
   result: PathRecognizeResult;
   candidates: Array<SearchResult | null>;
   preferredTmdbId: number | null;
+  recognizeCandidates?: RecognizeCandidate[];
 }) {
   let candidates = params.candidates.filter((item): item is SearchResult => Boolean(item));
   if (!candidates.length && params.preferredTmdbId) {
@@ -61,6 +62,7 @@ export function buildRecognizeResponse(params: {
       tmdb_name: resolvedTmdbName,
       preferred_tmdb_id: params.preferredTmdbId || params.result.tmdb_id,
       candidates,
+      recognize_candidates: params.recognizeCandidates || params.result.recognize_candidates,
     },
   };
 }

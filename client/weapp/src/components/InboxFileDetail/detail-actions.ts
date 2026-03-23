@@ -1,15 +1,108 @@
 import {
   buildAiRecognizeMessage,
+  getPreferredRecognizeCandidate,
   getInboxRecognizeInput,
   resolveRecognizeCandidates,
 } from '@media-scraper/shared'
-import type { MediaFile, SearchResult } from '@media-scraper/shared'
+import type { MediaFile, PathRecognizeResult, RecognizeCandidate, SearchResult } from '@media-scraper/shared'
 import { recognizePath, searchTMDB, searchTMDBByImdb } from '@/utils/api'
+
+export function getRecognizeCandidateId(candidate: RecognizeCandidate, fallbackIndex?: number) {
+  return candidate.preferred_tmdb_id ?? candidate.tmdb_id ?? fallbackIndex ?? null
+}
+
+export function resolveSelectedRecognizeCandidate(candidates: RecognizeCandidate[], selectedId: number | null) {
+  if (!candidates.length) return null
+  if (selectedId === null) return candidates[0] || null
+  return candidates.find(candidate => getRecognizeCandidateId(candidate) === selectedId || candidate.tmdb_id === selectedId) || candidates[0] || null
+}
+
+function getRecognizeQuery(result: PathRecognizeResult, candidate: RecognizeCandidate | null) {
+  return candidate?.tmdb_name || candidate?.title || result.tmdb_name || result.title || ''
+}
+
+function applyRecognizeCandidateDefaults(options: {
+  result: PathRecognizeResult
+  candidate: RecognizeCandidate | null
+  searchQuery: { value: string }
+  season: { value: number }
+  episode: { value: number }
+}) {
+  options.searchQuery.value = getRecognizeQuery(options.result, options.candidate) || options.searchQuery.value
+
+  const season = options.candidate?.season ?? options.result.season
+  const episode = options.candidate?.episode ?? options.result.episode
+  if (season !== null && season && season > 0) options.season.value = season
+  if (episode !== null && episode && episode > 0) options.episode.value = episode
+}
+
+export async function resolveInboxAiRecognizeSelection(options: {
+  result: PathRecognizeResult
+  selectedAiCandidate: RecognizeCandidate | null
+  candidates: { value: SearchResult[] }
+  selectedCandidate: { value: SearchResult | null }
+  searchQuery: { value: string }
+  season: { value: number }
+  episode: { value: number }
+  syncTvEpisodeByCandidate: (candidate: SearchResult | null, preferAI?: boolean) => void
+  autoMatchTried: { value: boolean }
+}) {
+  applyRecognizeCandidateDefaults(options)
+
+  const backendCandidates = options.selectedAiCandidate?.candidates || options.result.candidates || []
+  let imdbResults: SearchResult[] = []
+  let nameResults: SearchResult[] = []
+  if (!backendCandidates.length) {
+    imdbResults = options.result.imdb_id ? await searchTMDBByImdb(options.result.imdb_id) : []
+    const recognizeQuery = getRecognizeQuery(options.result, options.selectedAiCandidate)
+    nameResults = recognizeQuery ? await searchTMDB(recognizeQuery) : []
+  }
+
+  const resolved = resolveRecognizeCandidates(options.result, {
+    backendCandidates,
+    imdbResults,
+    nameResults,
+    preferredId: options.selectedAiCandidate?.preferred_tmdb_id ?? options.selectedAiCandidate?.tmdb_id ?? undefined,
+  })
+  options.candidates.value = resolved.candidates
+  options.selectedCandidate.value = resolved.selectedCandidate
+  options.syncTvEpisodeByCandidate(resolved.selectedCandidate, true)
+  options.autoMatchTried.value = true
+  return resolved
+}
+
+export async function selectInboxAiRecognizeCandidate(options: {
+  result: PathRecognizeResult
+  selectedId: number
+  candidates: { value: SearchResult[] }
+  selectedCandidate: { value: SearchResult | null }
+  searchQuery: { value: string }
+  season: { value: number }
+  episode: { value: number }
+  syncTvEpisodeByCandidate: (candidate: SearchResult | null, preferAI?: boolean) => void
+  autoMatchTried: { value: boolean }
+}) {
+  const selectedAiCandidate = resolveSelectedRecognizeCandidate(options.result.recognize_candidates || [], options.selectedId)
+  if (!selectedAiCandidate) return null
+  await resolveInboxAiRecognizeSelection({
+    result: options.result,
+    selectedAiCandidate,
+    candidates: options.candidates,
+    selectedCandidate: options.selectedCandidate,
+    searchQuery: options.searchQuery,
+    season: options.season,
+    episode: options.episode,
+    syncTvEpisodeByCandidate: options.syncTvEpisodeByCandidate,
+    autoMatchTried: options.autoMatchTried,
+  })
+  return selectedAiCandidate
+}
 
 export async function runInboxAiRecognize(options: {
   file: MediaFile
   searchQuery: { value: string }
   aiResult: { value: any }
+  selectedAiCandidateId: { value: number | null }
   aiHint: { value: string }
   aiLoading: { value: boolean }
   candidates: { value: SearchResult[] }
@@ -39,29 +132,23 @@ export async function runInboxAiRecognize(options: {
     }
 
     options.aiResult.value = result
-    options.searchQuery.value = result.tmdb_name || result.title || options.searchQuery.value
+    const preferredRecognizeCandidate = getPreferredRecognizeCandidate(result)
+    options.selectedAiCandidateId.value = preferredRecognizeCandidate
+      ? getRecognizeCandidateId(preferredRecognizeCandidate)
+      : null
     options.aiHint.value = buildAiRecognizeMessage(result)
 
-    if (result.season !== null && result.season > 0) options.season.value = result.season
-    if (result.episode !== null && result.episode > 0) options.episode.value = result.episode
-
-    const backendCandidates = result.candidates || []
-    let imdbResults: SearchResult[] = []
-    let nameResults: SearchResult[] = []
-    if (!backendCandidates.length) {
-      imdbResults = result.imdb_id ? await searchTMDBByImdb(result.imdb_id) : []
-      nameResults = (result.tmdb_name || result.title) ? await searchTMDB(result.tmdb_name || result.title) : []
-    }
-
-    const resolved = resolveRecognizeCandidates(result, {
-      backendCandidates,
-      imdbResults,
-      nameResults,
+    const resolved = await resolveInboxAiRecognizeSelection({
+      result,
+      selectedAiCandidate: preferredRecognizeCandidate,
+      candidates: options.candidates,
+      selectedCandidate: options.selectedCandidate,
+      searchQuery: options.searchQuery,
+      season: options.season,
+      episode: options.episode,
+      syncTvEpisodeByCandidate: options.syncTvEpisodeByCandidate,
+      autoMatchTried: options.autoMatchTried,
     })
-    options.candidates.value = resolved.candidates
-    options.selectedCandidate.value = resolved.selectedCandidate
-    options.syncTvEpisodeByCandidate(resolved.selectedCandidate, true)
-    options.autoMatchTried.value = true
 
     if (!resolved.candidates.length) options.showToast('未找到匹配结果', 'warning')
   }

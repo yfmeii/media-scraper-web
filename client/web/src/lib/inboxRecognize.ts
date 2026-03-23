@@ -2,6 +2,13 @@ import { buildAiRecognizeMessage, getInboxRecognizeInput, resolveRecognizeCandid
 import type { MediaFile, PathRecognizeResult, SearchResult } from '$lib/api';
 import { recognizePath, searchTMDB, searchTMDBByImdb } from '$lib/api';
 
+function getRecognizeQuery(result: PathRecognizeResult): string {
+  return result.recognize_candidates?.[0]?.tmdb_name
+    || result.recognize_candidates?.[0]?.title
+    || result.tmdb_name
+    || result.title;
+}
+
 export async function resolveInboxAiRecognize(file: MediaFile): Promise<{
   aiRecognizeResult: PathRecognizeResult | null;
   matchCandidates: SearchResult[];
@@ -25,8 +32,9 @@ export async function resolveInboxAiRecognize(file: MediaFile): Promise<{
   let nameResults: SearchResult[] = [];
   if (!backendCandidates.length) {
     imdbResults = result.imdb_id ? await searchTMDBByImdb(result.imdb_id) : [];
-    nameResults = (result.tmdb_name || result.title)
-      ? await searchTMDB(result.tmdb_name || result.title)
+    const recognizeQuery = getRecognizeQuery(result);
+    nameResults = recognizeQuery
+      ? await searchTMDB(recognizeQuery)
       : [];
   }
 
@@ -40,8 +48,8 @@ export async function resolveInboxAiRecognize(file: MediaFile): Promise<{
     aiRecognizeResult: result,
     matchCandidates: resolved.candidates,
     selectedCandidate: resolved.selectedCandidate,
-    editSeason: result.season ?? undefined,
-    editEpisode: result.episode ?? undefined,
+    editSeason: result.recognize_candidates?.[0]?.season ?? result.season ?? undefined,
+    editEpisode: result.recognize_candidates?.[0]?.episode ?? result.episode ?? undefined,
     operationMessage: buildAiRecognizeMessage(result),
   };
 }

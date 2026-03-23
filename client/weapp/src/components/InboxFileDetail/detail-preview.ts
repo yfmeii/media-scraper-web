@@ -1,4 +1,4 @@
-import { buildPreviewItemFromSelection, extractPreviewTargetPath, inferCandidateMediaType } from '@media-scraper/shared'
+import { buildPreviewItemFromSelection, extractPreviewTargetPath, getPreferredRecognizeCandidate, inferCandidateMediaType } from '@media-scraper/shared'
 import type { MediaFile, PreviewItem, SearchResult } from '@media-scraper/shared'
 import { computed, watch } from 'wevu'
 import { previewPlan } from '@/utils/api'
@@ -79,8 +79,11 @@ export function useInboxTargetPreview(options: {
     if (!candidate || inferCandidateMediaType(candidate) !== 'tv') return
 
     const file = options.currentFile.value
-    const aiSeason = toPositiveInt(options.aiResult.value?.season)
-    const aiEpisode = toPositiveInt(options.aiResult.value?.episode)
+    const preferredRecognizeCandidate = options.aiResult.value
+      ? getPreferredRecognizeCandidate(options.aiResult.value as any)
+      : null
+    const aiSeason = toPositiveInt(preferredRecognizeCandidate?.season ?? options.aiResult.value?.season)
+    const aiEpisode = toPositiveInt(preferredRecognizeCandidate?.episode ?? options.aiResult.value?.episode)
     const parsedSeason = toPositiveInt(file?.parsed.season)
     const parsedEpisode = toPositiveInt(file?.parsed.episode)
 

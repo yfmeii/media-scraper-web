@@ -3,7 +3,7 @@ import {
   mergeSearchResults,
   moveSearchResultToFront,
 } from '@media-scraper/shared/inbox-workflow';
-import type { PathRecognizeResult, SearchResult } from '@media-scraper/shared/types';
+import type { PathRecognizeResult, RecognizeCandidate, SearchResult } from '@media-scraper/shared/types';
 import {
   findByImdbId,
   findByTmdbId,
@@ -47,6 +47,7 @@ export function mapSearchResult(kind: SearchKind, result: TMDBSearchResult): Sea
 export async function enrichRecognizeCandidates(result: PathRecognizeResult, language: string): Promise<{
   candidates: SearchResult[];
   preferredTmdbId: number | null;
+  recognizeCandidates?: RecognizeCandidate[];
 }> {
   let byImdb: TMDBSearchResult | null = null;
   if (result.imdb_id) {
@@ -90,7 +91,19 @@ export async function enrichRecognizeCandidates(result: PathRecognizeResult, lan
   if (preferredTmdbId && !candidates.some(item => item.id === preferredTmdbId)) {
     candidates = [buildRecognizeFallbackCandidate(result, preferredTmdbId)!, ...candidates];
   }
-  return { candidates, preferredTmdbId };
+
+  const recognizeCandidates = result.recognize_candidates?.length
+    ? result.recognize_candidates.map(candidate => ({
+        ...candidate,
+        preferred_tmdb_id: candidate.preferred_tmdb_id ?? candidate.tmdb_id ?? null,
+        candidates: moveSearchResultToFront(
+          mergeSearchResults(candidate.candidates || [], candidates),
+          candidate.preferred_tmdb_id ?? candidate.tmdb_id ?? null,
+        ).slice(0, 10),
+      }))
+    : undefined;
+
+  return { candidates, preferredTmdbId, recognizeCandidates };
 }
 
 export function buildMatchPayload(
