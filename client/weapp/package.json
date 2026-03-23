@@ -26,10 +26,10 @@
     "sass": "^1.98.0",
     "tailwindcss": "^4.2.2",
     "typescript": "^5.9.3",
-    "vite-plugin-static-copy": "^3.3.0",
+    "vite-plugin-static-copy": "^4.0.0",
     "vue-tsc": "^3.2.6",
     "weapp-tailwindcss": "^4.10.3",
-    "weapp-vite": "^6.10.2",
-    "wevu": "^6.10.2"
+    "weapp-vite": "^6.11.3",
+    "wevu": "^6.11.3"
   }
 }
