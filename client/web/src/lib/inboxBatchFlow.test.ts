@@ -1,33 +1,6 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import type { MediaFile } from '$lib/api';
-
-mock.module('$lib/inboxBatch', () => ({
-  runInboxBatchProcess: mock(async (files, processor, hooks) => {
-    let successCount = 0;
-    let failCount = 0;
-    let tvCount = 0;
-    let movieCount = 0;
-
-    for (let index = 0; index < files.length; index++) {
-      const file = files[index];
-      const context = { current: index + 1, total: files.length };
-      hooks.onStart?.(file, context);
-      const outcome = await processor(file, context);
-      if (outcome.success) {
-        successCount++;
-        if (outcome.mediaType === 'tv') tvCount++;
-        if (outcome.mediaType === 'movie') movieCount++;
-      } else {
-        failCount++;
-      }
-      hooks.onSettled?.(file, outcome, context);
-    }
-
-    return { successCount, failCount, tvCount, movieCount };
-  }),
-}));
-
-import { executeInboxBatchFlow } from './inboxBatchFlow';
+import { createInboxBatchFlow } from './inboxBatchFlow';
 
 const files = [
   {
@@ -54,6 +27,38 @@ const files = [
 
 describe('inboxBatchFlow', () => {
   test('runs batch lifecycle and post-processing hooks', async () => {
+    const subject = createInboxBatchFlow({
+      runInboxBatchProcess: async (selectedFiles, processor, hooks = {}) => {
+        let successCount = 0;
+        let failCount = 0;
+        let tvCount = 0;
+        let movieCount = 0;
+
+        for (let index = 0; index < selectedFiles.length; index++) {
+          const file = selectedFiles[index];
+          const context = { current: index + 1, total: selectedFiles.length };
+          hooks.onStart?.(file, context);
+          const outcome = await processor(file, context);
+          if (outcome.success) {
+            successCount++;
+            if (outcome.mediaType === 'tv') tvCount++;
+            if (outcome.mediaType === 'movie') movieCount++;
+          } else {
+            failCount++;
+          }
+          hooks.onSettled?.(file, outcome, context);
+        }
+
+        return { successCount, failCount, tvCount, movieCount };
+      },
+      createPostBatchState: ({ summary }) => ({
+        hadSuccess: summary.successCount > 0,
+        operationMessage: `完成: ${summary.successCount} 成功 (${summary.tvCount} 剧集, ${summary.movieCount} 电影), ${summary.failCount} 失败`,
+        selectedFiles: new Set<string>(),
+      }),
+      getInboxBatchSelection: () => files,
+    });
+
     const statuses: Array<[string, string]> = [];
     const messages: string[] = [];
     const progresses: Array<{ current: number; total: number }> = [];
@@ -62,7 +67,7 @@ describe('inboxBatchFlow', () => {
     const selectedSnapshots: Set<string>[] = [];
     let reloadCount = 0;
 
-    await executeInboxBatchFlow({
+    await subject({
       allFiles: files,
       selectedFiles: new Set(['/a', '/b']),
       processor: async (file, context, setOperationMessage) => {

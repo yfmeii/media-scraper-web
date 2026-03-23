@@ -27,6 +27,78 @@ export interface ExecuteInboxBatchFlowParams {
   scheduleReset?: (callback: () => void, delayMs: number) => void;
 }
 
+interface InboxBatchFlowDeps {
+  runInboxBatchProcess: typeof runInboxBatchProcess;
+  createPostBatchState: typeof createPostBatchState;
+  getInboxBatchSelection: typeof getInboxBatchSelection;
+}
+
+export function createInboxBatchFlow(deps: InboxBatchFlowDeps) {
+  return async function executeInboxBatchFlowWithDeps({
+    allFiles,
+    selectedFiles,
+    processor,
+    setOperating,
+    setOperationMessage,
+    setBatchProgress,
+    setFileStatus,
+    markFileProcessed,
+    reloadData,
+    updateSelectedFiles,
+    onError,
+    resetDelayMs = 3000,
+    scheduleReset = (callback, delayMs) => {
+      setTimeout(callback, delayMs);
+    },
+  }: ExecuteInboxBatchFlowParams): Promise<void> {
+    setOperating(true);
+
+    const selectedFilesList = deps.getInboxBatchSelection(allFiles, selectedFiles);
+    setBatchProgress({ current: 0, total: selectedFilesList.length });
+
+    const summary = await deps.runInboxBatchProcess(selectedFilesList, (file, context) => {
+      return processor(file, context, setOperationMessage);
+    }, {
+      onStart: (file) => {
+        setFileStatus(file.path, 'processing');
+      },
+      onSettled: (file, outcome, context) => {
+        if (outcome.success) {
+          markFileProcessed(file.path);
+          setFileStatus(file.path, 'success');
+        } else {
+          setFileStatus(file.path, 'failed');
+        }
+        setBatchProgress({ current: context.current, total: context.total });
+      },
+      onError: (file, error) => {
+        onError?.(file, error);
+      },
+    });
+
+    const postBatchState = deps.createPostBatchState({ summary, selectedFiles });
+    setOperationMessage(postBatchState.operationMessage);
+
+    if (postBatchState.hadSuccess) {
+      await reloadData();
+    }
+
+    scheduleReset(() => {
+      setOperating(false);
+      setOperationMessage('');
+      if (postBatchState.hadSuccess) {
+        updateSelectedFiles(postBatchState.selectedFiles);
+      }
+    }, resetDelayMs);
+  };
+}
+
+const executeInboxBatchFlowWithDeps = createInboxBatchFlow({
+  runInboxBatchProcess,
+  createPostBatchState,
+  getInboxBatchSelection,
+});
+
 export async function executeInboxBatchFlow({
   allFiles,
   selectedFiles,
@@ -44,43 +116,19 @@ export async function executeInboxBatchFlow({
     setTimeout(callback, delayMs);
   },
 }: ExecuteInboxBatchFlowParams): Promise<void> {
-  setOperating(true);
-
-  const selectedFilesList = getInboxBatchSelection(allFiles, selectedFiles);
-  setBatchProgress({ current: 0, total: selectedFilesList.length });
-
-  const summary = await runInboxBatchProcess(selectedFilesList, (file, context) => {
-    return processor(file, context, setOperationMessage);
-  }, {
-    onStart: (file) => {
-      setFileStatus(file.path, 'processing');
-    },
-    onSettled: (file, outcome, context) => {
-      if (outcome.success) {
-        markFileProcessed(file.path);
-        setFileStatus(file.path, 'success');
-      } else {
-        setFileStatus(file.path, 'failed');
-      }
-      setBatchProgress({ current: context.current, total: context.total });
-    },
-    onError: (file, error) => {
-      onError?.(file, error);
-    },
+  return executeInboxBatchFlowWithDeps({
+    allFiles,
+    selectedFiles,
+    processor,
+    setOperating,
+    setOperationMessage,
+    setBatchProgress,
+    setFileStatus,
+    markFileProcessed,
+    reloadData,
+    updateSelectedFiles,
+    onError,
+    resetDelayMs,
+    scheduleReset,
   });
-
-  const postBatchState = createPostBatchState({ summary, selectedFiles });
-  setOperationMessage(postBatchState.operationMessage);
-
-  if (postBatchState.hadSuccess) {
-    await reloadData();
-  }
-
-  scheduleReset(() => {
-    setOperating(false);
-    setOperationMessage('');
-    if (postBatchState.hadSuccess) {
-      updateSelectedFiles(postBatchState.selectedFiles);
-    }
-  }, resetDelayMs);
 }

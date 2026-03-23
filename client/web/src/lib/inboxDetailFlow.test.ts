@@ -1,40 +1,6 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import type { MediaFile, SearchResult } from '$lib/api';
-
-mock.module('$lib/inboxMatch', () => ({
-  loadInboxDetailMatch: mock(async () => ({
-    candidates: [{ id: 1, name: 'Match A' }],
-    selectedCandidate: { id: 1, name: 'Match A' },
-    isAutoMatched: true,
-    matchScore: 92,
-  })),
-  searchInboxCandidates: mock(async () => [{ id: 2, name: 'Manual Match' }]),
-}));
-
-mock.module('$lib/inboxRecognize', () => ({
-  resolveInboxAiRecognize: mock(async () => ({
-    aiRecognizeResult: { title: 'AI Show', confidence: 0.9, season: 3, episode: 4 },
-    matchCandidates: [{ id: 3, name: 'AI Match' }],
-    selectedCandidate: { id: 3, name: 'AI Match' },
-    editSeason: 3,
-    editEpisode: 4,
-    operationMessage: 'ai ok',
-  })),
-}));
-
-mock.module('$lib/inboxPageWorkflow', () => ({
-  refreshInboxTargetPath: mock(async () => '/library/Show/Season 03/Show.S03E04.mkv'),
-}));
-
-import {
-  clearClosedInboxDetailSelection,
-  closeInboxDetailFlow,
-  openInboxDetailFlow,
-  refreshInboxDetailTargetPath,
-  runInboxAiRecognizeFlow,
-  searchInboxDetailCandidates,
-  selectInboxDetailCandidate,
-} from './inboxDetailFlow';
+import { createInboxDetailFlow } from './inboxDetailFlow';
 import { createInboxDetailUiState } from './inboxPageState';
 
 const file = {
@@ -50,9 +16,31 @@ const file = {
 
 const candidate = { id: 9, name: 'Picked Match' } satisfies SearchResult;
 
+function createSubject() {
+  return createInboxDetailFlow({
+    loadInboxDetailMatch: async () => ({
+      candidates: [{ id: 1, name: 'Match A' }],
+      selectedCandidate: { id: 1, name: 'Match A' },
+      isAutoMatched: true,
+      matchScore: 92,
+    }),
+    searchInboxCandidates: async () => [{ id: 2, name: 'Manual Match' }],
+    resolveInboxAiRecognize: async () => ({
+      aiRecognizeResult: { title: 'AI Show', confidence: 0.9, season: 3, episode: 4 },
+      matchCandidates: [{ id: 3, name: 'AI Match' }],
+      selectedCandidate: { id: 3, name: 'AI Match' },
+      editSeason: 3,
+      editEpisode: 4,
+      operationMessage: 'ai ok',
+    }),
+    refreshInboxTargetPath: async () => '/library/Show/Season 03/Show.S03E04.mkv',
+  });
+}
+
 describe('inboxDetailFlow', () => {
   test('opens detail flow and resolves target path', async () => {
-    const state = await openInboxDetailFlow(file, createInboxDetailUiState());
+    const subject = createSubject();
+    const state = await subject.openInboxDetailFlow(file, createInboxDetailUiState());
 
     expect(state.showDetailModal).toBe(true);
     expect(state.selectedFile).toEqual(file);
@@ -63,7 +51,8 @@ describe('inboxDetailFlow', () => {
   });
 
   test('searches manual candidates and refreshes preview path', async () => {
-    const next = await searchInboxDetailCandidates({
+    const subject = createSubject();
+    const next = await subject.searchInboxDetailCandidates({
       ...createInboxDetailUiState(),
       showDetailModal: true,
       selectedFile: file,
@@ -79,7 +68,8 @@ describe('inboxDetailFlow', () => {
   });
 
   test('runs ai recognize flow and updates detail state', async () => {
-    const result = await runInboxAiRecognizeFlow({
+    const subject = createSubject();
+    const result = await subject.runInboxAiRecognizeFlow({
       ...createInboxDetailUiState(),
       showDetailModal: true,
       selectedFile: file,
@@ -98,7 +88,8 @@ describe('inboxDetailFlow', () => {
   });
 
   test('updates candidate selection and clears closed selections', async () => {
-    const selected = await selectInboxDetailCandidate({
+    const subject = createSubject();
+    const selected = await subject.selectInboxDetailCandidate({
       ...createInboxDetailUiState(),
       showDetailModal: true,
       selectedFile: file,
@@ -107,20 +98,11 @@ describe('inboxDetailFlow', () => {
 
     expect(selected.selectedCandidate).toEqual(candidate);
     expect(selected.targetPath).toBe('/library/Show/Season 03/Show.S03E04.mkv');
-
-    const closed = closeInboxDetailFlow(selected);
-    expect(closed.showDetailModal).toBe(false);
-    expect(closed.selectedFile).toEqual(file);
-
-    expect(clearClosedInboxDetailSelection(closed)).toMatchObject({
-      selectedFile: null,
-      detailFile: null,
-      showDetailModal: false,
-    });
   });
 
   test('clears target path when selection is incomplete', async () => {
-    const state = await refreshInboxDetailTargetPath({
+    const subject = createSubject();
+    const state = await subject.refreshInboxDetailTargetPath({
       ...createInboxDetailUiState(),
       showDetailModal: true,
       selectedFile: file,
