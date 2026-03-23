@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
 import { Hono } from 'hono';
+import { createHandleMoveToInbox } from './scrape-process-move';
 
 class MockMoveToInboxError extends Error {
   status: number;
@@ -13,19 +14,13 @@ class MockMoveToInboxError extends Error {
 let moveMediaToInboxImpl: (...args: any[]) => Promise<any>;
 let invalidateMovedItemCacheImpl: (...args: any[]) => Promise<any>;
 
-mock.module('../lib/move-to-inbox', () => ({
-  MoveToInboxError: MockMoveToInboxError,
-  moveMediaToInbox: (...args: any[]) => moveMediaToInboxImpl(...args),
-}));
-
-mock.module('../lib/library-cache-invalidation', () => ({
-  invalidateMovedItemCache: (...args: any[]) => invalidateMovedItemCacheImpl(...args),
-}));
-
-const { handleMoveToInbox } = await import('./scrape-process-move');
-
 function createApp() {
   const app = new Hono();
+  const handleMoveToInbox = createHandleMoveToInbox({
+    moveMediaToInbox: (...args: any[]) => moveMediaToInboxImpl(...args),
+    invalidateMovedItemCache: (...args: any[]) => invalidateMovedItemCacheImpl(...args),
+    MoveToInboxError: MockMoveToInboxError,
+  });
   app.post('/move-to-inbox', handleMoveToInbox);
   return app;
 }

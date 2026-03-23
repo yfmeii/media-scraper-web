@@ -1,5 +1,8 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
 import { Hono } from 'hono';
+import { createHandleProcessRoutes } from './scrape-process';
+import { createHandleMoveToInbox } from './scrape-process-move';
+import { createHandlePreview } from './scrape-process-preview';
 
 class MockMoveToInboxError extends Error {
   status: number;
@@ -19,44 +22,24 @@ let invalidateTVShowCacheImpl: (...args: any[]) => Promise<any>;
 let invalidateMovieCacheImpl: (...args: any[]) => Promise<any>;
 let invalidateLibraryCacheImpl: (...args: any[]) => Promise<any>;
 
-mock.module('../lib/scraper/process', () => ({
-  processTVShow: (...args: any[]) => processTVShowImpl(...args),
-  processMovie: (...args: any[]) => processMovieImpl(...args),
-}));
-
-mock.module('../lib/scraper/refresh', () => ({
-  refreshMetadata: (...args: any[]) => refreshMetadataImpl(...args),
-}));
-
-mock.module('../lib/scraper/preview', () => ({
-  generatePreviewPlan: (...args: any[]) => generatePreviewPlanImpl(...args),
-}));
-
-mock.module('../lib/move-to-inbox', () => ({
-  MoveToInboxError: MockMoveToInboxError,
-  moveMediaToInbox: (...args: any[]) => moveMediaToInboxImpl(...args),
-}));
-
-mock.module('../lib/library-cache-invalidation', () => ({
-  invalidateTVShowCache: (...args: any[]) => invalidateTVShowCacheImpl(...args),
-  invalidateMovieCache: (...args: any[]) => invalidateMovieCacheImpl(...args),
-  invalidateMovedItemCache: async () => undefined,
-}));
-
-mock.module('../lib/library-cache', () => ({
-  invalidateLibraryCache: (...args: any[]) => invalidateLibraryCacheImpl(...args),
-}));
-
-const {
-  handleMoveToInbox,
-  handlePreview,
-  handleProcessMovie,
-  handleProcessTV,
-  handleRefresh,
-} = await import('./scrape-process');
-
 function createApp() {
   const app = new Hono();
+  const { handleProcessTV, handleProcessMovie, handleRefresh } = createHandleProcessRoutes({
+    processTVShow: (...args: any[]) => processTVShowImpl(...args),
+    processMovie: (...args: any[]) => processMovieImpl(...args),
+    refreshMetadata: (...args: any[]) => refreshMetadataImpl(...args),
+    invalidateTVShowCache: (...args: any[]) => invalidateTVShowCacheImpl(...args),
+    invalidateMovieCache: (...args: any[]) => invalidateMovieCacheImpl(...args),
+    invalidateLibraryCache: (...args: any[]) => invalidateLibraryCacheImpl(...args),
+  });
+  const handleMoveToInbox = createHandleMoveToInbox({
+    moveMediaToInbox: (...args: any[]) => moveMediaToInboxImpl(...args),
+    invalidateMovedItemCache: async () => undefined,
+    MoveToInboxError: MockMoveToInboxError,
+  });
+  const handlePreview = createHandlePreview({
+    generatePreviewPlan: (...args: any[]) => generatePreviewPlanImpl(...args),
+  });
   app.post('/process/tv', handleProcessTV);
   app.post('/process/movie', handleProcessMovie);
   app.post('/move-to-inbox', handleMoveToInbox);

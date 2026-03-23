@@ -1,16 +1,14 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
 import { Hono } from 'hono';
+import { createHandlePreview } from './scrape-process-preview';
 
 let generatePreviewPlanImpl: (...args: any[]) => Promise<any>;
 
-mock.module('../lib/scraper/preview', () => ({
-  generatePreviewPlan: (...args: any[]) => generatePreviewPlanImpl(...args),
-}));
-
-const { handlePreview } = await import('./scrape-process-preview');
-
 function createApp() {
   const app = new Hono();
+  const handlePreview = createHandlePreview({
+    generatePreviewPlan: (...args: any[]) => generatePreviewPlanImpl(...args),
+  });
   app.post('/preview', handlePreview);
   return app;
 }

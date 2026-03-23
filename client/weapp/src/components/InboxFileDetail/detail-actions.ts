@@ -23,15 +23,15 @@ function getRecognizeQuery(result: PathRecognizeResult, candidate: RecognizeCand
 
 function applyRecognizeCandidateDefaults(options: {
   result: PathRecognizeResult
-  candidate: RecognizeCandidate | null
+  selectedAiCandidate: RecognizeCandidate | null
   searchQuery: { value: string }
   season: { value: number }
   episode: { value: number }
 }) {
-  options.searchQuery.value = getRecognizeQuery(options.result, options.candidate) || options.searchQuery.value
+  options.searchQuery.value = getRecognizeQuery(options.result, options.selectedAiCandidate) || options.searchQuery.value
 
-  const season = options.candidate?.season ?? options.result.season
-  const episode = options.candidate?.episode ?? options.result.episode
+  const season = options.selectedAiCandidate?.season ?? options.result.season
+  const episode = options.selectedAiCandidate?.episode ?? options.result.episode
   if (season !== null && season && season > 0) options.season.value = season
   if (episode !== null && episode && episode > 0) options.episode.value = episode
 }

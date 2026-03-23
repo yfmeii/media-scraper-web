@@ -40,6 +40,24 @@ function isAnimeStyleEpisodeContext(normalizedName: string): boolean {
   return / - /.test(normalizedName) || /^\[[^\]]+\]\s*/.test(normalizedName);
 }
 
+function inferSeasonFromPathParts(parts: string[]): number | undefined {
+  for (let index = parts.length - 1; index >= 0; index--) {
+    const normalizedPart = parts[index].replace(/[._-]+/g, ' ').trim();
+    const seasonMatch = normalizedPart.match(/(?:^|\b)season\s*(\d{1,2})(?:\b|$)/i)
+      || normalizedPart.match(/(?:^|\b)s(\d{1,2})(?:\b|$)/i);
+
+    if (seasonMatch) {
+      return parseInt(seasonMatch[1]);
+    }
+  }
+
+  return undefined;
+}
+
+function isBareEpisodeName(baseName: string): boolean {
+  return /^(?:\d{1,3}|[Ee][Pp]?\d{1,3})$/.test(baseName);
+}
+
 export function parseFilename(filename: string): ParsedInfo {
   const name = filename.replace(extname(filename), '');
   const tokens = name.replace(/[.\-_\[\](){}]/g, ' ').split(/\s+/).filter(Boolean);
@@ -111,14 +129,22 @@ export function parseFilename(filename: string): ParsedInfo {
     title = cleanAnimeTitle(animeTitleCandidate);
   } else {
     const titleTokens: string[] = [];
-    for (const token of tokens) {
+    for (let index = 0; index < tokens.length; index++) {
+      const token = tokens[index];
       const lower = token.toLowerCase();
+      const nextLower = tokens[index + 1]?.toLowerCase();
 
       if (/^[Ss]\d{1,2}[Ee]\d{1,3}/.test(token)) break;
       if (/^\d{1,2}x\d{1,3}$/.test(token)) break;
       if (/^(?:EP|E)\d{1,3}$/i.test(token)) break;
 
       if (RESOLUTION_TAGS.has(lower)) break;
+
+      if (lower === 'web' && nextLower === 'dl') {
+        source = source ?? 'web-dl';
+        index++;
+        continue;
+      }
 
       if (SOURCE_TAGS.has(lower)) continue;
       if (CODEC_TAGS.has(lower)) continue;
@@ -145,11 +171,19 @@ export function parseFilename(filename: string): ParsedInfo {
     }
   }
 
-  for (const token of tokens) {
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index];
     const lower = token.toLowerCase();
+    const nextLower = tokens[index + 1]?.toLowerCase();
 
     if (RESOLUTION_TAGS.has(lower) && resolution === undefined) {
       resolution = lower;
+      continue;
+    }
+
+    if (lower === 'web' && nextLower === 'dl' && source === undefined) {
+      source = 'web-dl';
+      index++;
       continue;
     }
 
@@ -175,19 +209,24 @@ export function parseFromPath(relativePath: string): ParsedInfo {
   const parts = relativePath.split('/');
   const filename = parts[parts.length - 1];
   const parsed = parseFilename(filename);
+  const seasonFromPath = inferSeasonFromPathParts(parts.slice(0, -1));
+  const baseName = filename.replace(extname(filename), '');
+
+  if ((parsed.season === undefined || isBareEpisodeName(baseName)) && seasonFromPath !== undefined) {
+    parsed.season = seasonFromPath;
+  }
 
   if (parsed.episode === undefined) {
-    const baseName = filename.replace(extname(filename), '');
     const epMatch = baseName.match(/^(\d{1,3})$/);
     if (epMatch) {
       parsed.episode = parseInt(epMatch[1]);
-      if (!parsed.season) parsed.season = 1;
+      if (!parsed.season) parsed.season = seasonFromPath ?? 1;
     }
 
     const epMatch2 = baseName.match(/^[Ee][Pp]?(\d{1,3})$/);
     if (epMatch2) {
       parsed.episode = parseInt(epMatch2[1]);
-      if (!parsed.season) parsed.season = 1;
+      if (!parsed.season) parsed.season = seasonFromPath ?? 1;
     }
   }
 

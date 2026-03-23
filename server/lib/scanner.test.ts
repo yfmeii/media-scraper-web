@@ -179,7 +179,7 @@ describe('文件名解析', () => {
   test('🗂️ 从路径解析 E12 格式', () => {
     const result = parseFromPath('Show/Season 02/E12.mkv');
     expect(result.episode).toBe(12);
-    expect(result.season).toBe(1);
+    expect(result.season).toBe(2);
   });
 
   test('🧪 解析编码标签', () => {

@@ -1,8 +1,10 @@
 import type { Context } from 'hono';
 import { DEFAULT_LANGUAGE } from '@media-scraper/shared/constants';
 import { invalidateLibraryCache } from '../lib/library-cache';
-import { invalidateMovieCache, invalidateTVShowCache } from '../lib/library-cache-invalidation';
+import { invalidateMovedItemCache, invalidateMovieCache, invalidateTVShowCache } from '../lib/library-cache-invalidation';
+import { moveMediaToInbox } from '../lib/move-to-inbox';
 import { processMovie, processTVShow } from '../lib/scraper/process';
+import { generatePreviewPlan } from '../lib/scraper/preview';
 import { refreshMetadata } from '../lib/scraper/refresh';
 import {
   isNonEmptyString,
@@ -11,9 +13,16 @@ import {
   type ParseResult,
   type TVEpisodeInput,
 } from './scrape-request';
+import { createHandleMoveToInbox } from './scrape-process-move';
+import { createHandlePreview } from './scrape-process-preview';
 import { badRequest } from './route-utils';
-export { handleMoveToInbox } from './scrape-process-move';
-export { handlePreview } from './scrape-process-preview';
+
+type ProcessTVShow = typeof processTVShow;
+type ProcessMovie = typeof processMovie;
+type RefreshMetadata = typeof refreshMetadata;
+type InvalidateLibraryCache = typeof invalidateLibraryCache;
+type InvalidateTVShowCache = typeof invalidateTVShowCache;
+type InvalidateMovieCache = typeof invalidateMovieCache;
 
 type ProcessTVRequest = {
   sourcePath: string;
@@ -89,73 +98,100 @@ function parseRefreshBody(body: any): ParseResult<RefreshRequest> {
   };
 }
 
-async function processTV(payload: ProcessTVRequest) {
-  const result = await processTVShow(
-    payload.sourcePath,
-    payload.showName,
-    payload.tmdbId,
-    payload.season,
-    payload.episodes,
-    payload.language,
-  );
+export function createHandleProcessRoutes(deps: {
+  processTVShow: ProcessTVShow;
+  processMovie: ProcessMovie;
+  refreshMetadata: RefreshMetadata;
+  invalidateTVShowCache: InvalidateTVShowCache;
+  invalidateMovieCache: InvalidateMovieCache;
+  invalidateLibraryCache: InvalidateLibraryCache;
+}) {
+  async function processTV(payload: ProcessTVRequest) {
+    const result = await deps.processTVShow(
+      payload.sourcePath,
+      payload.showName,
+      payload.tmdbId,
+      payload.season,
+      payload.episodes,
+      payload.language,
+    );
 
-  if (result.success && result.destPath) {
-    await invalidateTVShowCache(result.destPath);
+    if (result.success && result.destPath) {
+      await deps.invalidateTVShowCache(result.destPath);
+    }
+
+    return result;
   }
 
-  return result;
-}
+  async function processMovieRoute(payload: ProcessMovieRequest) {
+    const result = await deps.processMovie(payload.sourcePath, payload.tmdbId, payload.language);
 
-async function processMovieRoute(payload: ProcessMovieRequest) {
-  const result = await processMovie(payload.sourcePath, payload.tmdbId, payload.language);
+    if (result.success && result.destPath) {
+      await deps.invalidateMovieCache(result.destPath);
+    }
 
-  if (result.success && result.destPath) {
-    await invalidateMovieCache(result.destPath);
+    return result;
   }
 
-  return result;
-}
+  async function refreshRoute(payload: RefreshRequest) {
+    const result = await deps.refreshMetadata(
+      payload.kind,
+      payload.path,
+      payload.tmdbId,
+      payload.season,
+      payload.episode,
+      payload.language,
+    );
 
-async function refreshRoute(payload: RefreshRequest) {
-  const result = await refreshMetadata(
-    payload.kind,
-    payload.path,
-    payload.tmdbId,
-    payload.season,
-    payload.episode,
-    payload.language,
-  );
+    if (result.success) {
+      await deps.invalidateLibraryCache(payload.path, payload.kind);
+    }
 
-  if (result.success) {
-    await invalidateLibraryCache(payload.path, payload.kind);
+    return result;
   }
 
-  return result;
+  return {
+    handleProcessTV: async (c: Context) => {
+      const parsed = parseProcessTVBody(await c.req.json());
+      if (!parsed.ok) {
+        return badRequest(c, parsed.error);
+      }
+
+      return c.json(await processTV(parsed.data));
+    },
+    handleProcessMovie: async (c: Context) => {
+      const parsed = parseProcessMovieBody(await c.req.json());
+      if (!parsed.ok) {
+        return badRequest(c, parsed.error);
+      }
+
+      return c.json(await processMovieRoute(parsed.data));
+    },
+    handleRefresh: async (c: Context) => {
+      const parsed = parseRefreshBody(await c.req.json());
+      if (!parsed.ok) {
+        return badRequest(c, parsed.error);
+      }
+
+      return c.json(await refreshRoute(parsed.data));
+    },
+  };
 }
 
-export async function handleProcessTV(c: Context) {
-  const parsed = parseProcessTVBody(await c.req.json());
-  if (!parsed.ok) {
-    return badRequest(c, parsed.error);
-  }
+const processRoutes = createHandleProcessRoutes({
+  processTVShow,
+  processMovie,
+  refreshMetadata,
+  invalidateTVShowCache,
+  invalidateMovieCache,
+  invalidateLibraryCache,
+});
 
-  return c.json(await processTV(parsed.data));
-}
-
-export async function handleProcessMovie(c: Context) {
-  const parsed = parseProcessMovieBody(await c.req.json());
-  if (!parsed.ok) {
-    return badRequest(c, parsed.error);
-  }
-
-  return c.json(await processMovieRoute(parsed.data));
-}
-
-export async function handleRefresh(c: Context) {
-  const parsed = parseRefreshBody(await c.req.json());
-  if (!parsed.ok) {
-    return badRequest(c, parsed.error);
-  }
-
-  return c.json(await refreshRoute(parsed.data));
-}
+export const handleProcessTV = processRoutes.handleProcessTV;
+export const handleProcessMovie = processRoutes.handleProcessMovie;
+export const handleRefresh = processRoutes.handleRefresh;
+export const handleMoveToInbox = createHandleMoveToInbox({
+  moveMediaToInbox: moveMediaToInbox,
+  invalidateMovedItemCache: invalidateMovedItemCache,
+});
+export const handlePreview = createHandlePreview({ generatePreviewPlan });

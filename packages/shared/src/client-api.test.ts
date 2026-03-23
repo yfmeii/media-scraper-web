@@ -44,8 +44,8 @@ describe('共享客户端 API 工厂', () => {
 
     await api.fetchInbox();
     await api.fetchInboxByDirectory();
-    await api.fetchTVShows(true, 'summary');
-    await api.fetchMovies(true, 'full');
+    await api.fetchTVShows();
+    await api.fetchMovies();
 
     expect(calls).toEqual([
       'GET:/media/inbox',

@@ -1,7 +1,3 @@
-import {
-  getInboxSearchKeyword,
-  inferCandidateMediaType,
-} from '@media-scraper/shared'
 import type {
   MediaFile,
   PathRecognizeResult,
@@ -9,46 +5,24 @@ import type {
   PreviewPlan,
   RecognizeCandidate,
 } from '@media-scraper/shared'
-import { computed, ref, watch } from 'wevu'
-import { previewPlan } from '@/utils/api'
-import { normalizeText } from '@/utils/display'
-import { getPosterUrl } from '@/utils/request'
+import * as wevu from 'wevu'
 import { useToast } from '@/hooks/useToast'
 import { useMediaMatch } from '@/hooks/useMediaMatch'
-import { processMedia } from '@/hooks/useMediaProcess'
+import { runInboxAiRecognize } from './detail-actions'
 import {
-  getRecognizeCandidateId,
-  resolveSelectedRecognizeCandidate,
-  runInboxAiRecognize,
-  selectInboxAiRecognizeCandidate,
-} from './detail-actions'
+  type AiRecognizeCandidateCard,
+  applyAutoMatchResult,
+  type CandidateCard,
+  handleAiCandidateSelection,
+  handlePreviewPlanRequest,
+  handleProcessRequest,
+  initializeInboxDetail,
+  resetInboxDetailState,
+  sanitizeStepperValue,
+  toAiCandidateCard,
+  toCandidateCard,
+} from './detail-controller'
 import { useInboxTargetPreview } from './detail-preview'
-
-export interface CandidateCard {
-  id: number
-  displayName: string
-  displayYear: string
-  posterUrl: string
-  mediaType: 'tv' | 'movie'
-}
-
-export interface AiRecognizeCandidateCard {
-  id: number
-  tmdbId: number | null
-  displayName: string
-  mediaType: 'tv' | 'movie'
-  yearText: string
-  seasonEpisodeText: string
-  confidenceText: string
-  reason: string
-  isPreferred: boolean
-}
-
-function sanitizeStepperValue(value: unknown, fallback: number, max: number): number {
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed) || parsed < 1) return fallback
-  return Math.min(Math.floor(parsed), max)
-}
 
 export function useInboxFileDetail(options: {
   getVisible: () => boolean
@@ -56,6 +30,12 @@ export function useInboxFileDetail(options: {
   emitClose: () => void
   emitProcessed: () => void
 }) {
+  type WatchFn = <T>(
+    source: () => T,
+    callback: (value: T) => void,
+    options?: { immediate?: boolean },
+  ) => void
+
   const { showToast } = useToast()
   const {
     matchLoading,
@@ -69,6 +49,16 @@ export function useInboxFileDetail(options: {
     cancelPending,
     reset: resetMatch,
   } = useMediaMatch()
+
+  const computed = wevu.computed
+  const ref = wevu.ref
+  const watch: WatchFn = typeof wevu.watch === 'function'
+    ? wevu.watch as WatchFn
+    : (source, callback, options) => {
+        if (options?.immediate) {
+          callback(source())
+        }
+      }
 
   const currentFile = computed(() => options.getFile())
   const localVisible = ref(false)
@@ -89,39 +79,13 @@ export function useInboxFileDetail(options: {
   const targetPreviewLoading = ref(false)
 
   const candidateCards = computed<CandidateCard[]>(() =>
-    candidates.value.map(candidate => ({
-      id: candidate.id,
-      displayName: normalizeText(candidate.name) || normalizeText(candidate.title) || '未知',
-      displayYear: (candidate.releaseDate || candidate.firstAirDate || '').slice(0, 4),
-      posterUrl: getPosterUrl(candidate.posterPath),
-      mediaType: inferCandidateMediaType(candidate),
-    })),
+    candidates.value.map(toCandidateCard),
   )
 
   const aiRecognizeCandidates = computed<RecognizeCandidate[]>(() => aiResult.value?.recognize_candidates || [])
 
-  const selectedAiRecognizeCandidate = computed<RecognizeCandidate | null>(() => {
-    return resolveSelectedRecognizeCandidate(aiRecognizeCandidates.value, selectedAiCandidateId.value)
-  })
-
   const aiCandidateCards = computed<AiRecognizeCandidateCard[]>(() =>
-    aiRecognizeCandidates.value.map((candidate, index) => {
-      const id = getRecognizeCandidateId(candidate, index + 1) || index + 1
-      const seasonEpisodeText = candidate.media_type === 'tv' && (candidate.season || candidate.episode)
-        ? `S${String(candidate.season || 1).padStart(2, '0')}E${String(candidate.episode || 1).padStart(2, '0')}`
-        : ''
-      return {
-        id,
-        tmdbId: candidate.tmdb_id,
-        displayName: normalizeText(candidate.tmdb_name) || normalizeText(candidate.title) || '未知',
-        mediaType: candidate.media_type === 'movie' ? 'movie' : 'tv',
-        yearText: candidate.year ? String(candidate.year) : '',
-        seasonEpisodeText,
-        confidenceText: `${Math.round((candidate.confidence || 0) * 100)}%`,
-        reason: normalizeText(candidate.reason),
-        isPreferred: getRecognizeCandidateId(candidate) === (aiResult.value?.preferred_tmdb_id ?? aiResult.value?.tmdb_id ?? null),
-      }
-    }),
+    aiRecognizeCandidates.value.map((candidate, index) => toAiCandidateCard(candidate, index, aiResult.value)),
   )
 
   const {
@@ -141,23 +105,25 @@ export function useInboxFileDetail(options: {
   })
 
   function resetPopupState() {
-    processing.value = false
-    aiLoading.value = false
-    previewVisible.value = false
-    previewLoading.value = false
-    previewActions.value = []
-    previewSummary.value = null
-    searchQuery.value = ''
-    season.value = 1
-    episode.value = 1
-    aiResult.value = null
-    selectedAiCandidateId.value = null
-    aiHint.value = ''
-    autoMatchTried.value = false
-    targetPreviewPath.value = ''
-    targetPreviewLoading.value = false
-    resetTargetPreview()
-    resetMatch()
+    resetInboxDetailState({
+      processing,
+      aiLoading,
+      previewVisible,
+      previewLoading,
+      previewActions,
+      previewSummary,
+      searchQuery,
+      season,
+      episode,
+      aiResult,
+      selectedAiCandidateId,
+      aiHint,
+      autoMatchTried,
+      targetPreviewPath,
+      targetPreviewLoading,
+      resetTargetPreview,
+      resetMatch,
+    })
   }
 
   watch(() => options.getVisible(), (value) => {
@@ -173,14 +139,7 @@ export function useInboxFileDetail(options: {
       searchQuery.value.trim() || undefined,
       file.parsed.year,
     )
-    if (ok) {
-      const currentId = selectedCandidate.value?.id
-      const resolved = (currentId
-        ? candidates.value.find(item => item.id === currentId)
-        : null) || candidates.value[0] || null
-      selectedCandidate.value = resolved
-      syncTvEpisodeByCandidate(resolved, false)
-    }
+    applyAutoMatchResult({ ok, candidates, selectedCandidate, syncTvEpisodeByCandidate })
     autoMatchTried.value = true
     if (!ok && !silent) {
       showToast('未找到匹配结果', 'warning')
@@ -236,59 +195,29 @@ export function useInboxFileDetail(options: {
   }
 
   async function handlePreviewPlan() {
-    if (previewLoading.value || processing.value) return
-    const item = buildPreviewItem()
-    if (!item) {
-      showToast('请先选择匹配结果', 'warning')
-      return
-    }
-
-    previewVisible.value = true
-    previewLoading.value = true
-    previewActions.value = []
-    previewSummary.value = null
-    try {
-      const plan = await previewPlan([item])
-      previewActions.value = plan.actions || []
-      previewSummary.value = plan.impactSummary || null
-    }
-    catch {
-      showToast('预览失败', 'error')
-    }
-    finally {
-      previewLoading.value = false
-    }
+    await handlePreviewPlanRequest({
+      previewLoading,
+      processing,
+      previewVisible,
+      previewActions,
+      previewSummary,
+      buildPreviewItem,
+      showToast,
+    })
   }
 
   async function handleProcess() {
-    const file = currentFile.value
-    if (!file || !selectedCandidate.value || processing.value) return
-
-    processing.value = true
-    try {
-      const result = await processMedia({
-        file,
-        candidate: selectedCandidate.value,
-        type: selectedMediaType.value,
-        season: season.value,
-        episode: episode.value,
-      })
-      if (result.success) {
-        showToast('入库成功', 'success')
-        wx.vibrateShort({ type: 'medium' })
-        closePopup()
-        options.emitProcessed()
-      }
-      else {
-        showToast(result.message || '入库失败', 'error')
-      }
-    }
-    catch {
-      showToast('入库失败', 'error')
-    }
-    finally {
-      processing.value = false
-    }
+    await handleProcessRequest({
+      file: currentFile.value,
+      selectedCandidate,
+      processing,
+      selectedMediaType,
+      season,
+      episode,
+      showToast,
+      closePopup,
+      emitProcessed: options.emitProcessed,
+    })
   }
 
   function onVisibleChange(e: WechatMiniprogram.CustomEvent) {
@@ -329,25 +258,20 @@ export function useInboxFileDetail(options: {
   }
 
   async function onSelectAiCandidate(id: number) {
-    if (!aiResult.value || aiLoading.value) return
-    selectedAiCandidateId.value = id
-    try {
-      const candidate = await selectInboxAiRecognizeCandidate({
-        result: aiResult.value,
-        selectedId: id,
-        candidates,
-        selectedCandidate,
-        searchQuery,
-        season,
-        episode,
-        syncTvEpisodeByCandidate,
-        autoMatchTried,
-      })
-      if (!candidate) selectedAiCandidateId.value = null
-    }
-    catch {
-      showToast('切换 AI 候选失败', 'error')
-    }
+    await handleAiCandidateSelection({
+      aiResult,
+      aiLoading,
+      selectedAiCandidateId,
+      candidates,
+      selectedCandidate,
+      searchQuery,
+      season,
+      episode,
+      syncTvEpisodeByCandidate,
+      autoMatchTried,
+      showToast,
+      id,
+    })
   }
 
   async function executeFromPreview() {
@@ -361,11 +285,14 @@ export function useInboxFileDetail(options: {
   }
 
   async function initForFile(file: MediaFile) {
-    resetPopupState()
-    searchQuery.value = getInboxSearchKeyword(file)
-    season.value = file.parsed.season || 1
-    episode.value = file.parsed.episode || 1
-    await handleAutoMatch(true)
+    await initializeInboxDetail({
+      file,
+      searchQuery,
+      season,
+      episode,
+      resetPopupState,
+      handleAutoMatch,
+    })
   }
 
   return {

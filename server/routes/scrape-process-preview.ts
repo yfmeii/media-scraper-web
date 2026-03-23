@@ -5,6 +5,8 @@ import { parsePreviewItems, type ParseResult, type PreviewMovieItem, type Previe
 import { buildPreviewResponse } from './scrape-response';
 import { badRequest } from './route-utils';
 
+type GeneratePreviewPlan = typeof generatePreviewPlan;
+
 function parsePreviewBody(body: any): ParseResult<{
   items: Array<PreviewTVItem | PreviewMovieItem>;
   language: string;
@@ -21,14 +23,18 @@ function parsePreviewBody(body: any): ParseResult<{
   };
 }
 
-export async function handlePreview(c: Context) {
-  const parsed = parsePreviewBody(await c.req.json());
-  if (!parsed.ok) {
-    return badRequest(c, parsed.error);
-  }
+export function createHandlePreview(deps: { generatePreviewPlan: GeneratePreviewPlan }) {
+  return async function handlePreview(c: Context) {
+    const parsed = parsePreviewBody(await c.req.json());
+    if (!parsed.ok) {
+      return badRequest(c, parsed.error);
+    }
 
-  const { items, language } = parsed.data;
-  const plan = await generatePreviewPlan(items, language);
+    const { items, language } = parsed.data;
+    const plan = await deps.generatePreviewPlan(items, language);
 
-  return c.json(buildPreviewResponse(plan));
+    return c.json(buildPreviewResponse(plan));
+  };
 }
+
+export const handlePreview = createHandlePreview({ generatePreviewPlan });

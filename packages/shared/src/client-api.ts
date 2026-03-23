@@ -28,7 +28,10 @@ function encodeQueryValue(value: string | number): string {
 
 function buildQueryString(params: Record<string, string | number | undefined | null>): string {
   const entries = Object.entries(params)
-    .filter(([, value]) => value !== undefined && value !== null && value !== '');
+    .filter((entry): entry is [string, string | number] => {
+      const value = entry[1];
+      return value !== undefined && value !== null && value !== '';
+    });
   return entries
     .map(([key, value]) => `${encodeQueryValue(key)}=${encodeQueryValue(value)}`)
     .join('&');
