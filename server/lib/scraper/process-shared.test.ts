@@ -6,7 +6,7 @@ import { moveTVEpisodes, writeEpisodeNfos } from './process-shared';
 import { resolveTVSeasonDir } from './destination';
 
 describe('scraper process helpers', () => {
-  test('writeEpisodeNfos skips episodes missing TMDB data', async () => {
+  test.serial('writeEpisodeNfos skips episodes missing TMDB data', async () => {
     await expect(writeEpisodeNfos({
       showName: 'Show',
       tmdbId: 1,
@@ -16,13 +16,12 @@ describe('scraper process helpers', () => {
     })).resolves.toBeUndefined();
   });
 
-  test('moveTVEpisodes moves files and returns episode metadata', async () => {
+  test.serial('moveTVEpisodes moves files and returns episode metadata', async () => {
     const root = join(tmpdir(), `process-move-${Date.now()}`);
     const srcDir = join(root, 'src');
-    const previousTVPath = process.env.TV_PATH;
+    const tvRoot = join(root, 'TV');
     try {
-      process.env.TV_PATH = join(root, 'TV');
-      const seasonDir = resolveTVSeasonDir('Show', 1);
+      const seasonDir = resolveTVSeasonDir('Show', 1, tvRoot);
       await mkdir(srcDir, { recursive: true });
       await mkdir(seasonDir, { recursive: true });
       const source = join(srcDir, 'Show.S01E01.mkv');
@@ -32,18 +31,18 @@ describe('scraper process helpers', () => {
         showName: 'Show',
         season: 1,
         episodes: [{ source, episode: 1 }],
+        tvRoot,
       });
 
       expect(moved).toHaveLength(1);
       expect(moved[0]?.episode).toBe(1);
       expect(await Bun.file(join(seasonDir, 'Show - S01E01.mkv')).exists()).toBe(true);
     } finally {
-      process.env.TV_PATH = previousTVPath;
       await rm(root, { recursive: true, force: true });
     }
   });
 
-  test('writeEpisodeNfos writes NFO for matched episode metadata', async () => {
+  test.serial('writeEpisodeNfos writes NFO for matched episode metadata', async () => {
     const root = join(tmpdir(), `process-nfo-${Date.now()}`);
     await mkdir(root, { recursive: true });
     const videoPath = join(root, 'Show - S01E01.mkv');

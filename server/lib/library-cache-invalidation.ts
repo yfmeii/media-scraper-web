@@ -2,13 +2,19 @@ import { invalidateLibraryCache } from './library-cache';
 import { MEDIA_PATHS } from './config';
 import type { CacheEntryKind } from './library-cache-meta';
 
-export async function invalidateTVShowCache(destPath: string): Promise<void> {
+export async function invalidateTVShowCache(
+  destPath: string,
+  invalidate: (path: string, kind: CacheEntryKind) => Promise<void> = invalidateLibraryCache,
+): Promise<void> {
   const showPath = destPath.replace(/\/Season \d+$/, '');
-  await invalidateLibraryCache(showPath, 'tv');
+  await invalidate(showPath, 'tv');
 }
 
-export async function invalidateMovieCache(destPath: string): Promise<void> {
-  await invalidateLibraryCache(destPath, 'movie');
+export async function invalidateMovieCache(
+  destPath: string,
+  invalidate: (path: string, kind: CacheEntryKind) => Promise<void> = invalidateLibraryCache,
+): Promise<void> {
+  await invalidate(destPath, 'movie');
 }
 
 export function resolveMoveToInboxCachePath(sourcePath: string): { kind: CacheEntryKind; cachePath: string } | null {
@@ -22,8 +28,11 @@ export function resolveMoveToInboxCachePath(sourcePath: string): { kind: CacheEn
   return cachePath ? { kind, cachePath } : null;
 }
 
-export async function invalidateMovedItemCache(sourcePath: string): Promise<void> {
+export async function invalidateMovedItemCache(
+  sourcePath: string,
+  invalidate: (path: string, kind: CacheEntryKind) => Promise<void> = invalidateLibraryCache,
+): Promise<void> {
   const resolved = resolveMoveToInboxCachePath(sourcePath);
   if (!resolved) return;
-  await invalidateLibraryCache(resolved.cachePath, resolved.kind);
+  await invalidate(resolved.cachePath, resolved.kind);
 }

@@ -91,8 +91,83 @@ describe('文件名解析', () => {
 
   test('🧩 解析括号字幕组格式', () => {
     const result = parseFilename('[SubGroup] Anime Name - EP01.mkv');
+    expect(result.title).toBe('Anime Name');
     expect(result.episode).toBe(1);
     expect(result.season).toBe(1);
+  });
+
+  test('🉐 解析动漫常见方括号集数格式', () => {
+    const result = parseFilename("[CZ&MAI] JoJo's Bizarre Adventure - Diamond is Unbreakable [30][Ma10p_2160p][x265_DTS-HDMA_ass].mkv");
+    expect(result.title).toBe("JoJo's Bizarre Adventure Diamond is Unbreakable");
+    expect(result.episode).toBe(30);
+    expect(result.season).toBe(3);
+    expect(result.resolution).toBe('2160p');
+    expect(result.codec).toBe('x265');
+  });
+
+  test('🎵 动漫 NCED 特典不应识别为正片集数', () => {
+    const result = parseFilename("[MAI] JoJo's Bizarre Adventure [NCED02][Ma10p_2160p][x265_flac].mkv");
+    expect(result.title).toBe("JoJo's Bizarre Adventure");
+    expect(result.episode).toBeUndefined();
+    expect(result.season).toBeUndefined();
+    expect(result.resolution).toBe('2160p');
+    expect(result.codec).toBe('x265');
+  });
+
+  test('🧭 根据动漫篇章标题推断季号', () => {
+    const result = parseFilename("JoJo's Bizarre Adventure - Diamond is Unbreakable [30].mkv");
+    expect(result.title).toBe("JoJo's Bizarre Adventure Diamond is Unbreakable");
+    expect(result.episode).toBe(30);
+    expect(result.season).toBe(3);
+  });
+
+  test('🔁 解析动漫修正版集数 01v2', () => {
+    const result = parseFilename('[SubsPlease] Kusuriya no Hitorigoto - 01v2 [1080p].mkv');
+    expect(result.title).toBe('Kusuriya no Hitorigoto');
+    expect(result.episode).toBe(1);
+    expect(result.season).toBe(1);
+    expect(result.resolution).toBe('1080p');
+  });
+
+  test('🧮 解析动漫方括号多集范围', () => {
+    const result = parseFilename('[Group] Show Name [01-02][1080p].mkv');
+    expect(result.title).toBe('Show Name');
+    expect(result.episode).toBe(1);
+    expect(result.episodeEnd).toBe(2);
+    expect(result.season).toBe(1);
+    expect(result.resolution).toBe('1080p');
+  });
+
+  test('🀄 动漫标题支持第30话格式', () => {
+    const result = parseFilename('[LoliHouse] 葬送的芙莉莲 - 第30话 [WebRip 1080p].mkv');
+    expect(result.title).toBe('葬送的芙莉莲');
+    expect(result.episode).toBe(30);
+    expect(result.season).toBe(1);
+    expect(result.resolution).toBe('1080p');
+  });
+
+  test('🎁 OVA 文件不识别为正片集数', () => {
+    const result = parseFilename('[Group] Show Name OVA 01 [1080p].mkv');
+    expect(result.title).toBe('Show Name');
+    expect(result.episode).toBeUndefined();
+    expect(result.season).toBeUndefined();
+    expect(result.resolution).toBe('1080p');
+  });
+
+  test('🎬 非括号 NCOP 文件不识别为正片集数', () => {
+    const result = parseFilename('[Group] Show Name NCOP 01 [1080p].mkv');
+    expect(result.title).toBe('Show Name');
+    expect(result.episode).toBeUndefined();
+    expect(result.season).toBeUndefined();
+    expect(result.resolution).toBe('1080p');
+  });
+
+  test('🛡️ 普通电影文件不误判为动漫修正版集数', () => {
+    const result = parseFilename('Movie Title 01v2 1080p.mkv');
+    expect(result.title).toBe('Movie Title 01v2');
+    expect(result.episode).toBeUndefined();
+    expect(result.season).toBeUndefined();
+    expect(result.resolution).toBe('1080p');
   });
 
   test('🧭 从路径解析纯数字集数', () => {

@@ -16,6 +16,7 @@ export async function moveTVEpisodes(params: {
   showName: string;
   season: number;
   episodes: { source: string; episode: number; episodeEnd?: number }[];
+  tvRoot?: string;
 }) {
   const movedFiles: Array<{ destPath: string; episode: number }> = [];
 
@@ -26,6 +27,7 @@ export async function moveTVEpisodes(params: {
       sourcePath: ep.source,
       episode: ep.episode,
       episodeEnd: ep.episodeEnd,
+      tvRoot: params.tvRoot,
     });
 
     await moveFile(ep.source, destPath);
